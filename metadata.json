@@ -1,0 +1,8 @@
+{
+  "name": "Model Manager",
+  "description": "Comprehensive diagramming suite supporting ERD, BPMN, UML, DFD, IDEF0, SIPOC, Flowchart, CEQA, Gantt, PERT with nested grouping, multi-page breadcrumbs, sticky notes, RBAC, offline sync, real-time collaboration, and JSON REST API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

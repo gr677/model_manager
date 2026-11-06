@@ -1,0 +1,2074 @@
+{
+  "id": "doc-enterprise-architecture-2026",
+  "name": "Global Enterprise Workflow & Architecture Suite",
+  "createdAt": "2026-10-20T09:00:00.000Z",
+  "updatedAt": "2026-10-29T10:45:10.773Z",
+  "activePageId": "page-bpmn-fulfillment",
+  "settings": {
+    "gridSnap": true,
+    "showGrid": true,
+    "theme": "dark",
+    "showMinimap": true
+  },
+  "versions": [
+    {
+      "id": "ver-1.0",
+      "versionNumber": 1,
+      "name": "v1.0 Baseline Architecture",
+      "description": "Initial approved release of core business process and ERD models.",
+      "createdAt": "2026-10-21T14:30:00.000Z",
+      "createdBy": "Sarah Chen (Lead Architect)",
+      "changesSummary": "Added BPMN fulfillment flow, ERD schema, and UML microservices.",
+      "snapshot": {
+        "pages": [],
+        "activePageId": "page-bpmn-fulfillment"
+      }
+    },
+    {
+      "id": "ver-1.1",
+      "versionNumber": 2,
+      "name": "v1.1 CEQA & IDEF0 Integration",
+      "description": "Incorporated regulatory environmental compliance and IDEF0 industrial controls.",
+      "createdAt": "2026-10-22T17:15:00.000Z",
+      "createdBy": "Alex Rivera (BPMN Analyst)",
+      "changesSummary": "Added CEQA Phase 1-5 Environmental Clearance and PERT critical path analysis.",
+      "snapshot": {
+        "pages": [],
+        "activePageId": "page-bpmn-fulfillment"
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-freeform-studio",
+      "title": "Universal Freeform Architecture (No Rules)",
+      "diagramType": "generic",
+      "description": "Multi-paradigm canvas with zero notation constraints. Mix ERD, BPMN, UML, Flowcharts, Gantt, and Sticky Notes freely.",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.95
+      },
+      "nodes": [
+        {
+          "id": "ff-bpmn-task",
+          "type": "bpmn-task",
+          "label": "1. Ingest Multi-Cloud Telemetry",
+          "x": 60,
+          "y": 120,
+          "width": 200,
+          "height": 80,
+          "style": {
+            "fill": "rgba(30, 58, 138, 0.85)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#f8fafc",
+            "rounded": 8
+          },
+          "data": {
+            "taskType": "service"
+          },
+          "documentation": {
+            "description": "Kafka streaming consumer handling 50k events/sec.",
+            "tags": [
+              "Kafka",
+              "Freeform"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "ff-decision",
+          "type": "flow-decision",
+          "label": "Valid Schema & Key?",
+          "x": 320,
+          "y": 115,
+          "width": 140,
+          "height": 90,
+          "style": {
+            "fill": "rgba(180, 83, 9, 0.8)",
+            "stroke": "#f59e0b",
+            "strokeWidth": 2,
+            "textColor": "#ffffff"
+          },
+          "data": {}
+        },
+        {
+          "id": "ff-erd-table",
+          "type": "erd-entity",
+          "label": "telemetry_events",
+          "x": 530,
+          "y": 80,
+          "width": 240,
+          "height": 200,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.95)",
+            "stroke": "#0284c7",
+            "strokeWidth": 2,
+            "textColor": "#38bdf8",
+            "rounded": 6
+          },
+          "data": {
+            "tableName": "telemetry_events",
+            "fields": [
+              {
+                "name": "event_id",
+                "type": "UUID",
+                "isPk": true,
+                "isFk": false
+              },
+              {
+                "name": "sensor_id",
+                "type": "VARCHAR(64)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "reading_value",
+                "type": "NUMERIC(10,2)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "recorded_at",
+                "type": "TIMESTAMPTZ",
+                "isPk": false,
+                "isFk": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "ff-sticky",
+          "type": "sticky-note",
+          "label": "Universal Freeform Notice:\nNo rules enforced here! Feel free to mix databases, workflows, Gantt milestones, and industrial ICOM arrows together.",
+          "x": 820,
+          "y": 100,
+          "width": 220,
+          "height": 140,
+          "style": {
+            "fill": "#fef08a",
+            "stroke": "#facc15",
+            "strokeWidth": 1,
+            "textColor": "#713f12",
+            "rounded": 4
+          },
+          "data": {
+            "color": "yellow",
+            "author": "OmniModel Studio"
+          }
+        },
+        {
+          "id": "ff-gantt",
+          "type": "gantt-task",
+          "label": "Milestone: Streaming GA",
+          "x": 540,
+          "y": 340,
+          "width": 210,
+          "height": 80,
+          "style": {
+            "fill": "rgba(16, 185, 129, 0.2)",
+            "stroke": "#10b981",
+            "strokeWidth": 2,
+            "textColor": "#6ee7b7",
+            "rounded": 8
+          },
+          "data": {
+            "progress": 85,
+            "startDate": "2026-11-01",
+            "endDate": "2026-11-20",
+            "assignee": "DevOps Lead"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "ff-e1",
+          "sourceNodeId": "ff-bpmn-task",
+          "targetNodeId": "ff-decision",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "ff-e2",
+          "sourceNodeId": "ff-decision",
+          "targetNodeId": "ff-erd-table",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "crow-foot-many",
+          "label": "[Yes] Persist"
+        },
+        {
+          "id": "ff-e3",
+          "sourceNodeId": "ff-erd-table",
+          "targetNodeId": "ff-gantt",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        }
+      ]
+    },
+    {
+      "id": "page-bpmn-fulfillment",
+      "title": "BPMN 2.0 Fulfillment & Swimlanes",
+      "diagramType": "bpmn",
+      "description": "Order intake, inventory verification, sub-process drilldown, and dispatch.",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.95
+      },
+      "nodes": [
+        {
+          "id": "node-pool-1",
+          "type": "swimlane-pool",
+          "label": "OmniChannel Fulfillment Engine (Pool)",
+          "x": 40,
+          "y": 40,
+          "width": 1040,
+          "height": 520,
+          "isGroup": true,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.4)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#93c5fd",
+            "rounded": 8
+          },
+          "data": {
+            "lanes": [
+              "Customer Interface Lane",
+              "Warehouse & Logistics Lane"
+            ]
+          },
+          "documentation": {
+            "description": "Core end-to-end customer order capture, warehouse orchestration, and logistics dispatch.",
+            "tags": [
+              "BPMN",
+              "E-commerce",
+              "OrderPipeline"
+            ],
+            "apiEndpoint": "POST /api/v1/orders/fulfill",
+            "owner": "Architecture Team",
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-lane-1",
+          "type": "swimlane-lane",
+          "label": "Customer Interface Lane",
+          "x": 50,
+          "y": 80,
+          "width": 1020,
+          "height": 220,
+          "parentId": "node-pool-1",
+          "isGroup": true,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.3)",
+            "stroke": "rgba(59, 130, 246, 0.3)",
+            "strokeWidth": 1,
+            "strokeDasharray": "4 4",
+            "textColor": "#60a5fa"
+          },
+          "data": {}
+        },
+        {
+          "id": "node-lane-2",
+          "type": "swimlane-lane",
+          "label": "Warehouse & Logistics Lane",
+          "x": 50,
+          "y": 310,
+          "width": 1020,
+          "height": 240,
+          "parentId": "node-pool-1",
+          "isGroup": true,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.3)",
+            "stroke": "rgba(59, 130, 246, 0.3)",
+            "strokeWidth": 1,
+            "strokeDasharray": "4 4",
+            "textColor": "#60a5fa"
+          },
+          "data": {}
+        },
+        {
+          "id": "node-start-order",
+          "type": "bpmn-event",
+          "label": "Order Placed",
+          "x": 100,
+          "y": 160,
+          "width": 60,
+          "height": 60,
+          "parentId": "node-lane-1",
+          "style": {
+            "fill": "#10b981",
+            "stroke": "#059669",
+            "strokeWidth": 2,
+            "textColor": "#ffffff",
+            "rounded": 9999
+          },
+          "data": {
+            "eventType": "start",
+            "trigger": "message"
+          },
+          "documentation": {
+            "description": "Triggered when webhook receives validated customer checkout from shopping cart.",
+            "tags": [
+              "BPMN-Event",
+              "KafkaEvent"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-task-verify",
+          "type": "bpmn-task",
+          "label": "Verify Payment & Fraud Score",
+          "x": 230,
+          "y": 150,
+          "width": 160,
+          "height": 80,
+          "parentId": "node-lane-1",
+          "style": {
+            "fill": "rgba(30, 58, 138, 0.85)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#f8fafc",
+            "rounded": 8
+          },
+          "data": {
+            "taskType": "service",
+            "duration": "120ms"
+          },
+          "documentation": {
+            "description": "Automated Stripe and SiftScience risk evaluation score < 15.",
+            "tags": [
+              "Stripe",
+              "Security",
+              "Fraud"
+            ],
+            "apiEndpoint": "POST /api/v1/fraud/assess",
+            "status": "approved"
+          },
+          "stickyNotes": [
+            {
+              "id": "sn-1",
+              "text": "SLA requirement: Decision in < 250ms with 99.99% availability.",
+              "color": "yellow",
+              "author": "Sarah Chen",
+              "updatedAt": "2026-10-21"
+            }
+          ]
+        },
+        {
+          "id": "node-gateway-payment",
+          "type": "bpmn-gateway",
+          "label": "Payment Approved?",
+          "x": 450,
+          "y": 160,
+          "width": 60,
+          "height": 60,
+          "parentId": "node-lane-1",
+          "style": {
+            "fill": "#f59e0b",
+            "stroke": "#d97706",
+            "strokeWidth": 2,
+            "textColor": "#ffffff"
+          },
+          "data": {
+            "gatewayType": "exclusive"
+          },
+          "documentation": {
+            "description": "Branches order into sub-process execution or customer decline notification.",
+            "tags": [
+              "Gateway",
+              "Branching"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-subprocess-packing",
+          "type": "bpmn-task",
+          "label": "Sub-Process: Automated Picking & Package Assembly",
+          "x": 580,
+          "y": 380,
+          "width": 220,
+          "height": 90,
+          "parentId": "node-lane-2",
+          "drilldownPageId": "page-order-subprocess",
+          "style": {
+            "fill": "rgba(88, 28, 135, 0.85)",
+            "stroke": "#a855f7",
+            "strokeWidth": 2,
+            "strokeDasharray": "6 3",
+            "textColor": "#faf5ff",
+            "rounded": 10
+          },
+          "data": {
+            "taskType": "subprocess",
+            "marker": "plus"
+          },
+          "documentation": {
+            "description": "Compound sub-process covering AGV warehouse routing, barcode verification, and thermal label generation. Click to drill into child diagram.",
+            "tags": [
+              "SubProcess",
+              "Warehouse",
+              "DrillDown"
+            ],
+            "status": "approved"
+          },
+          "stickyNotes": [
+            {
+              "id": "sn-2",
+              "text": "Double click or click the drill-down icon to open nested sub-process page!",
+              "color": "purple",
+              "author": "Alex Rivera",
+              "updatedAt": "2026-10-22"
+            }
+          ]
+        },
+        {
+          "id": "node-end-order",
+          "type": "bpmn-event",
+          "label": "Order Dispatched to Carrier",
+          "x": 880,
+          "y": 395,
+          "width": 60,
+          "height": 60,
+          "parentId": "node-lane-2",
+          "style": {
+            "fill": "#ef4444",
+            "stroke": "#b91c1c",
+            "strokeWidth": 4,
+            "textColor": "#ffffff",
+            "rounded": 9999
+          },
+          "data": {
+            "eventType": "end"
+          },
+          "documentation": {
+            "description": "Carrier barcode scanned, EDI 214 dispatch notice transmitted to freight partner.",
+            "tags": [
+              "BPMN-End",
+              "FedEx",
+              "UPS"
+            ],
+            "status": "approved"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-1",
+          "sourceNodeId": "node-start-order",
+          "targetNodeId": "node-task-verify",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Payload Validated"
+        },
+        {
+          "id": "edge-2",
+          "sourceNodeId": "node-task-verify",
+          "targetNodeId": "node-gateway-payment",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "edge-3",
+          "sourceNodeId": "node-gateway-payment",
+          "targetNodeId": "node-subprocess-packing",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "[Approved] Dispatch to WMS"
+        },
+        {
+          "id": "edge-4",
+          "sourceNodeId": "node-subprocess-packing",
+          "targetNodeId": "node-end-order",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Manifest Ready"
+        }
+      ]
+    },
+    {
+      "id": "page-order-subprocess",
+      "title": "Order Picking & Assembly (Sub-Process)",
+      "diagramType": "bpmn",
+      "parentId": "page-bpmn-fulfillment",
+      "description": "Detailed nested sub-process for AGV robotics, weight verification, and cartonization.",
+      "viewport": {
+        "x": 80,
+        "y": 80,
+        "zoom": 1
+      },
+      "nodes": [
+        {
+          "id": "node-sub-start",
+          "type": "bpmn-event",
+          "label": "Sub-Process Input",
+          "x": 100,
+          "y": 200,
+          "width": 50,
+          "height": 50,
+          "style": {
+            "fill": "#10b981",
+            "stroke": "#059669",
+            "strokeWidth": 2,
+            "textColor": "#fff",
+            "rounded": 999
+          },
+          "data": {
+            "eventType": "start"
+          }
+        },
+        {
+          "id": "node-sub-task1",
+          "type": "bpmn-task",
+          "label": "1. Bin Allocation & AGV Dispatch",
+          "x": 220,
+          "y": 185,
+          "width": 170,
+          "height": 80,
+          "style": {
+            "fill": "rgba(30, 58, 138, 0.85)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#fff",
+            "rounded": 8
+          },
+          "data": {
+            "taskType": "service"
+          },
+          "documentation": {
+            "description": "Warehouse Robotics fleet management algorithm calculates optimal bin traversal path.",
+            "tags": [
+              "AGV",
+              "Robotics"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-sub-task2",
+          "type": "bpmn-task",
+          "label": "2. Precision Scale Check & RFID",
+          "x": 460,
+          "y": 185,
+          "width": 170,
+          "height": 80,
+          "style": {
+            "fill": "rgba(30, 58, 138, 0.85)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#fff",
+            "rounded": 8
+          },
+          "data": {
+            "taskType": "manual"
+          },
+          "documentation": {
+            "description": "Weight discrepancy threshold <= 0.05 oz ensures no missing or extra items.",
+            "tags": [
+              "QualityAssurance"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-sub-task3",
+          "type": "bpmn-task",
+          "label": "3. Carrier Label Print & Carton Seal",
+          "x": 700,
+          "y": 185,
+          "width": 170,
+          "height": 80,
+          "style": {
+            "fill": "rgba(30, 58, 138, 0.85)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#fff",
+            "rounded": 8
+          },
+          "data": {
+            "taskType": "service"
+          }
+        },
+        {
+          "id": "node-sub-end",
+          "type": "bpmn-event",
+          "label": "Return to Master Workflow",
+          "x": 930,
+          "y": 200,
+          "width": 50,
+          "height": 50,
+          "style": {
+            "fill": "#ef4444",
+            "stroke": "#b91c1c",
+            "strokeWidth": 3,
+            "textColor": "#fff",
+            "rounded": 999
+          },
+          "data": {
+            "eventType": "end"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "sub-e1",
+          "sourceNodeId": "node-sub-start",
+          "targetNodeId": "node-sub-task1",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sub-e2",
+          "sourceNodeId": "node-sub-task1",
+          "targetNodeId": "node-sub-task2",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sub-e3",
+          "sourceNodeId": "node-sub-task2",
+          "targetNodeId": "node-sub-task3",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sub-e4",
+          "sourceNodeId": "node-sub-task3",
+          "targetNodeId": "node-sub-end",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        }
+      ]
+    },
+    {
+      "id": "page-erd-database",
+      "title": "Relational Database Schema (ERD)",
+      "diagramType": "erd",
+      "description": "Entity Relationship Diagram with crow-foot notation, primary keys, foreign keys, and indexes.",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.9
+      },
+      "nodes": [
+        {
+          "id": "node-erd-customer",
+          "type": "erd-entity",
+          "label": "customers",
+          "x": 80,
+          "y": 100,
+          "width": 240,
+          "height": 220,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.95)",
+            "stroke": "#0284c7",
+            "strokeWidth": 2,
+            "textColor": "#38bdf8",
+            "rounded": 6
+          },
+          "data": {
+            "tableName": "customers",
+            "fields": [
+              {
+                "name": "id",
+                "type": "UUID",
+                "isPk": true,
+                "isFk": false
+              },
+              {
+                "name": "email",
+                "type": "VARCHAR(255)",
+                "isPk": false,
+                "isFk": false,
+                "unique": true
+              },
+              {
+                "name": "full_name",
+                "type": "VARCHAR(120)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "tier",
+                "type": "ENUM(gold, silver)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "created_at",
+                "type": "TIMESTAMPTZ",
+                "isPk": false,
+                "isFk": false
+              }
+            ]
+          },
+          "documentation": {
+            "description": "Stores unified customer account records and loyalty tier status.",
+            "tags": [
+              "PostgreSQL",
+              "GDPR",
+              "PII"
+            ],
+            "status": "approved"
+          },
+          "stickyNotes": [
+            {
+              "id": "sn-erd-1",
+              "text": "All emails must be lowercase normalized before persistence.",
+              "color": "blue",
+              "author": "David Kim (DBA)",
+              "updatedAt": "2026-10-21"
+            }
+          ]
+        },
+        {
+          "id": "node-erd-order",
+          "type": "erd-entity",
+          "label": "orders",
+          "x": 420,
+          "y": 100,
+          "width": 250,
+          "height": 240,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.95)",
+            "stroke": "#10b981",
+            "strokeWidth": 2,
+            "textColor": "#34d399",
+            "rounded": 6
+          },
+          "data": {
+            "tableName": "orders",
+            "fields": [
+              {
+                "name": "id",
+                "type": "UUID",
+                "isPk": true,
+                "isFk": false
+              },
+              {
+                "name": "customer_id",
+                "type": "UUID",
+                "isPk": false,
+                "isFk": true,
+                "ref": "customers.id"
+              },
+              {
+                "name": "status",
+                "type": "VARCHAR(50)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "total_cents",
+                "type": "BIGINT",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "currency",
+                "type": "CHAR(3)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "placed_at",
+                "type": "TIMESTAMPTZ",
+                "isPk": false,
+                "isFk": false
+              }
+            ]
+          },
+          "documentation": {
+            "description": "High-volume transaction ledger. Partitioned monthly by placed_at.",
+            "tags": [
+              "OLTP",
+              "Partitioned"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-erd-item",
+          "type": "erd-entity",
+          "label": "order_items",
+          "x": 770,
+          "y": 100,
+          "width": 240,
+          "height": 230,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.95)",
+            "stroke": "#f59e0b",
+            "strokeWidth": 2,
+            "textColor": "#fbbf24",
+            "rounded": 6
+          },
+          "data": {
+            "tableName": "order_items",
+            "fields": [
+              {
+                "name": "id",
+                "type": "UUID",
+                "isPk": true,
+                "isFk": false
+              },
+              {
+                "name": "order_id",
+                "type": "UUID",
+                "isPk": false,
+                "isFk": true,
+                "ref": "orders.id"
+              },
+              {
+                "name": "product_id",
+                "type": "UUID",
+                "isPk": false,
+                "isFk": true,
+                "ref": "products.id"
+              },
+              {
+                "name": "quantity",
+                "type": "INT",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "unit_price_cents",
+                "type": "INT",
+                "isPk": false,
+                "isFk": false
+              }
+            ]
+          },
+          "documentation": {
+            "description": "Line item records with point-in-time price captures.",
+            "tags": [
+              "Finance",
+              "LineItems"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-erd-payment",
+          "type": "erd-entity",
+          "label": "payments",
+          "x": 420,
+          "y": 430,
+          "width": 250,
+          "height": 200,
+          "style": {
+            "fill": "rgba(15, 23, 42, 0.95)",
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2,
+            "textColor": "#c084fc",
+            "rounded": 6
+          },
+          "data": {
+            "tableName": "payments",
+            "fields": [
+              {
+                "name": "id",
+                "type": "UUID",
+                "isPk": true,
+                "isFk": false
+              },
+              {
+                "name": "order_id",
+                "type": "UUID",
+                "isPk": false,
+                "isFk": true,
+                "ref": "orders.id"
+              },
+              {
+                "name": "gateway_ref",
+                "type": "VARCHAR(100)",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "amount_cents",
+                "type": "BIGINT",
+                "isPk": false,
+                "isFk": false
+              },
+              {
+                "name": "status",
+                "type": "VARCHAR(30)",
+                "isPk": false,
+                "isFk": false
+              }
+            ]
+          },
+          "documentation": {
+            "description": "Audit log of gateway authorization and capture events.",
+            "tags": [
+              "PCI-DSS",
+              "Audit"
+            ],
+            "status": "approved"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "erd-e1",
+          "sourceNodeId": "node-erd-customer",
+          "targetNodeId": "node-erd-order",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "crow-foot-many",
+          "label": "1 to N",
+          "cardinality": {
+            "source": "1",
+            "target": "0..*"
+          },
+          "strokeWidth": 2
+        },
+        {
+          "id": "erd-e2",
+          "sourceNodeId": "node-erd-order",
+          "targetNodeId": "node-erd-item",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "crow-foot-many",
+          "label": "1 to N",
+          "cardinality": {
+            "source": "1",
+            "target": "1..*"
+          },
+          "strokeWidth": 2
+        },
+        {
+          "id": "erd-e3",
+          "sourceNodeId": "node-erd-order",
+          "targetNodeId": "node-erd-payment",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "crow-foot-one",
+          "label": "1 to 1..N",
+          "cardinality": {
+            "source": "1",
+            "target": "1..*"
+          },
+          "strokeWidth": 2
+        }
+      ]
+    },
+    {
+      "id": "page-uml-model",
+      "title": "UML Class Diagram & Interfaces",
+      "diagramType": "uml",
+      "description": "Unified Modeling Language class structures, methods, visibility, and inheritance.",
+      "viewport": {
+        "x": 60,
+        "y": 60,
+        "zoom": 0.95
+      },
+      "nodes": [
+        {
+          "id": "node-uml-interface",
+          "type": "uml-class",
+          "label": "«interface» IPaymentProvider",
+          "x": 100,
+          "y": 80,
+          "width": 260,
+          "height": 180,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#06b6d4",
+            "strokeWidth": 2,
+            "textColor": "#67e8f9",
+            "rounded": 6
+          },
+          "data": {
+            "stereotype": "interface",
+            "attributes": [
+              "+ providerName: string",
+              "+ isSandboxed: boolean"
+            ],
+            "methods": [
+              "+ authorize(amount: number): AuthResult",
+              "+ capture(authId: string): CaptureResult",
+              "+ refund(chargeId: string): RefundResult"
+            ]
+          },
+          "documentation": {
+            "description": "Decoupled contract for multi-PSP payment routing.",
+            "tags": [
+              "UML",
+              "DesignPattern",
+              "Adapter"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-uml-stripe",
+          "type": "uml-class",
+          "label": "StripePaymentAdapter",
+          "x": 100,
+          "y": 330,
+          "width": 260,
+          "height": 200,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#93c5fd",
+            "rounded": 6
+          },
+          "data": {
+            "stereotype": "class",
+            "attributes": [
+              "- apiKey: SecureString",
+              "- webhookSecret: string",
+              "+ apiVersion: string"
+            ],
+            "methods": [
+              "+ authorize(amount: number): AuthResult",
+              "+ capture(authId: string): CaptureResult",
+              "+ refund(chargeId: string): RefundResult",
+              "- handleWebhookEvent(event: any): void"
+            ]
+          }
+        },
+        {
+          "id": "node-uml-order-svc",
+          "type": "uml-class",
+          "label": "OrderOrchestrator",
+          "x": 480,
+          "y": 160,
+          "width": 280,
+          "height": 220,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#10b981",
+            "strokeWidth": 2,
+            "textColor": "#6ee7b7",
+            "rounded": 6
+          },
+          "data": {
+            "stereotype": "service",
+            "attributes": [
+              "- paymentGateway: IPaymentProvider",
+              "- inventoryClient: IInventoryClient",
+              "- orderRepo: IOrderRepository"
+            ],
+            "methods": [
+              "+ createOrder(cmd: CreateOrderCmd): OrderId",
+              "+ confirmPayment(orderId: OrderId): boolean",
+              "+ cancelOrder(orderId: OrderId, reason: string): void",
+              "# notifySubscribers(event: OrderEvent): void"
+            ]
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "uml-e1",
+          "sourceNodeId": "node-uml-stripe",
+          "targetNodeId": "node-uml-interface",
+          "sourceAnchor": "top",
+          "targetAnchor": "bottom",
+          "type": "orthogonal",
+          "lineStyle": "dashed",
+          "markerStart": "none",
+          "markerEnd": "diamond",
+          "label": "«implements»"
+        },
+        {
+          "id": "uml-e2",
+          "sourceNodeId": "node-uml-order-svc",
+          "targetNodeId": "node-uml-interface",
+          "sourceAnchor": "left",
+          "targetAnchor": "right",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "«uses»"
+        }
+      ]
+    },
+    {
+      "id": "page-dfd-flow",
+      "title": "DFD & Yourdon Structured Data Flow",
+      "diagramType": "dfd",
+      "description": "Data Flow Diagram Level 1 with Process bubbles, Data Stores, and External Entities.",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.95
+      },
+      "nodes": [
+        {
+          "id": "node-dfd-entity-1",
+          "type": "dfd-entity",
+          "label": "Online Shopper",
+          "x": 80,
+          "y": 180,
+          "width": 140,
+          "height": 90,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.9)",
+            "stroke": "#94a3b8",
+            "strokeWidth": 2,
+            "textColor": "#f8fafc",
+            "rounded": 4
+          },
+          "data": {
+            "entityType": "external"
+          }
+        },
+        {
+          "id": "node-dfd-proc-1",
+          "type": "dfd-process",
+          "label": "1.0 Validate Cart & Tax Calculation",
+          "x": 320,
+          "y": 160,
+          "width": 180,
+          "height": 120,
+          "style": {
+            "fill": "rgba(3, 105, 161, 0.85)",
+            "stroke": "#38bdf8",
+            "strokeWidth": 2,
+            "textColor": "#f0f9ff",
+            "rounded": 999
+          },
+          "data": {
+            "processNumber": "1.0"
+          }
+        },
+        {
+          "id": "node-dfd-store-1",
+          "type": "dfd-store",
+          "label": "D1: Tax Jurisdiction Tables",
+          "x": 330,
+          "y": 370,
+          "width": 200,
+          "height": 60,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#f59e0b",
+            "strokeWidth": 2,
+            "textColor": "#fbbf24",
+            "rounded": 2
+          },
+          "data": {
+            "storeId": "D1"
+          }
+        },
+        {
+          "id": "node-dfd-proc-2",
+          "type": "dfd-process",
+          "label": "2.0 Execute Settlement",
+          "x": 620,
+          "y": 160,
+          "width": 170,
+          "height": 120,
+          "style": {
+            "fill": "rgba(4, 120, 87, 0.85)",
+            "stroke": "#34d399",
+            "strokeWidth": 2,
+            "textColor": "#ecfdf5",
+            "rounded": 999
+          },
+          "data": {
+            "processNumber": "2.0"
+          }
+        },
+        {
+          "id": "node-dfd-entity-2",
+          "type": "dfd-entity",
+          "label": "Banking Clearinghouse",
+          "x": 900,
+          "y": 180,
+          "width": 150,
+          "height": 90,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.9)",
+            "stroke": "#94a3b8",
+            "strokeWidth": 2,
+            "textColor": "#f8fafc",
+            "rounded": 4
+          },
+          "data": {
+            "entityType": "external"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "dfd-e1",
+          "sourceNodeId": "node-dfd-entity-1",
+          "targetNodeId": "node-dfd-proc-1",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Item SKUs & Address"
+        },
+        {
+          "id": "dfd-e2",
+          "sourceNodeId": "node-dfd-store-1",
+          "targetNodeId": "node-dfd-proc-1",
+          "sourceAnchor": "top",
+          "targetAnchor": "bottom",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Rate Rules"
+        },
+        {
+          "id": "dfd-e3",
+          "sourceNodeId": "node-dfd-proc-1",
+          "targetNodeId": "node-dfd-proc-2",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Priced Order"
+        },
+        {
+          "id": "dfd-e4",
+          "sourceNodeId": "node-dfd-proc-2",
+          "targetNodeId": "node-dfd-entity-2",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "ISO 20022 Batch"
+        }
+      ]
+    },
+    {
+      "id": "page-idef0-model",
+      "title": "IDEF0 Function Model (ICOM)",
+      "diagramType": "idef0",
+      "description": "Strict IDEF0 standard: Inputs (left), Controls (top), Outputs (right), Mechanisms (bottom).",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.95
+      },
+      "nodes": [
+        {
+          "id": "node-idef-box",
+          "type": "idef0-box",
+          "label": "A0: Coordinate Global Distribution",
+          "x": 360,
+          "y": 200,
+          "width": 280,
+          "height": 180,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 3,
+            "textColor": "#60a5fa",
+            "rounded": 4
+          },
+          "data": {
+            "boxNumber": "A0",
+            "activityName": "Coordinate Global Distribution"
+          },
+          "documentation": {
+            "description": "IDEF0 Top-Level Context Diagram representing overall warehouse & freight logistics.",
+            "tags": [
+              "IDEF0",
+              "ICOM",
+              "SystemsEngineering"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-idef-input",
+          "type": "flow-process",
+          "label": "INPUT:\n• Customer Purchase Orders\n• Inbound Freight Cargo",
+          "x": 60,
+          "y": 230,
+          "width": 190,
+          "height": 80,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.8)",
+            "stroke": "#38bdf8",
+            "strokeWidth": 1.5,
+            "textColor": "#e2e8f0",
+            "rounded": 6
+          },
+          "data": {
+            "icomType": "input"
+          }
+        },
+        {
+          "id": "node-idef-control",
+          "type": "flow-process",
+          "label": "CONTROL:\n• DOT Safety Mandates\n• ISO 9001 Quality Standard\n• Customs Regulations",
+          "x": 380,
+          "y": 40,
+          "width": 240,
+          "height": 90,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.8)",
+            "stroke": "#fbbf24",
+            "strokeWidth": 1.5,
+            "textColor": "#fef3c7",
+            "rounded": 6
+          },
+          "data": {
+            "icomType": "control"
+          }
+        },
+        {
+          "id": "node-idef-output",
+          "type": "flow-process",
+          "label": "OUTPUT:\n• Verified Freight Deliveries\n• Regulatory Customs Filings\n• Real-Time Tracking Telemetry",
+          "x": 740,
+          "y": 220,
+          "width": 220,
+          "height": 100,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.8)",
+            "stroke": "#34d399",
+            "strokeWidth": 1.5,
+            "textColor": "#d1fae5",
+            "rounded": 6
+          },
+          "data": {
+            "icomType": "output"
+          }
+        },
+        {
+          "id": "node-idef-mech",
+          "type": "flow-process",
+          "label": "MECHANISM:\n• Enterprise ERP (SAP S/4HANA)\n• Automated Guided Vehicles (AGV)\n• Logistics Fleet Personnel",
+          "x": 370,
+          "y": 450,
+          "width": 260,
+          "height": 90,
+          "style": {
+            "fill": "rgba(51, 65, 85, 0.8)",
+            "stroke": "#c084fc",
+            "strokeWidth": 1.5,
+            "textColor": "#f3e8ff",
+            "rounded": 6
+          },
+          "data": {
+            "icomType": "mechanism"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "idef-e1",
+          "sourceNodeId": "node-idef-input",
+          "targetNodeId": "node-idef-box",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Inputs (ICOM-I)"
+        },
+        {
+          "id": "idef-e2",
+          "sourceNodeId": "node-idef-control",
+          "targetNodeId": "node-idef-box",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Controls (ICOM-C)"
+        },
+        {
+          "id": "idef-e3",
+          "sourceNodeId": "node-idef-box",
+          "targetNodeId": "node-idef-output",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Outputs (ICOM-O)"
+        },
+        {
+          "id": "idef-e4",
+          "sourceNodeId": "node-idef-mech",
+          "targetNodeId": "node-idef-box",
+          "sourceAnchor": "top",
+          "targetAnchor": "bottom",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Mechanisms (ICOM-M)"
+        }
+      ]
+    },
+    {
+      "id": "page-ceqa-process",
+      "title": "CEQA Environmental Review Flow",
+      "diagramType": "ceqa",
+      "description": "California Environmental Quality Act workflow: Preliminary Review, Initial Study, MND, EIR, Public Review & NOD.",
+      "viewport": {
+        "x": 40,
+        "y": 40,
+        "zoom": 0.9
+      },
+      "nodes": [
+        {
+          "id": "node-ceqa-phase1",
+          "type": "ceqa-phase",
+          "label": "Phase 1: Preliminary Review & Exemptions",
+          "x": 60,
+          "y": 120,
+          "width": 220,
+          "height": 110,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#93c5fd",
+            "rounded": 8
+          },
+          "data": {
+            "phaseNumber": "Phase 1",
+            "deadline": "30 Days from Application",
+            "statute": "CEQA Guidelines § 15060",
+            "deliverable": "Notice of Exemption (NOE) or proceed to Initial Study"
+          },
+          "documentation": {
+            "description": "Determine if activity qualifies as a project under CEQA. Screen for statutory or categorical exemptions (Classes 1-33).",
+            "tags": [
+              "CEQA",
+              "CaliforniaLaw",
+              "Exemption"
+            ],
+            "status": "approved"
+          },
+          "stickyNotes": [
+            {
+              "id": "sn-ceqa-1",
+              "text": "If Categorical Exemption applies, file NOE with County Clerk (starts 35-day statute of limitations).",
+              "color": "green",
+              "author": "Environmental Counsel",
+              "updatedAt": "2026-10-22"
+            }
+          ]
+        },
+        {
+          "id": "node-ceqa-phase2",
+          "type": "ceqa-phase",
+          "label": "Phase 2: Initial Study (IS) Preparation",
+          "x": 340,
+          "y": 120,
+          "width": 220,
+          "height": 110,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#f59e0b",
+            "strokeWidth": 2,
+            "textColor": "#fbbf24",
+            "rounded": 8
+          },
+          "data": {
+            "phaseNumber": "Phase 2",
+            "deadline": "30 Days from Lead Agency review",
+            "statute": "CEQA Guidelines § 15063",
+            "deliverable": "Initial Study Checklist (Appendix G)"
+          },
+          "documentation": {
+            "description": "Evaluate environmental impact across 20 resource areas (Aesthetics, Air Quality, Biology, Traffic, Water).",
+            "tags": [
+              "InitialStudy",
+              "AppendixG"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-ceqa-phase3",
+          "type": "ceqa-review",
+          "label": "Phase 3: Determination Path (ND / MND vs EIR)",
+          "x": 620,
+          "y": 110,
+          "width": 240,
+          "height": 130,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#ec4899",
+            "strokeWidth": 2,
+            "textColor": "#f472b6",
+            "rounded": 8
+          },
+          "data": {
+            "phaseNumber": "Phase 3",
+            "pathA": "Mitigated Neg Dec (MND) - Impacts mitigated below significance",
+            "pathB": "Environmental Impact Report (EIR) - Substantial adverse impact",
+            "statute": "CEQA Guidelines § 15070 / 15080"
+          }
+        },
+        {
+          "id": "node-ceqa-phase4",
+          "type": "ceqa-eir",
+          "label": "Phase 4: Draft EIR & 45-Day Public Review",
+          "x": 620,
+          "y": 330,
+          "width": 240,
+          "height": 120,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#a855f7",
+            "strokeWidth": 2,
+            "textColor": "#d8b4fe",
+            "rounded": 8
+          },
+          "data": {
+            "phaseNumber": "Phase 4",
+            "deadline": "45-Day Public Comment Period",
+            "statute": "State Clearinghouse (SCH) filing",
+            "deliverable": "Notice of Completion (NOC) & Draft EIR Document"
+          }
+        },
+        {
+          "id": "node-ceqa-phase5",
+          "type": "ceqa-eir",
+          "label": "Phase 5: Final EIR Certification & Notice of Determination",
+          "x": 220,
+          "y": 340,
+          "width": 260,
+          "height": 110,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.9)",
+            "stroke": "#10b981",
+            "strokeWidth": 2.5,
+            "textColor": "#6ee7b7",
+            "rounded": 8
+          },
+          "data": {
+            "phaseNumber": "Phase 5",
+            "deadline": "File NOD within 5 working days",
+            "statute": "CEQA Guidelines § 15094",
+            "deliverable": "Signed NOD + Findings & MMRP (Mitigation Plan)"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "ceqa-e1",
+          "sourceNodeId": "node-ceqa-phase1",
+          "targetNodeId": "node-ceqa-phase2",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "No Exemption -> Conduct IS"
+        },
+        {
+          "id": "ceqa-e2",
+          "sourceNodeId": "node-ceqa-phase2",
+          "targetNodeId": "node-ceqa-phase3",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Evaluate Appendix G"
+        },
+        {
+          "id": "ceqa-e3",
+          "sourceNodeId": "node-ceqa-phase3",
+          "targetNodeId": "node-ceqa-phase4",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Significant Impact -> EIR Track"
+        },
+        {
+          "id": "ceqa-e4",
+          "sourceNodeId": "node-ceqa-phase4",
+          "targetNodeId": "node-ceqa-phase5",
+          "sourceAnchor": "left",
+          "targetAnchor": "right",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Respond to Comments & Approve"
+        }
+      ]
+    },
+    {
+      "id": "page-sipoc-matrix",
+      "title": "SIPOC High-Level Process Value Stream",
+      "diagramType": "sipoc",
+      "description": "Suppliers, Inputs, Process, Outputs, Customers end-to-end organizational alignment.",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 0.9
+      },
+      "nodes": [
+        {
+          "id": "sipoc-col-s",
+          "type": "sipoc-card",
+          "label": "SUPPLIERS (S)",
+          "x": 60,
+          "y": 120,
+          "width": 170,
+          "height": 280,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.85)",
+            "stroke": "#38bdf8",
+            "strokeWidth": 2,
+            "textColor": "#7dd3fc",
+            "rounded": 8
+          },
+          "data": {
+            "items": [
+              "Raw Material Vendors",
+              "Packaging Providers",
+              "Payment Gateway (Stripe)",
+              "Freight Haulers"
+            ]
+          }
+        },
+        {
+          "id": "sipoc-col-i",
+          "type": "sipoc-card",
+          "label": "INPUTS (I)",
+          "x": 260,
+          "y": 120,
+          "width": 170,
+          "height": 280,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.85)",
+            "stroke": "#818cf8",
+            "strokeWidth": 2,
+            "textColor": "#a5b4fc",
+            "rounded": 8
+          },
+          "data": {
+            "items": [
+              "Stock Inventory",
+              "Shipping Addresses",
+              "Card Authorization Token",
+              "Pallet Specifications"
+            ]
+          }
+        },
+        {
+          "id": "sipoc-col-p",
+          "type": "sipoc-card",
+          "label": "PROCESS (P)",
+          "x": 460,
+          "y": 120,
+          "width": 180,
+          "height": 280,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.85)",
+            "stroke": "#fbbf24",
+            "strokeWidth": 2,
+            "textColor": "#fef08a",
+            "rounded": 8
+          },
+          "data": {
+            "items": [
+              "1. Order Capture",
+              "2. AGV Picking",
+              "3. Weigh & Cartonize",
+              "4. Manifest & Dispatch"
+            ]
+          }
+        },
+        {
+          "id": "sipoc-col-o",
+          "type": "sipoc-card",
+          "label": "OUTPUTS (O)",
+          "x": 670,
+          "y": 120,
+          "width": 170,
+          "height": 280,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.85)",
+            "stroke": "#34d399",
+            "strokeWidth": 2,
+            "textColor": "#86efac",
+            "rounded": 8
+          },
+          "data": {
+            "items": [
+              "Sealed Shipping Parcel",
+              "Electronic Invoice (PDF)",
+              "Real-time Tracking Number",
+              "Warehouse Manifest"
+            ]
+          }
+        },
+        {
+          "id": "sipoc-col-c",
+          "type": "sipoc-card",
+          "label": "CUSTOMERS (C)",
+          "x": 870,
+          "y": 120,
+          "width": 170,
+          "height": 280,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.85)",
+            "stroke": "#f472b6",
+            "strokeWidth": 2,
+            "textColor": "#fbcfe8",
+            "rounded": 8
+          },
+          "data": {
+            "items": [
+              "Consumer Recipient",
+              "Regional Retail Distributor",
+              "Corporate B2B Account",
+              "Auditing Agency"
+            ]
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "sip-e1",
+          "sourceNodeId": "sipoc-col-s",
+          "targetNodeId": "sipoc-col-i",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sip-e2",
+          "sourceNodeId": "sipoc-col-i",
+          "targetNodeId": "sipoc-col-p",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sip-e3",
+          "sourceNodeId": "sipoc-col-p",
+          "targetNodeId": "sipoc-col-o",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "sip-e4",
+          "sourceNodeId": "sipoc-col-o",
+          "targetNodeId": "sipoc-col-c",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        }
+      ]
+    },
+    {
+      "id": "page-pert-gantt",
+      "title": "PERT Network & Critical Path (Gantt)",
+      "diagramType": "pert",
+      "description": "Program Evaluation Review Technique (PERT) with ES/EF/LS/LF/Slack calculation and Critical Path.",
+      "viewport": {
+        "x": 40,
+        "y": 40,
+        "zoom": 0.9
+      },
+      "nodes": [
+        {
+          "id": "node-pert-a",
+          "type": "pert-activity",
+          "label": "Task A: Requirements & Architecture",
+          "x": 60,
+          "y": 200,
+          "width": 220,
+          "height": 120,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.95)",
+            "stroke": "#ef4444",
+            "strokeWidth": 3,
+            "textColor": "#fca5a5",
+            "rounded": 6
+          },
+          "data": {
+            "taskCode": "A",
+            "duration": 10,
+            "es": 0,
+            "ef": 10,
+            "ls": 0,
+            "lf": 10,
+            "slack": 0,
+            "isCritical": true
+          },
+          "documentation": {
+            "description": "Critical path kickoff: System specification and database schemas.",
+            "tags": [
+              "CriticalPath",
+              "PERT"
+            ],
+            "status": "approved"
+          }
+        },
+        {
+          "id": "node-pert-b",
+          "type": "pert-activity",
+          "label": "Task B: Database Migration & Indexing",
+          "x": 350,
+          "y": 100,
+          "width": 220,
+          "height": 120,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.95)",
+            "stroke": "#ef4444",
+            "strokeWidth": 3,
+            "textColor": "#fca5a5",
+            "rounded": 6
+          },
+          "data": {
+            "taskCode": "B",
+            "duration": 14,
+            "es": 10,
+            "ef": 24,
+            "ls": 10,
+            "lf": 24,
+            "slack": 0,
+            "isCritical": true
+          }
+        },
+        {
+          "id": "node-pert-c",
+          "type": "pert-activity",
+          "label": "Task C: Front-End UI Mockups & Style",
+          "x": 350,
+          "y": 320,
+          "width": 220,
+          "height": 120,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.95)",
+            "stroke": "#3b82f6",
+            "strokeWidth": 1.5,
+            "textColor": "#93c5fd",
+            "rounded": 6
+          },
+          "data": {
+            "taskCode": "C",
+            "duration": 8,
+            "es": 10,
+            "ef": 18,
+            "ls": 16,
+            "lf": 24,
+            "slack": 6,
+            "isCritical": false
+          }
+        },
+        {
+          "id": "node-pert-d",
+          "type": "pert-activity",
+          "label": "Task D: Integration Testing & Load QA",
+          "x": 650,
+          "y": 200,
+          "width": 220,
+          "height": 120,
+          "style": {
+            "fill": "rgba(30, 41, 59, 0.95)",
+            "stroke": "#ef4444",
+            "strokeWidth": 3,
+            "textColor": "#fca5a5",
+            "rounded": 6
+          },
+          "data": {
+            "taskCode": "D",
+            "duration": 12,
+            "es": 24,
+            "ef": 36,
+            "ls": 24,
+            "lf": 36,
+            "slack": 0,
+            "isCritical": true
+          }
+        },
+        {
+          "id": "node-gantt-summary",
+          "type": "gantt-task",
+          "label": "Gantt Milestone: Production Go-Live",
+          "x": 930,
+          "y": 215,
+          "width": 210,
+          "height": 90,
+          "style": {
+            "fill": "rgba(16, 185, 129, 0.2)",
+            "stroke": "#10b981",
+            "strokeWidth": 2,
+            "textColor": "#6ee7b7",
+            "rounded": 8
+          },
+          "data": {
+            "progress": 100,
+            "startDate": "2026-11-01",
+            "endDate": "2026-11-01",
+            "assignee": "DevOps / Release Team",
+            "milestone": true
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "pert-e1",
+          "sourceNodeId": "node-pert-a",
+          "targetNodeId": "node-pert-b",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "color": "#ef4444",
+          "strokeWidth": 3,
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Critical [14d]"
+        },
+        {
+          "id": "pert-e2",
+          "sourceNodeId": "node-pert-a",
+          "targetNodeId": "node-pert-c",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "dashed",
+          "color": "#60a5fa",
+          "strokeWidth": 1.5,
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Slack = 6d"
+        },
+        {
+          "id": "pert-e3",
+          "sourceNodeId": "node-pert-b",
+          "targetNodeId": "node-pert-d",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "solid",
+          "color": "#ef4444",
+          "strokeWidth": 3,
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Critical [12d]"
+        },
+        {
+          "id": "pert-e4",
+          "sourceNodeId": "node-pert-c",
+          "targetNodeId": "node-pert-d",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "orthogonal",
+          "lineStyle": "dashed",
+          "color": "#60a5fa",
+          "strokeWidth": 1.5,
+          "markerStart": "none",
+          "markerEnd": "arrow"
+        },
+        {
+          "id": "pert-e5",
+          "sourceNodeId": "node-pert-d",
+          "targetNodeId": "node-gantt-summary",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "straight",
+          "lineStyle": "solid",
+          "color": "#10b981",
+          "strokeWidth": 2,
+          "markerStart": "none",
+          "markerEnd": "arrow",
+          "label": "Deploy Milestone"
+        }
+      ]
+    }
+  ]
+}
