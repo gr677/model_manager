@@ -29,7 +29,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
-import { NodeAnchor, NODE_ANCHOR_DEFINITIONS } from '../../utils/diagramAnchors';
+import { NodeAnchor, NODE_ANCHOR_DEFINITIONS, getNodeAnchorRelativeCoords } from '../../utils/diagramAnchors';
 
 interface NodeRendererProps {
   node: DiagramNode;
@@ -96,13 +96,18 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
     return (
       <>
         {NODE_ANCHOR_DEFINITIONS.map(def => {
+          const relCoords = getNodeAnchorRelativeCoords(node, def.id);
           return (
             <div
               key={def.id}
               data-anchor-id={def.id}
               data-node-id={node.id}
-              style={def.positionStyle}
-              className="absolute w-7 h-7 flex items-center justify-center -translate-x-1/2 -translate-y-1/2 z-30 cursor-crosshair pointer-events-auto group/anchor"
+              style={{
+                left: `${relCoords.x}px`,
+                top: `${relCoords.y}px`,
+                transform: 'translate(-50%, -50%)',
+              }}
+              className="absolute w-7 h-7 flex items-center justify-center z-30 cursor-crosshair pointer-events-auto group/anchor"
               onMouseDown={e => {
                 e.stopPropagation();
                 onStartConnection?.(node.id, def.id, e);
