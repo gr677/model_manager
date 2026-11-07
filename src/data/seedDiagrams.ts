@@ -245,7 +245,7 @@ export const initialDiagramDocument: DiagramDocument = {
           },
           data: { taskType: 'service', duration: '120ms' },
           documentation: {
-            description: 'Automated Stripe and SiftScience risk evaluation score < 15.',
+            description: 'Automated Stripe and SiftScience risk evaluation score < 15.\n@text todo: wash the car\n@number share: 345\n@date due: 2027-10-25',
             tags: ['Stripe', 'Security', 'Fraud'],
             apiEndpoint: 'POST /api/v1/fraud/assess',
             status: 'approved',
@@ -304,7 +304,7 @@ export const initialDiagramDocument: DiagramDocument = {
           },
           data: { taskType: 'subprocess', marker: 'plus' },
           documentation: {
-            description: 'Compound sub-process covering AGV warehouse routing, barcode verification, and thermal label generation. Click to drill into child diagram.',
+            description: 'Compound sub-process covering AGV warehouse routing, barcode verification, and thermal label generation. Click to drill into child diagram.\n@text todo: upgrade firmware\n@number share: 580\n@date due: 2026-11-18',
             tags: ['SubProcess', 'Warehouse', 'DrillDown'],
             status: 'approved',
           },
@@ -337,7 +337,7 @@ export const initialDiagramDocument: DiagramDocument = {
           },
           data: { eventType: 'end' },
           documentation: {
-            description: 'Carrier barcode scanned, EDI 214 dispatch notice transmitted to freight partner.',
+            description: 'Carrier barcode scanned, EDI 214 dispatch notice transmitted to freight partner.\n@text todo: inspect packing tape seal\n@number share: 120\n@date due: 2028-03-30',
             tags: ['BPMN-End', 'FedEx', 'UPS'],
             status: 'approved',
           },
@@ -425,7 +425,7 @@ export const initialDiagramDocument: DiagramDocument = {
           style: { fill: 'rgba(30, 58, 138, 0.85)', stroke: '#3b82f6', strokeWidth: 2, textColor: '#fff', rounded: 8 },
           data: { taskType: 'service' },
           documentation: {
-            description: 'Warehouse Robotics fleet management algorithm calculates optimal bin traversal path.',
+            description: 'Warehouse Robotics fleet management algorithm calculates optimal bin traversal path.\n@text todo: recalibrate optical sensors\n@number share: 450\n@date due: 2026-08-14',
             tags: ['AGV', 'Robotics'],
             status: 'approved',
           },
@@ -441,7 +441,7 @@ export const initialDiagramDocument: DiagramDocument = {
           style: { fill: 'rgba(30, 58, 138, 0.85)', stroke: '#3b82f6', strokeWidth: 2, textColor: '#fff', rounded: 8 },
           data: { taskType: 'manual' },
           documentation: {
-            description: 'Weight discrepancy threshold <= 0.05 oz ensures no missing or extra items.',
+            description: 'Weight discrepancy threshold <= 0.05 oz ensures no missing or extra items.\n@text todo: replace backup battery\n@number share: 210\n@date due: 2027-01-15',
             tags: ['QualityAssurance'],
             status: 'approved',
           },

@@ -35,9 +35,14 @@ import {
   MoreHorizontal,
   Wrench,
   Database,
+  BarChart3,
+  Hash,
+  Calendar,
+  FileText,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
+import { AggregationGroup } from '../../utils/descriptionAggregation';
 
 interface AppHeaderProps {
   document: DiagramDocument;
@@ -67,6 +72,11 @@ interface AppHeaderProps {
   onOpenOfflineModal: () => void;
   onChangeRole: (newRole: UserRole) => void;
   onToggleTheme: () => void;
+  aggregationGroups?: AggregationGroup[];
+  selectedAggregationField?: string | null;
+  isAggregationsOpen?: boolean;
+  onToggleAggregations?: () => void;
+  onSelectAggregationField?: (name: string) => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -97,10 +107,16 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onChangeRole,
   onToggleTheme,
   onSwitchDiagram,
+  aggregationGroups = [],
+  selectedAggregationField = null,
+  isAggregationsOpen = false,
+  onToggleAggregations,
+  onSelectAggregationField,
 }) => {
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
   const [isDiagramDropdownOpen, setIsDiagramDropdownOpen] = useState(false);
+  const [isAggregationsDropdownOpen, setIsAggregationsDropdownOpen] = useState(false);
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -246,6 +262,132 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
           </button>
         )}
+
+        {/* Aggregations & Analytics Dropdown Button (Change 2) */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsAggregationsDropdownOpen(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md shrink-0 border ${
+              isAggregationsOpen
+                ? 'bg-blue-600 text-white border-blue-400 shadow-blue-600/30 ring-2 ring-blue-500/40'
+                : isDark
+                ? 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800 hover:border-blue-500/50'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 hover:border-blue-500/50'
+            }`}
+            title="Aggregations & Analytics: Search @text, @number, and @date in current page & child pages"
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+            <span>Aggregations</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              {aggregationGroups.length}
+            </span>
+            <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isAggregationsDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isAggregationsDropdownOpen && (
+            <div
+              className={`absolute right-0 mt-1.5 w-72 border rounded-xl shadow-2xl p-2 z-50 text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-2 ${
+                isDark ? 'bg-slate-900/98 border-slate-700 text-slate-200' : 'bg-white/98 border-slate-200 text-slate-800'
+              }`}
+              onMouseLeave={() => setIsAggregationsDropdownOpen(false)}
+            >
+              <div className={`px-2 py-1 text-[10px] font-mono uppercase border-b mb-1 flex items-center justify-between ${
+                isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+              }`}>
+                <span>Aggregated Fields ({aggregationGroups.length})</span>
+                <span className="text-[9px] text-blue-400 font-bold">@type name</span>
+              </div>
+
+              {aggregationGroups.length === 0 ? (
+                <div className="p-3 text-center text-slate-400 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-slate-300">No aggregation tags found</p>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Add tags to node descriptions on their own line:
+                  </p>
+                  <div className="bg-slate-950/80 p-2 rounded text-[10px] font-mono text-left space-y-0.5 border border-slate-800">
+                    <div className="text-sky-300">@text todo: wash car</div>
+                    <div className="text-emerald-300">@number share: 345</div>
+                    <div className="text-amber-300">@date due: 2027-10-25</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto py-1">
+                  <div className="px-2 py-0.5 text-[9px] font-mono uppercase text-slate-400">
+                    Select name to display down right side:
+                  </div>
+                  {aggregationGroups.map(group => {
+                    const isSelected = selectedAggregationField?.toLowerCase() === group.name.toLowerCase() && isAggregationsOpen;
+                    return (
+                      <button
+                        key={group.name}
+                        type="button"
+                        onClick={() => {
+                          onSelectAggregationField?.(group.name);
+                          if (!isAggregationsOpen) onToggleAggregations?.();
+                          setIsAggregationsDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600/25 border border-blue-500/50 text-blue-300 font-bold'
+                            : isDark
+                            ? 'hover:bg-slate-800 text-slate-200'
+                            : 'hover:bg-slate-100 text-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {group.type === 'number' ? (
+                            <Hash className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          ) : group.type === 'date' ? (
+                            <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          ) : (
+                            <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          )}
+                          <div className="truncate">
+                            <span className="font-semibold">{group.displayName}</span>
+                            {group.type === 'number' && group.total !== undefined && (
+                              <span className="text-[10px] text-slate-400 font-mono ml-1.5">
+                                (sum: {group.total.toLocaleString()})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <span className={`text-[8px] font-mono uppercase px-1 py-0.2 rounded font-bold ${
+                            group.type === 'number'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : group.type === 'date'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                          }`}>
+                            @{group.type}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {group.items.length}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="pt-1.5 mt-1 border-t border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleAggregations?.();
+                    setIsAggregationsDropdownOpen(false);
+                  }}
+                  className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-center text-xs transition-colors cursor-pointer shadow-sm"
+                >
+                  {isAggregationsOpen ? 'Close Right Side Panel' : 'Open Aggregations Panel →'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Diagram Types Catalog Launcher */}
         <button

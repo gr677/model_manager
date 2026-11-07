@@ -42,6 +42,8 @@ import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { workspaceService } from './services/workspaceService';
 import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
+import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
+import { collectAggregationsFromPageAndChildren } from './utils/descriptionAggregation';
 
 export default function App() {
   // Document state
@@ -85,6 +87,9 @@ export default function App() {
   const [isGenerateMindmapModalOpen, setIsGenerateMindmapModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  // Aggregations Down Right Side State (Change 2)
+  const [isAggregationsOpen, setIsAggregationsOpen] = useState(false);
+  const [selectedAggregationField, setSelectedAggregationField] = useState<string | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<{
     action: () => void | Promise<void>;
     targetName?: string;
@@ -201,6 +206,12 @@ export default function App() {
     currentPage?.nodes.filter(n => selectedNodeIds.includes(n.id)) || [];
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const selectedNodeId = selectedNodes.length === 1 ? selectedNodes[0].id : null;
+
+  // Aggregation results from current page & all child pages (Change 2)
+  const aggregationResult = React.useMemo(() => {
+    if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
+    return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
+  }, [currentPage, document, activeWs]);
 
   // Subscribe to offline sync & collaboration services
   useEffect(() => {
@@ -1085,6 +1096,14 @@ export default function App() {
         onChangeRole={setUserRole}
         onToggleTheme={handleToggleTheme}
         onSwitchDiagram={handleSwitchDiagram}
+        aggregationGroups={aggregationResult.groups}
+        selectedAggregationField={selectedAggregationField}
+        isAggregationsOpen={isAggregationsOpen}
+        onToggleAggregations={() => setIsAggregationsOpen(prev => !prev)}
+        onSelectAggregationField={name => {
+          setSelectedAggregationField(name);
+          setIsAggregationsOpen(true);
+        }}
       />
 
       {/* Main Studio Body: Sidebar + Canvas + Inspector */}
@@ -1201,6 +1220,36 @@ export default function App() {
             onUnlinkChildDiagram={handleUnlinkChildDiagram}
           />
         )}
+
+        {/* Right Sidebar: Aggregations Breakdown & 3D Chart Down Right Side (Change 2) */}
+        <AggregationsPanel
+          isOpen={isAggregationsOpen}
+          onClose={() => setIsAggregationsOpen(false)}
+          groups={aggregationResult.groups}
+          selectedFieldName={selectedAggregationField}
+          onSelectFieldName={setSelectedAggregationField}
+          totalSearchedPages={aggregationResult.totalSearchedPages}
+          totalItemsFound={aggregationResult.totalItemsFound}
+          theme={settings.theme}
+          onFocusNode={nodeId => {
+            // Find if node exists on current page
+            const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
+            if (existsOnCurrent) {
+              setSelectedNodeIds([nodeId]);
+              setSelectedEdgeId(null);
+              setIsInspectorOpen(true);
+            } else {
+              // Search document pages
+              const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
+              if (targetPage) {
+                setActivePageId(targetPage.id);
+                setSelectedNodeIds([nodeId]);
+                setSelectedEdgeId(null);
+                setIsInspectorOpen(true);
+              }
+            }
+          }}
+        />
       </div>
 
       {/* Modals */}

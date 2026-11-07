@@ -1481,8 +1481,14 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             fill="url(#canvas-dot-grid)"
           />
 
-          {/* Render Edges */}
-          {edges.map(edge => {
+          {/* Render Edges (Sorted so selected connector is drawn on top of all other connectors) */}
+          {[...edges]
+            .sort((a, b) => {
+              if (a.id === selectedEdgeId) return 1;
+              if (b.id === selectedEdgeId) return -1;
+              return 0;
+            })
+            .map(edge => {
             const source = nodes.find(n => n.id === edge.sourceNodeId);
             const target = nodes.find(n => n.id === edge.targetNodeId);
             const isEdgeConnected = activeFocusNodeId
@@ -1625,6 +1631,54 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             );
           })}
       </div>
+
+      {/* Foreground SVG Layer for Selected Connector & Endpoint Drag Handles (Change 1)
+          Brings the selected connector and its endpoint drag handles to the front above all
+          nodes and other connectors (z-30) so users can grab and move connector ends without
+          nodes blocking or intercepting mouse events! */}
+      {(selectedEdge || reconnectingEdge) && (
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none select-none overflow-visible z-30"
+          style={{ width: '100%', height: '100%' }}
+        >
+          <g
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0',
+            }}
+            className="pointer-events-none"
+          >
+            {(() => {
+              const edgeToRender = selectedEdge || (reconnectingEdge ? edges.find(e => e.id === reconnectingEdge.edgeId) : null);
+              if (!edgeToRender) return null;
+              const source = nodes.find(n => n.id === edgeToRender.sourceNodeId);
+              const target = nodes.find(n => n.id === edgeToRender.targetNodeId);
+              const isReconnectingThis = reconnectingEdge?.edgeId === edgeToRender.id;
+              const tempStart = isReconnectingThis && reconnectingEdge.endpoint === 'source' ? currentMousePos : null;
+              const tempEnd = isReconnectingThis && reconnectingEdge.endpoint === 'target' ? currentMousePos : null;
+
+              return (
+                <EdgeRenderer
+                  key={`fg-${edgeToRender.id}`}
+                  edge={edgeToRender}
+                  sourceNode={source}
+                  targetNode={target}
+                  isSelected={true}
+                  isDeemphasized={false}
+                  onSelect={onSelectEdge}
+                  onContextMenu={handleEdgeContextMenu}
+                  onStartReconnectEdge={handleStartReconnectEdge}
+                  onStartMoveSegment={handleStartMoveSegment}
+                  onResetSegmentOffset={handleResetSegmentOffset}
+                  temporaryStart={tempStart}
+                  temporaryEnd={tempEnd}
+                  temporaryMidOffset={movingEdgeSegment?.edgeId === edgeToRender.id ? tempSegmentOffset : undefined}
+                />
+              );
+            })()}
+          </g>
+        </svg>
+      )}
 
       {/* Empty State Overlay for Mind Map & Other Diagrams */}
       {nodes.length === 0 && (

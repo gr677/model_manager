@@ -138,7 +138,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
 
   return (
     <g
-      className="cursor-pointer group"
+      className="cursor-pointer group pointer-events-auto"
       style={{
         opacity: isDeemphasized ? 0.15 : 1,
         transition: 'opacity 0.2s ease',

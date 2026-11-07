@@ -47,6 +47,8 @@ import {
   Calendar,
   Milestone,
   UserCheck,
+  Hash,
+  BarChart3,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram, CONNECTOR_STYLE_OPTIONS } from '../../utils/diagramConnectorConfig';
@@ -2609,15 +2611,64 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
           {/* Description & Specs */}
           <div>
-            <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1">Documentation &amp; Specifications</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] uppercase font-mono text-slate-400">Documentation &amp; Specifications</label>
+              <span className="text-[9px] font-mono text-blue-400/80">Supports @type name: val</span>
+            </div>
             <textarea
               rows={4}
               disabled={isReadOnly}
               value={selectedNode.documentation?.description || ''}
               onChange={e => updateDocs({ description: e.target.value })}
-              placeholder="Enter comprehensive node architecture notes, business logic, constraints..."
-              className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+              placeholder="e.g. Core microservice.\n@text todo: wash the car\n@number share: 345\n@date due: 2027-10-25"
+              className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono text-[11px] leading-relaxed"
             />
+            {/* Quick-insert instruction chips */}
+            {!isReadOnly && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                <span className="text-[9px] text-slate-500 font-mono mr-0.5">Quick add:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedNode.documentation?.description || '';
+                    const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
+                    updateDocs({ description: `${current}${newline}@text todo: ` });
+                  }}
+                  className="px-1.5 py-0.5 text-[9px] font-mono bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 border border-sky-800/60 rounded flex items-center gap-1 transition-colors"
+                  title="Insert @text instruction"
+                >
+                  <FileText className="w-2.5 h-2.5" />
+                  + @text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedNode.documentation?.description || '';
+                    const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
+                    updateDocs({ description: `${current}${newline}@number share: 100` });
+                  }}
+                  className="px-1.5 py-0.5 text-[9px] font-mono bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60 rounded flex items-center gap-1 transition-colors"
+                  title="Insert @number instruction (3D bar/pie chart enabled)"
+                >
+                  <BarChart3 className="w-2.5 h-2.5" />
+                  + @number
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedNode.documentation?.description || '';
+                    const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    updateDocs({ description: `${current}${newline}@date due: ${todayStr}` });
+                  }}
+                  className="px-1.5 py-0.5 text-[9px] font-mono bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 rounded flex items-center gap-1 transition-colors"
+                  title="Insert @date instruction (sorted ascending)"
+                >
+                  <Calendar className="w-2.5 h-2.5" />
+                  + @date
+                </button>
+              </div>
+            )}
           </div>
 
           {/* API Endpoint mapping */}
