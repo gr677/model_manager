@@ -12,7 +12,8 @@ import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import { initialDiagramDocument } from './src/data/seedDiagrams';
-import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge } from './src/types/diagram';
+import { getExampleDiagramForType } from './src/data/diagramExamples';
+import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge, DiagramType } from './src/types/diagram';
 import { GoogleGenAI, Type } from '@google/genai';
 
 const execAsync = promisify(exec);
@@ -144,16 +145,20 @@ async function initStorageOnDisk() {
     if (existingDirs.length === 0) {
       const ws1Dir = path.join(storageDir, 'workspace1');
       const ws1DataDir = path.join(ws1Dir, 'data');
+      const ws1ImagesDir = path.join(ws1Dir, 'images');
       await fsp.mkdir(ws1DataDir, { recursive: true });
+      await fsp.mkdir(ws1ImagesDir, { recursive: true });
       const rootFileInData = path.join(ws1DataDir, 'root.json');
       await fsp.writeFile(rootFileInData, JSON.stringify(initialDiagramDocument, null, 2), 'utf-8');
-      logDebug('success', 'STORAGE', `Initialized default workspace1/data/root.json in empty root: ${storageDir}`);
+      logDebug('success', 'STORAGE', `Initialized default workspace1/data/root.json and workspace1/images in empty root: ${storageDir}`);
     } else {
-      // Ensure existing workspaces have their data/ directory and root.json
+      // Ensure existing workspaces have their data/ and images/ directory and root.json
       for (const dir of existingDirs) {
         const wsPath = path.join(storageDir, dir.name);
         const dataPath = path.join(wsPath, 'data');
+        const imagesPath = path.join(wsPath, 'images');
         await fsp.mkdir(dataPath, { recursive: true });
+        await fsp.mkdir(imagesPath, { recursive: true });
         const rootInParent = path.join(wsPath, 'root.json');
         const rootInData = path.join(dataPath, 'root.json');
         if (fs.existsSync(rootInParent) && !fs.existsSync(rootInData)) {
@@ -668,22 +673,39 @@ app.post('/api/workspaces', async (req: Request, res: Response) => {
     const storageDir = getPhysicalStorageDir();
     const wsDir = path.join(storageDir, safeId);
     const dataDir = path.join(wsDir, 'data');
+    const imagesDir = path.join(wsDir, 'images');
     await fsp.mkdir(dataDir, { recursive: true });
+    await fsp.mkdir(imagesDir, { recursive: true });
 
     const rootPath = path.join(dataDir, 'root.json');
     const winPath = toWindowsPath(getConfiguredRootDir(), safeId, 'root.json');
 
     logDebug('info', 'STORAGE WORKSPACE', `Creating workspace "${safeId}" at ${dataDir}`);
 
-    // Create data/root.json starting point with requested diagramType template
+    // Create data/root.json starting point with requested diagramType template (default: mindmap)
     if (!fs.existsSync(rootPath)) {
-      const templateDoc = req.body.templateDoc || {
-        ...initialDiagramDocument,
-        id: `doc-${safeId}-root`,
-        name: `${req.body.name || safeId} Architecture`,
-      };
+      const requestedType: DiagramType = (req.body.diagramType || 'mindmap') as DiagramType;
+      let templateDoc = req.body.templateDoc;
+      if (!templateDoc) {
+        const starterPage = getExampleDiagramForType(requestedType);
+        templateDoc = {
+          id: `doc-${safeId}-root`,
+          name: `${req.body.name || safeId} Architecture`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          activePageId: starterPage.id,
+          settings: {
+            gridSnap: true,
+            showGrid: true,
+            theme: 'dark',
+            showMinimap: true,
+          },
+          versions: [],
+          pages: [starterPage],
+        };
+      }
       await fsp.writeFile(rootPath, JSON.stringify(templateDoc, null, 2), 'utf-8');
-      logDebug('success', 'STORAGE WORKSPACE', `Initialized root.json template in workspace "${safeId}"`);
+      logDebug('success', 'STORAGE WORKSPACE', `Initialized root.json template (${requestedType}) in workspace "${safeId}"`);
     }
 
     res.status(201).json({
@@ -885,6 +907,134 @@ app.delete('/api/workspaces/:workspaceId/files/:filename', async (req: Request, 
   } catch (err: any) {
     logDebug('error', 'STORAGE DELETE', `Failed to delete file ${req.params.filename}: ${err.message}`, err.stack);
     res.status(500).json({ error: err.message || 'Failed to delete file from server disk' });
+  }
+});
+
+// 8b. Upload / Import image into <workspace>/images/ (sibling of data/)
+app.post('/api/workspaces/:workspaceId/images', async (req: Request, res: Response) => {
+  try {
+    const safeWs = sanitizeName(req.params.workspaceId);
+    const storageDir = getPhysicalStorageDir();
+    const imagesDir = path.join(storageDir, safeWs, 'images');
+    await fsp.mkdir(imagesDir, { recursive: true });
+
+    const { filename, dataUrl, title } = req.body;
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return res.status(400).json({ error: 'Missing image dataUrl in request body' });
+    }
+
+    const origFilename = (filename || 'image.png').trim();
+    let ext = path.extname(origFilename).toLowerCase();
+    if (!ext) {
+      if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg')) ext = '.jpg';
+      else if (dataUrl.startsWith('data:image/svg')) ext = '.svg';
+      else if (dataUrl.startsWith('data:image/webp')) ext = '.webp';
+      else if (dataUrl.startsWith('data:image/gif')) ext = '.gif';
+      else ext = '.png';
+    }
+
+    const baseName = sanitizeName(path.basename(origFilename, ext)) || `img_${Date.now()}`;
+    let safeFilename = `${baseName}${ext}`;
+    let filePath = path.join(imagesDir, safeFilename);
+
+    // If file already exists with same name, add timestamp suffix to avoid overwriting unless intended
+    if (fs.existsSync(filePath)) {
+      safeFilename = `${baseName}_${Date.now().toString().slice(-4)}${ext}`;
+      filePath = path.join(imagesDir, safeFilename);
+    }
+
+    // Convert dataUrl (base64) to Buffer and save
+    const base64Data = dataUrl.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    await fsp.writeFile(filePath, buffer);
+
+    logDebug('success', 'STORAGE IMAGE', `Saved image "${safeFilename}" to ${filePath} (${buffer.length} bytes)`);
+
+    const imageUrl = `/api/workspaces/${safeWs}/images/${safeFilename}`;
+    res.status(201).json({
+      success: true,
+      filename: safeFilename,
+      url: imageUrl,
+      size: buffer.length,
+      title: title || baseName,
+      physicalPath: filePath,
+    });
+  } catch (err: any) {
+    logDebug('error', 'STORAGE IMAGE', `Failed to upload image: ${err.message}`, err.stack);
+    res.status(500).json({ error: err.message || 'Failed to upload image to workspace images directory' });
+  }
+});
+
+// 8c. List all images in <workspace>/images/
+app.get('/api/workspaces/:workspaceId/images', async (req: Request, res: Response) => {
+  try {
+    const safeWs = sanitizeName(req.params.workspaceId);
+    const storageDir = getPhysicalStorageDir();
+    const imagesDir = path.join(storageDir, safeWs, 'images');
+    await fsp.mkdir(imagesDir, { recursive: true });
+
+    const entries = await fsp.readdir(imagesDir, { withFileTypes: true });
+    const imageFiles = [];
+    const validExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif', '.bmp', '.ico']);
+
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (validExtensions.has(ext)) {
+          const fullPath = path.join(imagesDir, entry.name);
+          const stat = await fsp.stat(fullPath);
+          imageFiles.push({
+            filename: entry.name,
+            title: entry.name.replace(/\.[^/.]+$/, ''),
+            url: `/api/workspaces/${safeWs}/images/${entry.name}`,
+            size: stat.size,
+            lastModified: stat.mtime.toISOString(),
+          });
+        }
+      }
+    }
+
+    res.json(imageFiles);
+  } catch (err: any) {
+    logDebug('error', 'STORAGE IMAGE', `Failed to list images: ${err.message}`, err.stack);
+    res.status(500).json({ error: err.message || 'Failed to list images' });
+  }
+});
+
+// 8d. Serve an image from <workspace>/images/:filename
+app.get('/api/workspaces/:workspaceId/images/:filename', async (req: Request, res: Response) => {
+  try {
+    const safeWs = sanitizeName(req.params.workspaceId);
+    const safeFilename = sanitizeName(req.params.filename);
+    const storageDir = getPhysicalStorageDir();
+    const filePath = path.join(storageDir, safeWs, 'images', safeFilename);
+
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(filePath);
+    }
+    res.status(404).json({ error: 'Image not found' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to serve image' });
+  }
+});
+
+// 8e. Delete an image from <workspace>/images/:filename
+app.delete('/api/workspaces/:workspaceId/images/:filename', async (req: Request, res: Response) => {
+  try {
+    const safeWs = sanitizeName(req.params.workspaceId);
+    const safeFilename = sanitizeName(req.params.filename);
+    const storageDir = getPhysicalStorageDir();
+    const filePath = path.join(storageDir, safeWs, 'images', safeFilename);
+
+    if (fs.existsSync(filePath)) {
+      await fsp.unlink(filePath);
+      logDebug('success', 'STORAGE IMAGE', `Deleted image "${safeFilename}" from ${filePath}`);
+      return res.json({ success: true, message: `Deleted ${safeFilename}` });
+    }
+    res.status(404).json({ error: 'Image not found' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete image' });
   }
 });
 

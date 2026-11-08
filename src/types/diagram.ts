@@ -123,8 +123,22 @@ export interface DiagramNode {
   data: Record<string, any>; // Diagram-specific data (ERD fields, BPMN tasks, PERT numbers, etc.)
   documentation?: NodeDocumentation;
   links?: NodeUrlLink[]; // External URLs with labels (Change 4)
+  images?: NodeImageAttachment[]; // Attached images stored in <workspace>/images/ (Change 2)
   stickyNotes?: StickyNote[];
   comments?: Comment[];
+}
+
+export interface NodeImageAttachment {
+  id: string;
+  filename: string; // Stored in <workspace>/images/<filename>
+  title?: string;
+  originalName?: string;
+  url: string; // Access endpoint e.g. /api/workspaces/:wsId/images/:filename or base64 fallback
+  size?: number;
+  mimeType?: string;
+  uploadedAt: string;
+  caption?: string;
+  thumbnailUrl?: string;
 }
 
 export interface NodeUrlLink {

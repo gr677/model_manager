@@ -39,6 +39,8 @@ import { SaveSuccessModal } from './components/modals/SaveSuccessModal';
 import { ImportSqlModal } from './components/modals/ImportSqlModal';
 import { GenerateMindmapModal } from './components/modals/GenerateMindmapModal';
 import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
+import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
+import { NodeImageAttachment } from './types/diagram';
 import { workspaceService } from './services/workspaceService';
 import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
@@ -98,6 +100,14 @@ export default function App() {
   } | null>(null);
   const [activeWs, setActiveWs] = useState(() => workspaceService.getActiveWorkspace());
   const [childModalNode, setChildModalNode] = useState<DiagramNode | null>(null);
+  const [lightboxData, setLightboxData] = useState<{
+    image: NodeImageAttachment;
+    allImages?: NodeImageAttachment[];
+  } | null>(null);
+
+  const handleOpenImageLightbox = useCallback((image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => {
+    setLightboxData({ image, allImages });
+  }, []);
   const [navigationHistory, setNavigationHistory] = useState<
     Array<{ filename: string; diagramName: string; pageId?: string; nodeLabel?: string }>
   >([]);
@@ -1194,6 +1204,7 @@ export default function App() {
           onNavigateChildDiagram={handleNavigateToChildDiagram}
           onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
           onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
+          onOpenImageLightbox={handleOpenImageLightbox}
           onUpdateNodeLabel={(nodeId, label) => {
             const targetNode = currentPage.nodes.find(n => n.id === nodeId);
             if (targetNode) {
@@ -1223,6 +1234,7 @@ export default function App() {
             onOpenChildDiagramModal={handleOpenChildDiagramModal}
             onNavigateChildDiagram={handleNavigateToChildDiagram}
             onUnlinkChildDiagram={handleUnlinkChildDiagram}
+            onOpenImageLightbox={handleOpenImageLightbox}
           />
         )}
 
@@ -1407,6 +1419,16 @@ export default function App() {
         onSaveAndContinue={handleSaveAndContinue}
         onDiscardAndContinue={handleDiscardAndContinue}
         onCancel={handleCancelNavigation}
+      />
+
+      {/* Change 2: Image Lightbox Modal to expand attached images to full size */}
+      <ImageLightboxModal
+        isOpen={!!lightboxData}
+        image={lightboxData?.image || null}
+        allImages={lightboxData?.allImages}
+        onClose={() => setLightboxData(null)}
+        onSelectImage={img => setLightboxData(prev => prev ? { ...prev, image: img } : null)}
+        theme={settings.theme}
       />
     </div>
   );

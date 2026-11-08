@@ -67,7 +67,7 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
   const [activeWs, setActiveWs] = useState(() => workspaceService.getActiveWorkspace());
   const [isAddingWorkspace, setIsAddingWorkspace] = useState(false);
   const [newWsName, setNewWsName] = useState('');
-  const [selectedDiagramType, setSelectedDiagramType] = useState<DiagramType>('bpmn');
+  const [selectedDiagramType, setSelectedDiagramType] = useState<DiagramType>('mindmap');
   const [confirmDeleteWsId, setConfirmDeleteWsId] = useState<string | null>(null);
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);

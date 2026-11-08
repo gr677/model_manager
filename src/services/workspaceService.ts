@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DiagramDocument, DiagramPage, DiagramType } from '../types/diagram';
+import { DiagramDocument, DiagramPage, DiagramType, NodeImageAttachment } from '../types/diagram';
 import { initialDiagramDocument } from '../data/seedDiagrams';
 import { getExampleDiagramForType } from '../data/diagramExamples';
 
@@ -421,7 +421,7 @@ class WorkspaceService {
     return this.getActiveWorkspace();
   }
 
-  public async createWorkspace(name: string, diagramType: DiagramType = 'generic', basePath?: string): Promise<Workspace> {
+  public async createWorkspace(name: string, diagramType: DiagramType = 'mindmap', basePath?: string): Promise<Workspace> {
     const safeId = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_') || `workspace_${Date.now()}`;
     const id = this.store.workspaces[safeId] ? `${safeId}_${Date.now().toString().slice(-4)}` : safeId;
     const cleanBasePath = (basePath || this.getActiveWorkspace()?.basePath || DEFAULT_BASE_PATH).trim();
@@ -900,6 +900,71 @@ class WorkspaceService {
     this.store.activeWorkspaceId = newId;
     this.saveStore();
     return importedWs;
+  }
+
+  public async uploadWorkspaceImage(
+    workspaceId: string,
+    file: File,
+    title?: string
+  ): Promise<NodeImageAttachment> {
+    const wsId = workspaceId || this.store.activeWorkspaceId || 'workspace1';
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file as data URL'));
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/images`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: file.name,
+              title: title || file.name,
+              data: base64Data,
+              mimeType: file.type || 'image/png',
+            }),
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `Failed to upload image (HTTP ${resp.status})`);
+          }
+          const data = await resp.json();
+          resolve(data as NodeImageAttachment);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  public async listWorkspaceImages(
+    workspaceId?: string
+  ): Promise<Array<{ filename: string; url: string; size: number; lastModified: string }>> {
+    const wsId = workspaceId || this.store.activeWorkspaceId || 'workspace1';
+    try {
+      const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/images`);
+      if (resp.ok) {
+        const data = await resp.json();
+        return Array.isArray(data.images) ? data.images : [];
+      }
+    } catch (err) {
+      console.warn('[WorkspaceService] Failed to fetch workspace images:', err);
+    }
+    return [];
+  }
+
+  public async deleteWorkspaceImage(workspaceId: string, filename: string): Promise<boolean> {
+    const wsId = workspaceId || this.store.activeWorkspaceId || 'workspace1';
+    try {
+      const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/images/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+      });
+      return resp.ok;
+    } catch (err) {
+      console.warn('[WorkspaceService] Failed to delete image:', err);
+      return false;
+    }
   }
 }
 

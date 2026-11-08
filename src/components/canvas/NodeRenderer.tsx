@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { DiagramNode, Collaborator, getNodeChildDiagrams } from '../../types/diagram';
+import { DiagramNode, Collaborator, getNodeChildDiagrams, NodeImageAttachment } from '../../types/diagram';
 import {
   Table,
   CheckCircle2,
@@ -28,6 +28,8 @@ import {
   FolderTree,
   ChevronDown,
   Hash,
+  ImageIcon,
+  Maximize2,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
@@ -57,6 +59,7 @@ interface NodeRendererProps {
   onNodeContextMenu?: (nodeId: string, e: React.MouseEvent) => void;
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onNavigateChildDiagram?: (filename: string) => void;
+  onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
   isReadOnly?: boolean;
   showAggregationBadges?: boolean;
 }
@@ -81,6 +84,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   onNodeContextMenu,
   onOpenChildDiagramModal,
   onNavigateChildDiagram,
+  onOpenImageLightbox,
   isReadOnly,
   showAggregationBadges = true,
 }) => {
@@ -1592,6 +1596,45 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         return null;
       })()}
 
+      {/* Attached Images on Node (Miniature thumbnail icon reflecting actual contents; click expands to full size) */}
+      {node.images && node.images.length > 0 && (
+        <div
+          className={`absolute -top-3 ${
+            node.type === 'sticky-note' ? 'right-2' : 'left-1.5'
+          } flex items-center gap-1 z-30 pointer-events-auto`}
+          style={{ transform: 'translateY(-50%)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          {node.images.slice(0, 3).map((img, idx) => (
+            <button
+              key={img.id || idx}
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onOpenImageLightbox?.(img, node.images);
+              }}
+              className="relative p-0.5 rounded-lg bg-slate-900/95 hover:bg-slate-800 border-2 border-white dark:border-slate-800 shadow-xl ring-1 ring-sky-500/60 hover:ring-sky-400 hover:scale-125 transition-all cursor-pointer group/nodeimg overflow-hidden"
+              title={`Attached Image: "${img.title || img.filename}" • Click to expand full size`}
+            >
+              <img
+                src={img.url}
+                alt={img.title || img.filename}
+                className="w-6 h-6 rounded-md object-cover"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-sky-950/40 opacity-0 group-hover/nodeimg:opacity-100 flex items-center justify-center transition-opacity rounded-md">
+                <Maximize2 className="w-3 h-3 text-white drop-shadow" />
+              </div>
+              {idx === 2 && node.images!.length > 3 && (
+                <span className="absolute -bottom-1 -right-1 px-1 rounded-full bg-sky-600 text-white text-[8px] font-mono font-bold shadow">
+                  +{node.images!.length - 3}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* External URL Link Badges on Node (Stacked vertically with zero airgap and brought close to node) */}
       {node.links && node.links.length > 0 && (
         <div
@@ -1655,7 +1698,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       )}
 
       {/* Human-Friendly Hover Description Tooltip (Change 5 & Change 8: Positioned further from center & accommodates all text) */}
-      {isHovered && (node.documentation?.description || (node.stickyNotes && node.stickyNotes.length > 0) || (node.links && node.links.length > 0)) && (
+      {isHovered && (node.documentation?.description || (node.stickyNotes && node.stickyNotes.length > 0) || (node.links && node.links.length > 0) || (node.images && node.images.length > 0)) && (
         <div
           className="absolute z-50 flex flex-col max-w-md w-max min-w-[260px] p-3 bg-slate-900/98 border border-slate-700/90 rounded-xl shadow-2xl text-[11px] text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
           style={{
@@ -1716,6 +1759,39 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
           {node.stickyNotes && node.stickyNotes.length > 0 && (
             <div className="mt-2 pt-1.5 border-t border-slate-800 text-[10px] text-amber-300 font-mono flex items-center gap-1">
               <span>★ {node.stickyNotes.length} sticky note{node.stickyNotes.length === 1 ? '' : 's'}</span>
+            </div>
+          )}
+
+          {/* Attached Images in hover tooltip */}
+          {node.images && node.images.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-800 space-y-1.5">
+              <span className="text-[9px] uppercase font-mono text-slate-400 flex items-center gap-1 font-semibold">
+                <ImageIcon className="w-3 h-3 text-sky-400" />
+                Attached Images ({node.images.length}) • Click to expand
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {node.images.map((img, idx) => (
+                  <button
+                    key={img.id || idx}
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      onOpenImageLightbox?.(img, node.images);
+                    }}
+                    className="relative group/tipimg rounded-lg overflow-hidden border border-slate-700 hover:border-sky-400 cursor-pointer transition-all hover:scale-105"
+                    title={`View ${img.title || img.filename} full size`}
+                  >
+                    <img
+                      src={img.url}
+                      alt={img.title || img.filename}
+                      className="w-12 h-12 object-cover"
+                    />
+                    <div className="absolute inset-0 bg-sky-950/40 opacity-0 group-hover/tipimg:opacity-100 flex items-center justify-center transition-opacity">
+                      <Maximize2 className="w-3.5 h-3.5 text-white" />
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

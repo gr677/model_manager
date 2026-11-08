@@ -15,6 +15,7 @@ import {
   getNodeChildDiagrams,
   ChildDiagramRef,
   NodeUrlLink,
+  NodeImageAttachment,
 } from '../../types/diagram';
 import {
   FileText,
@@ -49,7 +50,12 @@ import {
   UserCheck,
   Hash,
   BarChart3,
+  ImageIcon,
+  Upload,
+  Maximize2,
+  Loader2,
 } from 'lucide-react';
+import { workspaceService } from '../../services/workspaceService';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram, CONNECTOR_STYLE_OPTIONS } from '../../utils/diagramConnectorConfig';
 import {
@@ -81,6 +87,7 @@ interface NodeInspectorProps {
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onNavigateChildDiagram?: (filename: string) => void;
   onUnlinkChildDiagram?: (nodeId: string, filename?: string) => void;
+  onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
 }
 
 export const NodeInspector: React.FC<NodeInspectorProps> = ({
@@ -102,6 +109,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   onOpenChildDiagramModal,
   onNavigateChildDiagram,
   onUnlinkChildDiagram,
+  onOpenImageLightbox,
 }) => {
   const [activeTab, setActiveTab] = useState<'props' | 'docs' | 'comments' | 'group'>('props');
   const [newTagInput, setNewTagInput] = useState('');
@@ -111,6 +119,10 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   const [paletteCategory, setPaletteCategory] = useState<'pastel' | 'vibrant'>('pastel');
   const [newUrlInput, setNewUrlInput] = useState('');
   const [newUrlLabel, setNewUrlLabel] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [workspaceImages, setWorkspaceImages] = useState<Array<{ filename: string; url: string; size: number }>>([]);
+  const [showWorkspaceImagePicker, setShowWorkspaceImagePicker] = useState(false);
 
   const themeDef = THEMES[theme] || THEMES.dark;
 
@@ -2760,6 +2772,231 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     Attach Note
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Change 2: Attached Images Section (Stored in workspace images/ folder, miniature icon reflects contents, click expands to full size) */}
+          <div className="pt-3 border-t border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] uppercase font-mono text-sky-400 font-bold flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                <span>Attached Images ({selectedNode.images?.length || 0})</span>
+              </label>
+              <span className="text-[9px] font-mono text-slate-500">
+                images/
+              </span>
+            </div>
+
+            {/* Error Message if any */}
+            {imageUploadError && (
+              <div className="p-2 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-mono">
+                {imageUploadError}
+              </div>
+            )}
+
+            {/* Attached Images List */}
+            <div className="space-y-1.5">
+              {(selectedNode.images || []).length === 0 ? (
+                <div className="p-2.5 rounded-lg border border-slate-800 bg-slate-950/60 text-slate-500 text-[11px] text-center italic">
+                  No images attached yet. Import screenshots, mockups, or diagrams stored in your workspace <code className="text-sky-400">images/</code> folder.
+                </div>
+              ) : (
+                (selectedNode.images || []).map(img => (
+                  <div
+                    key={img.id}
+                    className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 transition-colors hover:border-slate-700 group"
+                  >
+                    <div
+                      className="flex items-center gap-2.5 min-w-0 cursor-pointer"
+                      onClick={() => onOpenImageLightbox?.(img, selectedNode.images)}
+                      title="Click to expand full size"
+                    >
+                      <div className="relative w-10 h-10 rounded-md overflow-hidden bg-slate-900 border border-slate-700 shrink-0 group-hover:scale-105 transition-transform">
+                        <img
+                          src={img.url}
+                          alt={img.title || img.filename}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-sky-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Maximize2 className="w-3 h-3 text-white drop-shadow" />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-200 truncate group-hover:text-sky-400 transition-colors">
+                          {img.title || img.filename}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400 truncate flex items-center gap-2">
+                          <span className="truncate">{img.filename}</span>
+                          {img.size && (
+                            <>
+                              <span>•</span>
+                              <span>{(img.size / 1024).toFixed(1)} KB</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenImageLightbox?.(img, selectedNode.images)}
+                        className="p-1 rounded text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Expand image to full size"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (selectedNode.images || []).filter(i => i.id !== img.id);
+                            onUpdateNode({
+                              ...selectedNode,
+                              images: updated,
+                            });
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors cursor-pointer"
+                          title="Detach image from this node"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Upload & Browse Buttons */}
+            {!isReadOnly && (
+              <div className="pt-1.5 flex items-center gap-2">
+                <label className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs cursor-pointer shadow-sm transition-colors">
+                  {isUploadingImage ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Importing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import / Upload Image</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={isUploadingImage}
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      if (!file || !selectedNode) return;
+                      setIsUploadingImage(true);
+                      setImageUploadError(null);
+                      try {
+                        const activeWs = workspaceService.getActiveWorkspace();
+                        const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
+                        const existing = selectedNode.images || [];
+                        onUpdateNode({
+                          ...selectedNode,
+                          images: [...existing, uploaded],
+                        });
+                      } catch (err: any) {
+                        setImageUploadError(err?.message || 'Failed to upload image');
+                      } finally {
+                        setIsUploadingImage(false);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const activeWs = workspaceService.getActiveWorkspace();
+                    const list = await workspaceService.listWorkspaceImages(activeWs.id);
+                    setWorkspaceImages(list);
+                    setShowWorkspaceImagePicker(v => !v);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors cursor-pointer"
+                  title="Browse images stored in workspace images/ folder"
+                >
+                  Browse images/
+                </button>
+              </div>
+            )}
+
+            {/* Workspace Images Picker Drawer */}
+            {showWorkspaceImagePicker && (
+              <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2 mt-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                  <span>Workspace <code className="text-sky-400 font-mono">images/</code> folder</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowWorkspaceImagePicker(false)}
+                    className="text-slate-500 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {workspaceImages.length === 0 ? (
+                  <p className="text-[10px] text-slate-500 italic py-2 text-center">
+                    No images found in workspace images/ folder yet. Upload an image above to populate the folder.
+                  </p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {workspaceImages.map(wImg => {
+                      const isAlreadyAttached = (selectedNode.images || []).some(
+                        i => i.filename === wImg.filename || i.url === wImg.url
+                      );
+                      return (
+                        <div
+                          key={wImg.filename}
+                          className="flex items-center justify-between p-1.5 rounded bg-slate-900 border border-slate-800 text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <img src={wImg.url} alt={wImg.filename} className="w-7 h-7 rounded object-cover shrink-0" />
+                            <div className="truncate min-w-0">
+                              <div className="truncate font-mono text-[11px] text-slate-200">{wImg.filename}</div>
+                              <div className="text-[9px] text-slate-500">{(wImg.size / 1024).toFixed(1)} KB</div>
+                            </div>
+                          </div>
+                          {isAlreadyAttached ? (
+                            <span className="text-[9px] font-mono text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-950 border border-emerald-800">
+                              Attached
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newImg: NodeImageAttachment = {
+                                  id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                                  filename: wImg.filename,
+                                  title: wImg.filename.replace(/\.[^/.]+$/, ''),
+                                  url: wImg.url,
+                                  size: wImg.size,
+                                  uploadedAt: new Date().toISOString(),
+                                };
+                                const existing = selectedNode.images || [];
+                                onUpdateNode({
+                                  ...selectedNode,
+                                  images: [...existing, newImg],
+                                });
+                                setShowWorkspaceImagePicker(false);
+                              }}
+                              className="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-semibold cursor-pointer"
+                            >
+                              + Attach
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

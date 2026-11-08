@@ -12,6 +12,7 @@ import {
   AppTheme,
   StudioSettings,
   DiagramType,
+  NodeImageAttachment,
 } from '../../types/diagram';
 import { NodeRenderer } from './NodeRenderer';
 import { EdgeRenderer } from './EdgeRenderer';
@@ -72,6 +73,7 @@ interface DiagramCanvasProps {
   onNavigateChildDiagram?: (filename: string) => void;
   onOpenImportSqlModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
+  onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
 }
 
 export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
@@ -106,6 +108,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onNavigateChildDiagram,
   onOpenImportSqlModal,
   onOpenGenerateMindmapModal,
+  onOpenImageLightbox,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const themeDef = THEMES[theme] || THEMES.dark;
@@ -1648,6 +1651,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
               onNodeContextMenu={handleNodeContextMenu}
               onOpenChildDiagramModal={onOpenChildDiagramModal}
               onNavigateChildDiagram={onNavigateChildDiagram}
+              onOpenImageLightbox={onOpenImageLightbox}
               isReadOnly={isReadOnly}
               showAggregationBadges={showAggregationBadges}
             />
