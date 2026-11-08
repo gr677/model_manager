@@ -946,4 +946,33 @@ export const SHAPE_TEMPLATES: ShapeTemplate[] = [
       },
     },
   },
+
+  // 17. Image Attachment / Model
+  {
+    id: 'image-attachment',
+    category: 'notes',
+    categoryLabel: 'Sticky Notes & Annotations',
+    name: 'Image Attachment',
+    iconName: 'Image',
+    description: 'Attached workspace image with miniature content icon expanding to full size',
+    defaultNode: {
+      type: 'process',
+      label: 'Image Model',
+      width: 140,
+      height: 70,
+      style: {
+        fill: '#0f172a',
+        stroke: '#38bdf8',
+        strokeWidth: 2,
+        textColor: '#f8fafc',
+        rounded: 10,
+      },
+      data: {},
+      documentation: {
+        description: 'Image model attached to workspace images/ folder. Click thumbnail icon to expand full size.',
+        tags: ['Image', 'Mockup'],
+        status: 'approved',
+      },
+    },
+  },
 ];

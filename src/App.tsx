@@ -502,6 +502,117 @@ export default function App() {
     [currentPage, handleUpdateNodes]
   );
 
+  // Add image file from bottom-left "+ Add Image" button
+  const handleAddImageFile = useCallback(
+    async (file: File) => {
+      try {
+        setSaveStatus('saving');
+        const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
+
+        // If a node is currently selected on the canvas, attach image to it
+        if (selectedNode) {
+          const updatedImages = [...(selectedNode.images || []), uploaded];
+          const updatedNode: DiagramNode = {
+            ...selectedNode,
+            images: updatedImages,
+          };
+          handleUpdateSingleNode(updatedNode);
+          setIsInspectorOpen(true);
+          setSaveStatus('saved');
+        } else {
+          // If no node is selected, create a new image node on canvas at (240, 200)
+          const cleanName = file.name.replace(/\.[^/.]+$/, '');
+          const newNodeId = `node-img-${Date.now()}`;
+          const newNode: DiagramNode = {
+            id: newNodeId,
+            type: 'process',
+            label: cleanName,
+            x: 240,
+            y: 200,
+            width: 140,
+            height: 70,
+            style: {
+              fill: '#0f172a',
+              stroke: '#38bdf8',
+              strokeWidth: 2,
+              textColor: '#f8fafc',
+              rounded: 10,
+            },
+            data: {},
+            images: [uploaded],
+            documentation: {
+              description: `Image: ${uploaded.filename}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
+              tags: ['Image'],
+              status: 'approved',
+            },
+          };
+
+          handleUpdateNodes([...currentPage.nodes, newNode]);
+          setSelectedNodeIds([newNodeId]);
+          setIsInspectorOpen(true);
+          setSaveStatus('saved');
+        }
+      } catch (err) {
+        console.error('Failed to add image from sidebar:', err);
+        setSaveStatus('idle');
+      }
+    },
+    [activeWs.id, selectedNode, handleUpdateSingleNode, handleUpdateNodes, currentPage.nodes]
+  );
+
+  const handleAddExistingImage = useCallback(
+    (img: { filename: string; url: string; size: number }) => {
+      const newAttachment: NodeImageAttachment = {
+        id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        filename: img.filename,
+        title: img.filename.replace(/\.[^/.]+$/, ''),
+        url: img.url,
+        size: img.size,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      if (selectedNode) {
+        const updatedImages = [...(selectedNode.images || []), newAttachment];
+        handleUpdateSingleNode({
+          ...selectedNode,
+          images: updatedImages,
+        });
+        setIsInspectorOpen(true);
+      } else {
+        const cleanName = img.filename.replace(/\.[^/.]+$/, '');
+        const newNodeId = `node-img-${Date.now()}`;
+        const newNode: DiagramNode = {
+          id: newNodeId,
+          type: 'process',
+          label: cleanName,
+          x: 240,
+          y: 200,
+          width: 140,
+          height: 70,
+          style: {
+            fill: '#0f172a',
+            stroke: '#38bdf8',
+            strokeWidth: 2,
+            textColor: '#f8fafc',
+            rounded: 10,
+          },
+          data: {},
+          images: [newAttachment],
+          documentation: {
+            description: `Image: ${img.filename}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
+            tags: ['Image'],
+            status: 'approved',
+          },
+        };
+
+        handleUpdateNodes([...currentPage.nodes, newNode]);
+        setSelectedNodeIds([newNodeId]);
+        setIsInspectorOpen(true);
+      }
+    },
+    [selectedNode, handleUpdateSingleNode, handleUpdateNodes, currentPage.nodes]
+  );
+
   // Drill-down into a child page (Sub-Process Navigation)
   const handleDrillDown = useCallback(
     (pageId: string) => {
@@ -1141,6 +1252,8 @@ export default function App() {
           onOpenGallery={() => setIsGalleryOpen(true)}
           onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
           onLoadDiagram={handleLoadWorkspaceDiagram}
+          onAddImageFile={handleAddImageFile}
+          onAddExistingImage={handleAddExistingImage}
         />
 
         {/* Center: Infinite Interactive Diagram Canvas */}
