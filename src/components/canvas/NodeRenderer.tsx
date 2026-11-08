@@ -1592,26 +1592,36 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         return null;
       })()}
 
-      {/* External URL Link Badges on Node (Change 6: Stack vertically rather than horizontally) */}
+      {/* External URL Link Badges on Node (Stacked vertically with zero airgap and brought close to node) */}
       {node.links && node.links.length > 0 && (
         <div
           className={`absolute ${
-            node.type === 'sticky-note' ? '-top-3 left-2 items-start' : '-top-3 right-1 items-end'
-          } flex flex-col gap-1 z-30 pointer-events-auto`}
+            node.type === 'sticky-note' ? '-top-0.5 left-2 items-start' : '-top-0.5 right-1 items-end'
+          } flex flex-col z-30 pointer-events-auto`}
           style={{ transform: 'translateY(-100%)' }}
         >
-          {node.links.map(link => (
+          {node.links.map((link, idx) => (
             <a
-              key={link.id}
+              key={link.id || idx}
               href={link.url.startsWith('http') ? link.url : `https://${link.url}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
               title={`Open link: "${link.label}" (${link.url}) in new tab`}
-              className="px-2 py-0.5 rounded-md bg-blue-600/95 hover:bg-blue-500 text-white text-[9px] font-sans font-medium flex items-center gap-1 shadow-md border border-blue-400/40 cursor-pointer transition-transform hover:scale-105 whitespace-nowrap"
+              className={`px-2 py-0.5 bg-blue-600/95 hover:bg-blue-500 text-white text-[9px] font-sans font-medium flex items-center gap-1 shadow-md border border-blue-400/40 cursor-pointer transition-all hover:scale-105 whitespace-nowrap ${
+                idx > 0 ? '-mt-px' : ''
+              } ${
+                node.links!.length === 1
+                  ? 'rounded-md'
+                  : idx === 0
+                  ? 'rounded-t-md rounded-b-none'
+                  : idx === node.links!.length - 1
+                  ? 'rounded-b-md rounded-t-none'
+                  : 'rounded-none'
+              }`}
             >
               <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-              <span className="max-w-[110px] truncate">{link.label}</span>
+              <span className="max-w-[120px] truncate">{link.label}</span>
             </a>
           ))}
         </div>
