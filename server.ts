@@ -918,18 +918,19 @@ app.post('/api/workspaces/:workspaceId/images', async (req: Request, res: Respon
     const imagesDir = path.join(storageDir, safeWs, 'images');
     await fsp.mkdir(imagesDir, { recursive: true });
 
-    const { filename, dataUrl, title } = req.body;
-    if (!dataUrl || typeof dataUrl !== 'string') {
-      return res.status(400).json({ error: 'Missing image dataUrl in request body' });
+    // Accept dataUrl, data, base64, or image field names
+    const rawData = req.body.dataUrl || req.body.data || req.body.base64 || req.body.image;
+    if (!rawData || typeof rawData !== 'string') {
+      return res.status(400).json({ error: 'Missing image data (expected dataUrl, data, or base64) in request body' });
     }
 
-    const origFilename = (filename || 'image.png').trim();
+    const origFilename = (req.body.filename || req.body.name || req.body.title || 'image.png').trim();
     let ext = path.extname(origFilename).toLowerCase();
     if (!ext) {
-      if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg')) ext = '.jpg';
-      else if (dataUrl.startsWith('data:image/svg')) ext = '.svg';
-      else if (dataUrl.startsWith('data:image/webp')) ext = '.webp';
-      else if (dataUrl.startsWith('data:image/gif')) ext = '.gif';
+      if (rawData.startsWith('data:image/jpeg') || rawData.startsWith('data:image/jpg')) ext = '.jpg';
+      else if (rawData.startsWith('data:image/svg')) ext = '.svg';
+      else if (rawData.startsWith('data:image/webp')) ext = '.webp';
+      else if (rawData.startsWith('data:image/gif')) ext = '.gif';
       else ext = '.png';
     }
 
@@ -944,19 +945,25 @@ app.post('/api/workspaces/:workspaceId/images', async (req: Request, res: Respon
     }
 
     // Convert dataUrl (base64) to Buffer and save
-    const base64Data = dataUrl.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+    const base64Data = rawData.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
     await fsp.writeFile(filePath, buffer);
 
     logDebug('success', 'STORAGE IMAGE', `Saved image "${safeFilename}" to ${filePath} (${buffer.length} bytes)`);
 
     const imageUrl = `/api/workspaces/${safeWs}/images/${safeFilename}`;
+    const imgId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const mime = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.svg' ? 'image/svg+xml' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/png';
+
     res.status(201).json({
+      id: imgId,
       success: true,
       filename: safeFilename,
       url: imageUrl,
       size: buffer.length,
-      title: title || baseName,
+      mimeType: mime,
+      uploadedAt: new Date().toISOString(),
+      title: req.body.title || baseName,
       physicalPath: filePath,
     });
   } catch (err: any) {

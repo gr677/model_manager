@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { SHAPE_TEMPLATES } from '../../data/shapeDefinitions';
 import { DiagramType, UserRole, AppTheme } from '../../types/diagram';
 import {
@@ -78,6 +78,7 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   const [isDiagramsListExpanded, setIsDiagramsListExpanded] = useState(false);
   const [showImagesDrawer, setShowImagesDrawer] = useState(false);
   const [workspaceImagesList, setWorkspaceImagesList] = useState<Array<{ filename: string; url: string; size: number }>>([]);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
 
   const categories = [
     { id: 'all', label: 'All Diagram Shapes' },
@@ -454,7 +455,10 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
           </button>
 
           {/* Add Image Button */}
-          <label
+          <button
+            type="button"
+            disabled={isReadOnly}
+            onClick={() => imageFileInputRef.current?.click()}
             className={`flex items-center justify-center gap-1.5 py-2 px-2 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs group ${
               isReadOnly ? 'opacity-50 pointer-events-none' : ''
             }`}
@@ -462,20 +466,21 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
           >
             <ImageIcon className="w-3.5 h-3.5 shrink-0 text-sky-400 group-hover:scale-110 transition-transform" />
             <span className="truncate">+ Add Image</span>
-            <input
-              type="file"
-              accept="image/*"
-              disabled={isReadOnly}
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  onAddImageFile?.(file);
-                  e.target.value = '';
-                }
-              }}
-              className="hidden"
-            />
-          </label>
+          </button>
+          <input
+            ref={imageFileInputRef}
+            type="file"
+            accept="image/*,.png,.jpg,.jpeg,.webp,.svg,.gif"
+            disabled={isReadOnly}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) {
+                onAddImageFile?.(file);
+                e.target.value = '';
+              }
+            }}
+            className="hidden"
+          />
         </div>
 
         {/* Small Browse images/ shortcut */}

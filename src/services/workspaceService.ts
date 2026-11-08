@@ -918,8 +918,10 @@ class WorkspaceService {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              filename: file.name,
               name: file.name,
               title: title || file.name,
+              dataUrl: base64Data,
               data: base64Data,
               mimeType: file.type || 'image/png',
             }),
@@ -929,7 +931,16 @@ class WorkspaceService {
             throw new Error(err.error || `Failed to upload image (HTTP ${resp.status})`);
           }
           const data = await resp.json();
-          resolve(data as NodeImageAttachment);
+          const attachment: NodeImageAttachment = {
+            id: data.id || `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            filename: data.filename || file.name,
+            url: data.url,
+            size: data.size || file.size,
+            mimeType: data.mimeType || file.type || 'image/png',
+            uploadedAt: data.uploadedAt || new Date().toISOString(),
+            title: data.title || title || file.name,
+          };
+          resolve(attachment);
         } catch (err) {
           reject(err);
         }

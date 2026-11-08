@@ -42,6 +42,7 @@ import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
 import { NodeImageAttachment } from './types/diagram';
 import { workspaceService } from './services/workspaceService';
+import { CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
@@ -104,6 +105,14 @@ export default function App() {
     image: NodeImageAttachment;
     allImages?: NodeImageAttachment[];
   } | null>(null);
+  const [imageNotice, setImageNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (imageNotice) {
+      const t = setTimeout(() => setImageNotice(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [imageNotice]);
 
   const handleOpenImageLightbox = useCallback((image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => {
     setLightboxData({ image, allImages });
@@ -519,6 +528,10 @@ export default function App() {
           handleUpdateSingleNode(updatedNode);
           setIsInspectorOpen(true);
           setSaveStatus('saved');
+          setImageNotice({
+            type: 'success',
+            message: `Image "${uploaded.filename}" successfully attached to "${selectedNode.label}" and saved in images/!`,
+          });
         } else {
           // If no node is selected, create a new image node on canvas at (240, 200)
           const cleanName = file.name.replace(/\.[^/.]+$/, '');
@@ -551,10 +564,18 @@ export default function App() {
           setSelectedNodeIds([newNodeId]);
           setIsInspectorOpen(true);
           setSaveStatus('saved');
+          setImageNotice({
+            type: 'success',
+            message: `New Image Node "${cleanName}" created on canvas and saved in images/!`,
+          });
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to add image from sidebar:', err);
         setSaveStatus('idle');
+        setImageNotice({
+          type: 'error',
+          message: `Failed to upload image: ${err?.message || 'Server error'}`,
+        });
       }
     },
     [activeWs.id, selectedNode, handleUpdateSingleNode, handleUpdateNodes, currentPage.nodes]
@@ -1543,6 +1564,25 @@ export default function App() {
         onSelectImage={img => setLightboxData(prev => prev ? { ...prev, image: img } : null)}
         theme={settings.theme}
       />
+
+      {/* Toast Notice for Image Upload */}
+      {imageNotice && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-2xl border text-xs font-medium animate-in fade-in slide-in-from-top-4 duration-150 backdrop-blur-md bg-slate-900/95 border-slate-700 text-slate-100">
+          {imageNotice.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          )}
+          <span>{imageNotice.message}</span>
+          <button
+            type="button"
+            onClick={() => setImageNotice(null)}
+            className="ml-2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
