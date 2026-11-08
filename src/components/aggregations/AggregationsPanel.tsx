@@ -71,8 +71,6 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
     }
   }, [activeGroup?.name]);
 
-  if (!isOpen) return null;
-
   // Items filtered by search and selected items
   const filteredItems = (activeGroup?.items || []).filter(item => {
     if (!searchFilter.trim()) return true;
@@ -145,6 +143,8 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
         return <FileText className="w-3.5 h-3.5 text-sky-400" />;
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <aside
