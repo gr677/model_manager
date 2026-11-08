@@ -940,21 +940,29 @@ app.post('/api/ai/generate-mindmap', async (req: Request, res: Response) => {
       },
     });
 
-    const promptText = `You are an expert system architect and knowledge mapper.
+    const promptText = `You are an expert system architect, researcher, and knowledge mapper.
 Create a comprehensive, richly structured mind map for the following topic:
 "${topic.trim()}"
+
+INSTRUCTIONS FOR DEPTH, DESCRIPTIONS & URL LINKS:
+- Provide comprehensive, in-depth descriptions for the central topic, every branch, and every subbranch.
+- If the prompt requests a specific description length (such as 10 sentences per node, or comprehensive paragraphs), faithfully fulfill that requirement with thorough, informative technical explanations, architectural context, best practices, and trade-offs. If no specific length is specified, provide rich, detailed explanations (3-8 sentences per node) rather than brief snippets.
+- For every node where appropriate, include authoritative, high-quality external reference URL links (e.g. official documentation, Wikipedia, W3C/IETF/ISO standards, GitHub projects, cloud provider docs, or developer guides).
 
 Return a JSON object conforming to the schema with:
 - title: A concise, professional title for this mind map (under 6 words).
 - centralTopic: The core theme or main subject (under 5 words).
-- centralDescription: A comprehensive 1-3 sentence summary of this theme.
+- centralDescription: Thorough summary of this theme (expand to the requested sentence count, e.g. up to 10 sentences if requested).
+- links: Array of 1 to 3 authoritative external URL links for this central topic.
 - branches: An array of 4 to 6 main high-level concept branches. Each branch must have:
-  - title: Short concept name (under 5 words).
-  - description: 1-3 sentences explaining this concept and its architectural role.
+  - title: Concept name (under 5 words).
+  - description: Thorough, deep technical explanation (expand to the requested sentence count, e.g. up to 10 sentences if requested).
   - color: Hex color code for this branch family (e.g. #3b82f6, #10b981, #f59e0b, #ec4899, #8b5cf6, #06b6d4).
+  - links: Array of 1 to 3 authoritative external URL links for this concept where appropriate.
   - subbranches: An array of 2 to 3 specific sub-topics/tactics/components under this branch. Each must have:
-    - title: Short sub-topic name (under 4 words).
-    - description: 1-2 sentences explaining this sub-topic in detail.`;
+    - title: Sub-topic name (under 4 words).
+    - description: In-depth technical explanation (expand to the requested sentence count, e.g. up to 10 sentences if requested).
+    - links: Array of 1 to 2 authoritative external URL links where appropriate.`;
 
     const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
     let response: any = null;
@@ -967,6 +975,7 @@ Return a JSON object conforming to the schema with:
           model: modelName,
           contents: promptText,
           config: {
+            maxOutputTokens: 8192,
             responseMimeType: 'application/json',
             responseSchema: {
               type: Type.OBJECT,
@@ -974,6 +983,17 @@ Return a JSON object conforming to the schema with:
                 title: { type: Type.STRING },
                 centralTopic: { type: Type.STRING },
                 centralDescription: { type: Type.STRING },
+                links: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      label: { type: Type.STRING },
+                      url: { type: Type.STRING },
+                    },
+                    required: ['label', 'url'],
+                  },
+                },
                 branches: {
                   type: Type.ARRAY,
                   items: {
@@ -982,6 +1002,17 @@ Return a JSON object conforming to the schema with:
                       title: { type: Type.STRING },
                       description: { type: Type.STRING },
                       color: { type: Type.STRING },
+                      links: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            label: { type: Type.STRING },
+                            url: { type: Type.STRING },
+                          },
+                          required: ['label', 'url'],
+                        },
+                      },
                       subbranches: {
                         type: Type.ARRAY,
                         items: {
@@ -989,6 +1020,17 @@ Return a JSON object conforming to the schema with:
                           properties: {
                             title: { type: Type.STRING },
                             description: { type: Type.STRING },
+                            links: {
+                              type: Type.ARRAY,
+                              items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                  label: { type: Type.STRING },
+                                  url: { type: Type.STRING },
+                                },
+                                required: ['label', 'url'],
+                              },
+                            },
                           },
                           required: ['title', 'description'],
                         },
@@ -1023,16 +1065,29 @@ Return a JSON object conforming to the schema with:
     const centralDescription = data.centralDescription || `Mind map exploration of ${topic.trim()}`;
     const branches = Array.isArray(data.branches) ? data.branches : [];
 
+    // Helper to format NodeUrlLink objects
+    const formatLinks = (linksArray?: any[]) => {
+      if (!Array.isArray(linksArray)) return undefined;
+      const valid = linksArray
+        .filter(l => l && l.url && typeof l.url === 'string')
+        .map((l, idx) => ({
+          id: `link-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+          label: (l.label || l.title || 'Reference').slice(0, 32),
+          url: l.url.trim(),
+        }));
+      return valid.length > 0 ? valid : undefined;
+    };
+
     // Construct diagram nodes & edges with radial coordinate distribution
     const generatedNodes: DiagramNode[] = [];
     const generatedEdges: DiagramEdge[] = [];
 
-    // Central Root Node
+    // Central Root Node (Standard mind map oval dimensions: width 115, height 55)
     const coreId = `mm-core-${Date.now()}`;
     const coreX = 600;
     const coreY = 350;
-    const coreWidth = 140;
-    const coreHeight = 65;
+    const coreWidth = 115;
+    const coreHeight = 55;
 
     generatedNodes.push({
       id: coreId,
@@ -1055,6 +1110,7 @@ Return a JSON object conforming to the schema with:
         status: 'approved',
         tags: ['MindMap', 'CentralTopic'],
       },
+      links: formatLinks(data.links),
     });
 
     const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
@@ -1078,25 +1134,25 @@ Return a JSON object conforming to the schema with:
       const count = group.length;
       if (count === 0) return;
 
-      const spacingY = 170;
+      const spacingY = 190;
       const startY = coreY - ((count - 1) * spacingY) / 2;
-      const branchX = side === 'left' ? coreX - 280 : coreX + 280;
-      const subX = side === 'left' ? branchX - 250 : branchX + 250;
+      const branchX = side === 'left' ? coreX - 300 : coreX + 300;
+      const subX = side === 'left' ? branchX - 270 : branchX + 270;
 
       group.forEach((b: any, bIdx: number) => {
         const branchId = `mm-branch-${b.originalIndex}-${Date.now()}`;
         const branchY = startY + bIdx * spacingY;
         const color = b.color || defaultColors[b.originalIndex % defaultColors.length];
 
-        // Level 1 Branch Node
+        // Level 1 Branch Node (Standard mind map oval dimensions: width 115, height 55)
         generatedNodes.push({
           id: branchId,
           type: 'mindmap-oval',
           label: b.title,
           x: branchX,
           y: branchY,
-          width: 110,
-          height: 52,
+          width: 115,
+          height: 55,
           style: {
             fill: `${color}E6`,
             stroke: color,
@@ -1110,6 +1166,7 @@ Return a JSON object conforming to the schema with:
             status: 'approved',
             tags: ['MindMap', 'Concept'],
           },
+          links: formatLinks(b.links),
         });
 
         // Edge from Central Node to Branch
@@ -1127,11 +1184,11 @@ Return a JSON object conforming to the schema with:
           strokeWidth: 2.5,
         });
 
-        // Level 2 Sub-branches
+        // Level 2 Sub-branches (Standard mind map oval dimensions: width 115, height 55)
         const subbranches = Array.isArray(b.subbranches) ? b.subbranches : [];
         const subCount = subbranches.length;
         if (subCount > 0) {
-          const subSpacingY = 55;
+          const subSpacingY = 70;
           const subStartY = branchY - ((subCount - 1) * subSpacingY) / 2;
 
           subbranches.forEach((sub: any, sIdx: number) => {
@@ -1144,8 +1201,8 @@ Return a JSON object conforming to the schema with:
               label: sub.title,
               x: subX,
               y: subY,
-              width: 90,
-              height: 45,
+              width: 115,
+              height: 55,
               style: {
                 fill: `${color}B3`,
                 stroke: color,
@@ -1159,6 +1216,7 @@ Return a JSON object conforming to the schema with:
                 status: 'approved',
                 tags: ['MindMap', 'Subtopic'],
               },
+              links: formatLinks(sub.links),
             });
 
             // Edge from Branch to Sub-branch

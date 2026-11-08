@@ -742,8 +742,8 @@ export const SHAPE_TEMPLATES: ShapeTemplate[] = [
     defaultNode: {
       type: 'mindmap-oval',
       label: 'Topic Oval',
-      width: 80,
-      height: 45,
+      width: 115,
+      height: 55,
       style: {
         fill: 'rgba(217, 70, 239, 0.85)',
         stroke: '#f0abfc',

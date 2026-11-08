@@ -133,8 +133,8 @@ export const GenerateMindmapModal: React.FC<GenerateMindmapModalProps> = ({
           <div>
             <label className="text-xs font-semibold block mb-1.5 flex items-center justify-between">
               <span>What topic would you like the LLM to give information about?</span>
-              <span className={`text-[10px] font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                A few sentences
+              <span className={`text-[10px] font-mono ${isDark ? 'text-purple-400' : 'text-purple-600'}`}>
+                Supports &quot;10 sentences per node&quot; &amp; URL links
               </span>
             </label>
             <textarea
@@ -142,7 +142,7 @@ export const GenerateMindmapModal: React.FC<GenerateMindmapModalProps> = ({
               value={topic}
               onChange={e => setTopic(e.target.value)}
               disabled={isLoading}
-              placeholder="e.g. Artificial Intelligence Governance & Cloud Strategy: cover compliance, patient privacy, automated data pipelines, continuous evaluation, and infrastructure deployment..."
+              placeholder="e.g. Kubernetes Cluster Architecture: about 10 sentences per node explaining control plane, kube-scheduler, kubelet, and etcd, with authoritative documentation URL links..."
               className={`w-full p-3 rounded-xl border text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/50 leading-relaxed transition-all ${
                 isDark
                   ? 'bg-slate-950 border-slate-700/80 text-slate-100 placeholder-slate-500'

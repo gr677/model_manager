@@ -297,7 +297,11 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         <g className="pointer-events-auto">
           {/* Source Endpoint Drag Handle (Start - Enormous 44px hit area - Change 3) */}
           <g
-            className="cursor-grab active:cursor-grabbing group/handle"
+            className={`group/handle ${
+              temporaryStart
+                ? 'pointer-events-none opacity-80'
+                : 'cursor-grab active:cursor-grabbing pointer-events-auto'
+            }`}
             transform={`translate(${start.x}, ${start.y})`}
             onMouseDown={e => {
               e.stopPropagation();
@@ -306,7 +310,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
           >
             <title>{`Drag start point from "${sourceNode.label}" to another anchor point`}</title>
             {/* Invisible large hit area (44px diameter) for easy grabbing */}
-            <circle r={22} fill="transparent" className="cursor-grab" />
+            <circle r={22} fill="transparent" className={temporaryStart ? 'pointer-events-none' : 'cursor-grab'} />
             {/* Pulsing ring */}
             <circle
               r={13}
@@ -329,7 +333,11 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
 
           {/* Target Endpoint Drag Handle (End - Enormous 44px hit area - Change 3) */}
           <g
-            className="cursor-grab active:cursor-grabbing group/handle"
+            className={`group/handle ${
+              temporaryEnd
+                ? 'pointer-events-none opacity-80'
+                : 'cursor-grab active:cursor-grabbing pointer-events-auto'
+            }`}
             transform={`translate(${end.x}, ${end.y})`}
             onMouseDown={e => {
               e.stopPropagation();

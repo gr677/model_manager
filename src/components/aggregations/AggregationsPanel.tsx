@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Hash,
@@ -11,14 +11,15 @@ import {
   X,
   ChevronDown,
   Layers,
-  ArrowUpDown,
   Search,
-  ExternalLink,
   Sigma,
   TrendingUp,
   Clock,
-  Sparkles,
   Info,
+  CheckSquare,
+  Square,
+  Check,
+  Eye,
 } from 'lucide-react';
 import { AggregationGroup, AggregatedItem, AggregationDataType } from '../../utils/descriptionAggregation';
 import { ThreeDChart, ChartDatum } from './ThreeDChart';
@@ -35,6 +36,8 @@ interface AggregationsPanelProps {
   totalItemsFound: number;
   onFocusNode?: (nodeId: string) => void;
   theme?: AppTheme;
+  showValuesOnCanvas?: boolean;
+  onToggleShowValuesOnCanvas?: () => void;
 }
 
 export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
@@ -47,11 +50,12 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   totalItemsFound,
   onFocusNode,
   theme = 'dark',
+  showValuesOnCanvas = true,
+  onToggleShowValuesOnCanvas,
 }) => {
   const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
   const [searchFilter, setSearchFilter] = useState('');
-
-  if (!isOpen) return null;
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -59,17 +63,16 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   // Active group to display
   const activeGroup = groups.find(g => g.name === selectedFieldName?.toLowerCase()) || groups[0];
 
-  // Prepare chart data for numbers
-  const chartData: ChartDatum[] = activeGroup && activeGroup.type === 'number'
-    ? activeGroup.items.map((item, idx) => ({
-        id: item.id,
-        label: item.nodeLabel,
-        value: item.numericValue ?? 0,
-        nodeId: item.nodeId,
-        pageTitle: item.pageTitle,
-      }))
-    : [];
+  // Initialize selectedItemIds whenever activeGroup changes
+  useEffect(() => {
+    if (activeGroup && activeGroup.items) {
+      setSelectedItemIds(new Set(activeGroup.items.map(i => i.id)));
+    }
+  }, [activeGroup?.name]);
 
+  if (!isOpen) return null;
+
+  // Items filtered by search and selected items
   const filteredItems = (activeGroup?.items || []).filter(item => {
     if (!searchFilter.trim()) return true;
     const q = searchFilter.toLowerCase();
@@ -79,6 +82,56 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
       item.pageTitle.toLowerCase().includes(q)
     );
   });
+
+  const activeTickedItems = useMemo(() => {
+    if (!activeGroup) return [];
+    return activeGroup.items.filter(item => selectedItemIds.has(item.id));
+  }, [activeGroup, selectedItemIds]);
+
+  // Recalculated metrics based on ticked items
+  const effectiveTotal = useMemo(() => {
+    if (!activeGroup || activeGroup.type !== 'number') return 0;
+    return activeTickedItems.reduce((acc, curr) => acc + (curr.numericValue ?? 0), 0);
+  }, [activeGroup, activeTickedItems]);
+
+  const effectiveAvg = useMemo(() => {
+    if (activeTickedItems.length === 0) return 0;
+    return effectiveTotal / activeTickedItems.length;
+  }, [activeTickedItems, effectiveTotal]);
+
+  // Prepare chart data for numbers
+  const chartData: ChartDatum[] = useMemo(() => {
+    if (!activeGroup || activeGroup.type !== 'number') return [];
+    return activeTickedItems.map(item => ({
+      id: item.id,
+      label: item.nodeLabel,
+      value: item.numericValue ?? 0,
+      nodeId: item.nodeId,
+      pageTitle: item.pageTitle,
+    }));
+  }, [activeGroup, activeTickedItems]);
+
+  const handleToggleItem = (itemId: string) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (activeGroup) {
+      setSelectedItemIds(new Set(activeGroup.items.map(i => i.id)));
+    }
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedItemIds(new Set());
+  };
 
   const getTypeIcon = (type: AggregationDataType) => {
     switch (type) {
@@ -114,7 +167,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 truncate">
-              Searched: current & child pages ({totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'})
+              Searched: current &amp; child pages ({totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'})
             </p>
           </div>
         </div>
@@ -129,6 +182,24 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
         >
           <X className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* Canvas Value Badges Tickbox Control */}
+      <div className={`px-3 py-2 border-b flex items-center justify-between shrink-0 text-xs ${
+        isDark ? 'border-slate-800/80 bg-slate-950/40' : 'border-slate-200 bg-slate-100/70'
+      }`}>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showValuesOnCanvas}
+            onChange={onToggleShowValuesOnCanvas}
+            className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 focus:ring-0 cursor-pointer"
+          />
+          <span className="text-[11px] font-medium text-slate-300">
+            Display value badges on diagram nodes
+          </span>
+        </label>
+        <Eye className={`w-3.5 h-3.5 ${showValuesOnCanvas ? 'text-blue-400' : 'text-slate-500'}`} />
       </div>
 
       {/* Field Switcher Selector Dropdown */}
@@ -188,17 +259,17 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
           </div>
         ) : !activeGroup ? null : (
           <>
-            {/* 1. NUMBER FIELD: 3D Bar/Pie Chart & Breakdown */}
+            {/* 1. NUMBER FIELD: Normal Bar/Pie Chart & Breakdown with Tickbox Filtering */}
             {activeGroup.type === 'number' && (
               <div className="space-y-3 animate-in fade-in">
-                {/* Summary Metrics Cards */}
+                {/* Summary Metrics Cards (Recalculates with ticked items) */}
                 <div className="grid grid-cols-2 gap-2">
                   <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                     <span className="text-[9px] font-mono uppercase text-slate-400 flex items-center gap-1">
                       <Sigma className="w-3 h-3 text-emerald-400" /> Total Sum
                     </span>
                     <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5 truncate">
-                      {(activeGroup.total ?? 0).toLocaleString()}
+                      {effectiveTotal.toLocaleString()}
                     </div>
                   </div>
                   <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
@@ -206,60 +277,110 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                       <TrendingUp className="w-3 h-3 text-sky-400" /> Average
                     </span>
                     <div className="text-lg font-bold font-mono text-sky-400 mt-0.5 truncate">
-                      {Math.round(activeGroup.avg ?? 0).toLocaleString()}
+                      {Math.round(effectiveAvg).toLocaleString()}
                     </div>
                   </div>
                 </div>
 
-                {/* Interactive 3D Chart using Three.js */}
+                {/* Normal Bar / Circular Pie Chart matching page theme color */}
                 <ThreeDChart
                   data={chartData}
                   chartType={chartType}
                   onChangeChartType={setChartType}
                   isDark={isDark}
-                  totalSum={activeGroup.total}
+                  totalSum={effectiveTotal}
                   fieldName={activeGroup.displayName}
+                  backgroundColor={themeDef.canvasBg}
                 />
 
-                {/* Values Breakdown List */}
+                {/* Values Breakdown List with Tickboxes */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300 pb-1 border-b border-slate-800">
-                    <span>Value Breakdown ({activeGroup.items.length})</span>
-                    <span className="text-[10px] text-slate-400 font-mono">% of total</span>
+                    <div className="flex items-center gap-1.5">
+                      <span>Values ({activeTickedItems.length}/{activeGroup.items.length})</span>
+                    </div>
+                    {/* Tickbox controls: Select All / None */}
+                    <div className="flex items-center gap-1 text-[10px] font-mono">
+                      <button
+                        type="button"
+                        onClick={handleSelectAll}
+                        className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-sky-400 hover:text-sky-300 cursor-pointer"
+                      >
+                        All
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <button
+                        type="button"
+                        onClick={handleDeselectAll}
+                        className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-300 cursor-pointer"
+                      >
+                        None
+                      </button>
+                    </div>
                   </div>
+
                   <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
                     {activeGroup.items.map((item, idx) => {
-                      const total = activeGroup.total || 1;
-                      const percent = Math.round(((item.numericValue ?? 0) / total) * 100);
+                      const isTicked = selectedItemIds.has(item.id);
+                      const total = effectiveTotal || 1;
+                      const percent = isTicked ? Math.round(((item.numericValue ?? 0) / total) * 100) : 0;
+
                       return (
                         <div
                           key={item.id || idx}
-                          onClick={() => onFocusNode?.(item.nodeId)}
-                          className={`p-2 rounded-lg border transition-all cursor-pointer flex flex-col gap-1 ${
+                          className={`p-2 rounded-lg border transition-all flex items-start gap-2 ${
                             isDark
-                              ? 'bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
-                              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                              ? isTicked
+                                ? 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
+                                : 'bg-slate-950/30 border-slate-900 opacity-60'
+                              : isTicked
+                              ? 'bg-white border-slate-200 hover:border-slate-300'
+                              : 'bg-slate-50 border-slate-200 opacity-50'
                           }`}
-                          title={`Click to focus node "${item.nodeLabel}" on canvas`}
                         >
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-slate-100 truncate max-w-[190px]">
-                              {item.nodeLabel}
-                            </span>
-                            <span className="font-mono font-bold text-emerald-400 shrink-0">
-                              {(item.numericValue ?? 0).toLocaleString()}
-                            </span>
-                          </div>
-                          {/* Percentage progress bar */}
-                          <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-emerald-500 h-full rounded-full transition-all"
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono">
-                            <span className="truncate max-w-[180px]">{item.pageTitle}</span>
-                            <span>{percent}%</span>
+                          {/* Tickbox checkbox */}
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleToggleItem(item.id);
+                            }}
+                            className="mt-0.5 text-blue-400 hover:text-blue-300 cursor-pointer shrink-0"
+                            title={isTicked ? 'Exclude from chart' : 'Include in chart'}
+                          >
+                            {isTicked ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-600" />
+                            )}
+                          </button>
+
+                          <div
+                            onClick={() => onFocusNode?.(item.nodeId)}
+                            className="flex-1 min-w-0 cursor-pointer"
+                            title={`Click to focus node "${item.nodeLabel}" on canvas`}
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-slate-100 truncate max-w-[170px]">
+                                {item.nodeLabel}
+                              </span>
+                              <span className="font-mono font-bold text-emerald-400 shrink-0 ml-1">
+                                {(item.numericValue ?? 0).toLocaleString()}
+                              </span>
+                            </div>
+                            {/* Percentage progress bar */}
+                            {isTicked && (
+                              <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mt-1">
+                                <div
+                                  className="bg-emerald-500 h-full rounded-full transition-all"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono mt-0.5">
+                              <span className="truncate max-w-[160px]">{item.pageTitle}</span>
+                              {isTicked && <span>{percent}%</span>}
+                            </div>
                           </div>
                         </div>
                       );
@@ -269,7 +390,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               </div>
             )}
 
-            {/* 2. DATE FIELD: Ordered by Date Ascending (date asc) */}
+            {/* 2. DATE FIELD: Ordered by Date Ascending (date asc) with Tickbox controls */}
             {activeGroup.type === 'date' && (
               <div className="space-y-3 animate-in fade-in">
                 <div className={`p-2.5 rounded-xl border flex items-center justify-between ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
@@ -293,7 +414,6 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     const d = item.dateValue;
                     const dateFormatted = item.formattedDate || (d ? d.toLocaleDateString() : item.value);
 
-                    // Check if date is past or future
                     const now = new Date();
                     const isPast = d && d.getTime() > 0 && d.getTime() < now.getTime();
 

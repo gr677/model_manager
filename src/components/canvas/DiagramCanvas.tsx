@@ -37,6 +37,7 @@ import {
   getNodeAnchorCoords,
   getClosestAnchor,
   getAnchorLabel,
+  NODE_ANCHOR_DEFINITIONS,
 } from '../../utils/diagramAnchors';
 
 interface DiagramCanvasProps {
@@ -52,6 +53,7 @@ interface DiagramCanvasProps {
   settings: StudioSettings;
   pageId?: string;
   activeDiagramFilename?: string;
+  showAggregationBadges?: boolean;
   onSelectNode: (nodeId: string | null, isMultiSelect?: boolean) => void;
   onSelectMultipleNodes?: (nodeIds: string[]) => void;
   onSelectEdge: (edgeId: string | null) => void;
@@ -85,6 +87,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   settings,
   pageId,
   activeDiagramFilename,
+  showAggregationBadges = true,
   onSelectNode,
   onSelectMultipleNodes,
   onSelectEdge,
@@ -829,25 +832,71 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
 
       // Handle releasing a reconnecting edge endpoint anywhere on window
       if (reconnectingEdge && !isReadOnly && onUpdateEdge) {
-        const anchorElement = (e.target as HTMLElement).closest('[data-anchor-id]');
-        if (anchorElement) {
-          const targetAnchor = anchorElement.getAttribute('data-anchor-id') as NodeAnchor;
-          const targetNodeId = anchorElement.getAttribute('data-node-id');
-          if (targetNodeId && targetAnchor) {
-            handleCompleteConnection(targetNodeId, targetAnchor);
-            return;
+        const dropCoords = screenToCanvasCoords(e.clientX, e.clientY);
+        let targetNodeId: string | null = null;
+        let targetAnchor: NodeAnchor | null = null;
+
+        // 1. Inspect all DOM elements under cursor
+        const elementsUnderCursor = document.elementsFromPoint(e.clientX, e.clientY);
+        for (const el of elementsUnderCursor) {
+          const anchorEl = el.closest('[data-anchor-id]');
+          if (anchorEl) {
+            const aId = anchorEl.getAttribute('data-anchor-id') as NodeAnchor;
+            const nId = anchorEl.getAttribute('data-node-id');
+            if (aId && nId) {
+              targetNodeId = nId;
+              targetAnchor = aId;
+              break;
+            }
+          }
+          const nodeEl = el.closest('[id^="node-"]');
+          if (nodeEl && !targetNodeId) {
+            const rawId = nodeEl.getAttribute('data-node-id') || nodeEl.id.replace(/^node-/, '');
+            if (rawId) {
+              const matchedNode = nodes.find(n => n.id === rawId);
+              if (matchedNode) {
+                targetNodeId = rawId;
+                targetAnchor = getClosestAnchor(matchedNode, dropCoords.x, dropCoords.y);
+                break;
+              }
+            }
           }
         }
 
-        const nodeElement = (e.target as HTMLElement).closest('[id^="node-"]');
-        if (nodeElement) {
-          const targetNodeId = nodeElement.id.replace('node-', '');
-          const targetNode = nodes.find(n => n.id === targetNodeId);
-          if (targetNode) {
-            const closestAnchor = getClosestAnchor(targetNode, currentMousePos.x, currentMousePos.y);
-            handleCompleteConnection(targetNodeId, closestAnchor);
-            return;
+        // 2. Geometric snap fallback: find closest anchor within 45px across all nodes
+        if (!targetNodeId || !targetAnchor) {
+          let closestDist = Infinity;
+          for (const n of nodes) {
+            for (const def of NODE_ANCHOR_DEFINITIONS) {
+              const anchorCoord = getNodeAnchorCoords(n, def.id);
+              const dist = Math.hypot(anchorCoord.x - dropCoords.x, anchorCoord.y - dropCoords.y);
+              if (dist < 45 && dist < closestDist) {
+                closestDist = dist;
+                targetNodeId = n.id;
+                targetAnchor = def.id;
+              }
+            }
           }
+        }
+
+        // 3. Geometric node bounding box fallback: if dropped inside a node
+        if (!targetNodeId || !targetAnchor) {
+          const containingNode = nodes.find(
+            n =>
+              dropCoords.x >= n.x &&
+              dropCoords.x <= n.x + n.width &&
+              dropCoords.y >= n.y &&
+              dropCoords.y <= n.y + n.height
+          );
+          if (containingNode) {
+            targetNodeId = containingNode.id;
+            targetAnchor = getClosestAnchor(containingNode, dropCoords.x, dropCoords.y);
+          }
+        }
+
+        if (targetNodeId && targetAnchor) {
+          handleCompleteConnection(targetNodeId, targetAnchor);
+          return;
         }
 
         setReconnectingEdge(null);
@@ -1600,6 +1649,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
               onOpenChildDiagramModal={onOpenChildDiagramModal}
               onNavigateChildDiagram={onNavigateChildDiagram}
               isReadOnly={isReadOnly}
+              showAggregationBadges={showAggregationBadges}
             />
           );
         })}

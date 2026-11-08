@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { BarChart3, PieChart as PieChartIcon, RotateCw, ZoomIn, ZoomOut, Sparkles } from 'lucide-react';
+import { BarChart3, PieChart as PieChartIcon, RotateCw, ZoomIn, ZoomOut, Play, Pause } from 'lucide-react';
 
 export interface ChartDatum {
   id: string;
@@ -23,6 +23,7 @@ interface ThreeDChartProps {
   isDark?: boolean;
   totalSum?: number;
   fieldName?: string;
+  backgroundColor?: string;
 }
 
 const PALETTE = [
@@ -45,10 +46,11 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
   isDark = true,
   totalSum = 0,
   fieldName = 'Value',
+  backgroundColor,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [hoveredItem, setHoveredItem] = useState<{ label: string; value: number; percent: number; color: string } | null>(null);
-  const [isRotating, setIsRotating] = useState(true);
+  const [isRotating, setIsRotating] = useState(false);
 
   // References for scene lifecycle
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -56,9 +58,11 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
   const animFrameRef = useRef<number | null>(null);
-  const meshesRef = useRef<Array<{ mesh: THREE.Mesh; datum: ChartDatum; percent: number; initialY: number }>>([]);
+  const meshesRef = useRef<Array<{ mesh: THREE.Mesh; datum: ChartDatum; percent: number; initialPos: THREE.Vector3 }>>([]);
   const isPointerDownRef = useRef(false);
   const prevPointerPosRef = useRef({ x: 0, y: 0 });
+
+  const effectiveBgColor = backgroundColor || (isDark ? '#020617' : '#f8fafc');
 
   useEffect(() => {
     const container = mountRef.current;
@@ -80,137 +84,141 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
     })();
 
     const width = container.clientWidth || 320;
-    const height = container.clientHeight || 280;
+    const height = container.clientHeight || 260;
 
     // Scene setup
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // Camera setup
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(0, 5, 8);
-    camera.lookAt(0, 0.5, 0);
+    // Background matching page theme color
+    const bgThreeColor = new THREE.Color(effectiveBgColor);
+    scene.background = bgThreeColor;
+
+    // Camera setup (calibrated for normal flat/gentle perspective)
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+    if (chartType === 'bar') {
+      // Normal bar chart camera: positioned straight in front looking at the baseline
+      camera.position.set(0, 1.4, 5.8);
+      camera.lookAt(0, 1.1, 0);
+    } else {
+      // Normal circular pie chart camera: looking directly at the face with a slight 8-degree tilt
+      camera.position.set(0, 0.25, 5.4);
+      camera.lookAt(0, 0, 0);
+    }
     cameraRef.current = camera;
 
     // WebGLRenderer setup
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
-      alpha: true,
+      alpha: false,
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
+    renderer.setClearColor(bgThreeColor, 1);
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.15;
     rendererRef.current = renderer;
 
     container.replaceChildren(renderer.domElement);
 
     // Studio Lighting Rig
-    const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.8 : 1.1);
+    const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.9 : 1.15);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, isDark ? 1.4 : 1.6);
-    dirLight.position.set(6, 10, 7);
+    const dirLight = new THREE.DirectionalLight(0xffffff, isDark ? 1.3 : 1.5);
+    dirLight.position.set(4, 8, 6);
     scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0x60a5fa, isDark ? 0.9 : 0.6);
-    rimLight.position.set(-7, -2, -5);
-    scene.add(rimLight);
-
-    // Ground reflective platform disc
-    const platformGeo = new THREE.CylinderGeometry(3.6, 3.8, 0.2, 48);
-    const platformMat = new THREE.MeshStandardMaterial({
-      color: isDark ? 0x0f172a : 0xf1f5f9,
-      roughness: 0.35,
-      metalness: 0.2,
-    });
-    const platform = new THREE.Mesh(platformGeo, platformMat);
-    platform.position.y = -0.1;
-    scene.add(platform);
-
-    // Outer subtle ring border
-    const ringGeo = new THREE.TorusGeometry(3.8, 0.04, 16, 64);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: isDark ? 0x38bdf8 : 0x0284c7,
-      roughness: 0.2,
-      metalness: 0.8,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.02;
-    scene.add(ring);
+    const fillLight = new THREE.DirectionalLight(0x60a5fa, isDark ? 0.6 : 0.4);
+    fillLight.position.set(-5, -2, -4);
+    scene.add(fillLight);
 
     // Central group holding chart meshes
     const chartGroup = new THREE.Group();
     scene.add(chartGroup);
     groupRef.current = chartGroup;
 
-    // Build 3D Chart Data
+    // Build Chart Data
     meshesRef.current = [];
     const validData = data.filter(d => Number.isFinite(d.value) && d.value > 0);
     const effectiveTotal = totalSum > 0 ? totalSum : validData.reduce((acc, curr) => acc + curr.value, 0) || 1;
     const maxValue = Math.max(...validData.map(d => d.value), 1);
+    const count = validData.length;
 
     if (chartType === 'bar') {
-      // 3D Bar Chart
-      const count = validData.length;
-      const radius = count > 5 ? 2.3 : Math.max(1.4, count * 0.35);
+      // 1. NORMAL BAR CHART: Rectangular vertical columns aligned along a horizontal baseline
+      const availableWidth = 4.6;
+      const barWidth = Math.min(0.65, count > 0 ? (availableWidth / count) * 0.72 : 0.65);
+      const gap = count > 1 ? (availableWidth - count * barWidth) / (count - 1) : 0.3;
+      const totalWidth = count * barWidth + Math.max(0, count - 1) * gap;
+      const startX = -totalWidth / 2 + barWidth / 2;
+
+      // Baseline ground bar
+      const baseGeo = new THREE.BoxGeometry(totalWidth + 0.6, 0.05, 0.6);
+      const baseMat = new THREE.MeshStandardMaterial({
+        color: isDark ? 0x334155 : 0xcbd5e1,
+        roughness: 0.5,
+      });
+      const baseline = new THREE.Mesh(baseGeo, baseMat);
+      baseline.position.set(0, -0.03, 0);
+      chartGroup.add(baseline);
 
       validData.forEach((item, idx) => {
         const colorHex = item.color || PALETTE[idx % PALETTE.length];
-        const barNormalized = (item.value / maxValue) * 3.2;
-        const barHeight = Math.max(0.25, barNormalized);
+        const barNormalized = (item.value / maxValue) * 2.4;
+        const barHeight = Math.max(0.12, barNormalized);
 
-        // Cylindrical 3D Bar with beveled appearance
-        const barGeo = new THREE.CylinderGeometry(0.24, 0.28, barHeight, 32);
+        // Standard rectangular box column (Normal Bar!)
+        const barGeo = new THREE.BoxGeometry(barWidth, barHeight, 0.42);
         const barMat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(colorHex),
-          roughness: 0.2,
-          metalness: 0.15,
+          roughness: 0.25,
+          metalness: 0.1,
         });
 
         const mesh = new THREE.Mesh(barGeo, barMat);
-
-        // Position bars evenly along a circular carousel or arc
-        const angle = (idx / count) * Math.PI * 2;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
+        const x = startX + idx * (barWidth + gap);
         const y = barHeight / 2;
+        const z = 0;
 
         mesh.position.set(x, y, z);
         chartGroup.add(mesh);
 
-        // Top cap gem
-        const capGeo = new THREE.SphereGeometry(0.25, 24, 16);
-        const capMat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(colorHex).offsetHSL(0, 0, 0.1),
-          roughness: 0.1,
-          metalness: 0.4,
+        // Subtle top beveled edge cap
+        const topGeo = new THREE.BoxGeometry(barWidth * 1.02, 0.06, 0.44);
+        const topMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(colorHex).offsetHSL(0, 0, 0.12),
+          roughness: 0.2,
+          metalness: 0.2,
         });
-        const cap = new THREE.Mesh(capGeo, capMat);
-        cap.position.set(x, barHeight, z);
-        cap.scale.set(1, 0.4, 1);
-        chartGroup.add(cap);
+        const topMesh = new THREE.Mesh(topGeo, topMat);
+        topMesh.position.set(x, barHeight, z);
+        chartGroup.add(topMesh);
 
         const percent = Math.round((item.value / effectiveTotal) * 100);
-        meshesRef.current.push({ mesh, datum: item, percent, initialY: y });
+        meshesRef.current.push({
+          mesh,
+          datum: item,
+          percent,
+          initialPos: new THREE.Vector3(x, y, z),
+        });
       });
     } else {
-      // 3D Pie / Wedge Chart
+      // 2. NORMAL CIRCULAR PIE CHART: A clean, circular pie with slices
       let currentAngle = 0;
-      const pieHeight = 0.65;
-      const pieRadius = 2.2;
+      const pieHeight = 0.28;
+      const pieRadius = 1.95;
 
       validData.forEach((item, idx) => {
         const colorHex = item.color || PALETTE[idx % PALETTE.length];
         const fraction = item.value / effectiveTotal;
         const sliceAngle = fraction * Math.PI * 2;
 
-        if (sliceAngle < 0.01) return;
+        if (sliceAngle < 0.005) return;
 
-        // Shape for extruded pie slice
+        // Shape for circular wedge slice
         const shape = new THREE.Shape();
         shape.moveTo(0, 0);
         shape.arc(0, 0, pieRadius, currentAngle, currentAngle + sliceAngle, false);
@@ -219,37 +227,46 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         const extrudeSettings: THREE.ExtrudeGeometryOptions = {
           depth: pieHeight,
           bevelEnabled: true,
-          bevelSegments: 3,
+          bevelSegments: 2,
           steps: 1,
-          bevelSize: 0.04,
-          bevelThickness: 0.04,
+          bevelSize: 0.02,
+          bevelThickness: 0.02,
         };
 
         const sliceGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        sliceGeo.rotateX(Math.PI / 2);
+        // Position upright facing camera
+        sliceGeo.rotateZ(0);
 
         const sliceMat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(colorHex),
-          roughness: 0.25,
-          metalness: 0.1,
+          roughness: 0.3,
+          metalness: 0.05,
         });
 
         const mesh = new THREE.Mesh(sliceGeo, sliceMat);
 
-        // Subtle radial explosion offset for visual separation
+        // Subtle radial explosion offset
         const midAngle = currentAngle + sliceAngle / 2;
-        const explodeDist = 0.08;
+        const explodeDist = 0.04;
         const exX = Math.cos(midAngle) * explodeDist;
-        const exZ = -Math.sin(midAngle) * explodeDist;
+        const exY = Math.sin(midAngle) * explodeDist;
 
-        mesh.position.set(exX, pieHeight, exZ);
+        mesh.position.set(exX, exY, 0);
         chartGroup.add(mesh);
 
         const percent = Math.round(fraction * 100);
-        meshesRef.current.push({ mesh, datum: item, percent, initialY: pieHeight });
+        meshesRef.current.push({
+          mesh,
+          datum: item,
+          percent,
+          initialPos: new THREE.Vector3(exX, exY, 0),
+        });
 
         currentAngle += sliceAngle;
       });
+
+      // Subtle tilt for depth while keeping clean circle shape
+      chartGroup.rotation.x = 0.15;
     }
 
     // Raycasting for interactive hover inspection
@@ -264,8 +281,12 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
       // Handle user drag rotation
       if (isPointerDownRef.current) {
         const deltaX = e.clientX - prevPointerPosRef.current.x;
+        const deltaY = e.clientY - prevPointerPosRef.current.y;
         if (chartGroup) {
           chartGroup.rotation.y += deltaX * 0.01;
+          if (chartType === 'pie') {
+            chartGroup.rotation.x += deltaY * 0.01;
+          }
         }
         prevPointerPosRef.current = { x: e.clientX, y: e.clientY };
       }
@@ -285,9 +306,21 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
             percent: match.percent,
             color: hex,
           });
+
+          // Highlight mesh slightly
+          meshesRef.current.forEach(m => {
+            if (m.mesh === hitMesh) {
+              m.mesh.scale.set(1.04, 1.04, 1.04);
+            } else {
+              m.mesh.scale.set(1, 1, 1);
+            }
+          });
           return;
         }
       }
+
+      // Reset hover highlights
+      meshesRef.current.forEach(m => m.mesh.scale.set(1, 1, 1));
       setHoveredItem(null);
     };
 
@@ -345,7 +378,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [data, chartType, isDark, isRotating, totalSum]);
+  }, [data, chartType, isDark, isRotating, totalSum, effectiveBgColor]);
 
   const handleZoom = (direction: 'in' | 'out') => {
     if (!cameraRef.current) return;
@@ -355,20 +388,27 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
 
   const handleResetRotation = () => {
     if (groupRef.current) {
-      groupRef.current.rotation.set(0, 0, 0);
+      if (chartType === 'bar') {
+        groupRef.current.rotation.set(0, 0, 0);
+      } else {
+        groupRef.current.rotation.set(0.15, 0, 0);
+      }
     }
   };
 
   return (
-    <div className="relative w-full flex flex-col rounded-xl overflow-hidden border border-slate-700/50 bg-slate-950/60 shadow-xl">
+    <div
+      className="relative w-full flex flex-col rounded-xl overflow-hidden border border-slate-700/50 shadow-md transition-colors"
+      style={{ backgroundColor: effectiveBgColor }}
+    >
       {/* 3D Canvas Stage */}
       <div
         ref={mountRef}
         className="w-full h-56 relative cursor-grab active:cursor-grabbing select-none"
-        title="Click and drag to spin 3D chart"
+        title="Click and drag to rotate chart"
       />
 
-      {/* Floating Hover Info Overlay */}
+      {/* Floating Hover Info Tooltip */}
       {hoveredItem ? (
         <div className="absolute top-2 left-2 z-20 px-2.5 py-1.5 rounded-lg bg-slate-900/95 border border-slate-700 shadow-xl text-xs backdrop-blur-sm pointer-events-none animate-in fade-in">
           <div className="flex items-center gap-1.5 font-semibold text-slate-100">
@@ -381,25 +421,26 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
           </div>
         </div>
       ) : (
-        <div className="absolute top-2 left-2 z-20 px-2 py-1 rounded bg-black/40 border border-white/5 text-[10px] text-slate-400 font-mono pointer-events-none flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-sky-400 animate-pulse" />
-          <span>Interactive 3D {chartType === 'bar' ? 'Bar' : 'Pie'} Chart</span>
+        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-slate-900/60 border border-slate-800 text-[9px] font-mono text-slate-400 pointer-events-none">
+          {chartType === 'bar' ? 'Standard Bar Chart' : 'Circular Pie Chart'}
         </div>
       )}
 
-      {/* Control Toolbar Bar: Bar/Pie switch & Camera controls */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-900/80 border-t border-slate-800 text-xs">
-        {/* Chart Type Toggle */}
-        <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+      {/* Chart Control Toolbar */}
+      <div className={`p-2 border-t flex items-center justify-between text-xs backdrop-blur-sm ${isDark ? 'border-slate-800/80 bg-slate-950/40' : 'border-slate-200/80 bg-white/40'}`}>
+        {/* Toggle Bar / Pie */}
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onChangeChartType?.('bar')}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-all cursor-pointer ${
               chartType === 'bar'
-                ? 'bg-blue-600 text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : isDark
+                ? 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                : 'bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-900'
             }`}
-            title="Switch to 3D Bar Chart"
+            title="Display standard rectangular bar chart"
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>Bar</span>
@@ -407,53 +448,65 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
           <button
             type="button"
             onClick={() => onChangeChartType?.('pie')}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-2 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition-all cursor-pointer ${
               chartType === 'pie'
-                ? 'bg-blue-600 text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : isDark
+                ? 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                : 'bg-slate-200 text-slate-600 hover:bg-slate-300 hover:text-slate-900'
             }`}
-            title="Switch to 3D Pie Chart"
+            title="Display circular pie chart"
           >
             <PieChartIcon className="w-3.5 h-3.5" />
             <span>Pie</span>
           </button>
         </div>
 
-        {/* View & Rotation Controls */}
-        <div className="flex items-center gap-1 text-slate-400">
+        {/* Action Controls */}
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setIsRotating(prev => !prev)}
-            className={`p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer ${
-              isRotating ? 'text-blue-400' : 'text-slate-400'
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              isRotating
+                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
+                : isDark
+                ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
             }`}
-            title={isRotating ? 'Pause auto-rotation' : 'Resume auto-rotation'}
+            title={isRotating ? 'Pause auto-spin' : 'Auto-spin chart'}
           >
-            <RotateCw className={`w-3.5 h-3.5 ${isRotating ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleZoom('in')}
-            className="p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Zoom in"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleZoom('out')}
-            className="p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Zoom out"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
+            {isRotating ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
           </button>
           <button
             type="button"
             onClick={handleResetRotation}
-            className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer ml-1"
-            title="Reset chart view rotation"
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800/60' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            }`}
+            title="Reset chart orientation"
           >
-            Reset
+            <RotateCw className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleZoom('in')}
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800/60' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            }`}
+            title="Zoom In"
+          >
+            <ZoomIn className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleZoom('out')}
+            className={`p-1 rounded-md transition-colors cursor-pointer ${
+              isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800/60' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            }`}
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-3 h-3" />
           </button>
         </div>
       </div>

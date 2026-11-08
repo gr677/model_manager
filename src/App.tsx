@@ -90,6 +90,7 @@ export default function App() {
   // Aggregations Down Right Side State (Change 2)
   const [isAggregationsOpen, setIsAggregationsOpen] = useState(false);
   const [selectedAggregationField, setSelectedAggregationField] = useState<string | null>(null);
+  const [showAggregationBadges, setShowAggregationBadges] = useState(true);
   const [pendingNavigation, setPendingNavigation] = useState<{
     action: () => void | Promise<void>;
     targetName?: string;
@@ -1104,6 +1105,8 @@ export default function App() {
           setSelectedAggregationField(name);
           setIsAggregationsOpen(true);
         }}
+        showValuesOnCanvas={showAggregationBadges}
+        onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
       />
 
       {/* Main Studio Body: Sidebar + Canvas + Inspector */}
@@ -1143,6 +1146,7 @@ export default function App() {
           theme={settings.theme}
           diagramType={currentPage.diagramType}
           settings={settings}
+          showAggregationBadges={showAggregationBadges}
           onSelectNode={(nodeId, isMultiSelect) => {
             if (nodeId === null) {
               setSelectedNodeIds([]);
@@ -1231,6 +1235,8 @@ export default function App() {
           totalSearchedPages={aggregationResult.totalSearchedPages}
           totalItemsFound={aggregationResult.totalItemsFound}
           theme={settings.theme}
+          showValuesOnCanvas={showAggregationBadges}
+          onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
           onFocusNode={nodeId => {
             // Find if node exists on current page
             const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);

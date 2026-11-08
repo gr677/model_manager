@@ -27,7 +27,9 @@ import {
   Users,
   FolderTree,
   ChevronDown,
+  Hash,
 } from 'lucide-react';
+import { parseAggregationLines } from '../../utils/descriptionAggregation';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
 import { NodeAnchor, NODE_ANCHOR_DEFINITIONS, getNodeAnchorRelativeCoords } from '../../utils/diagramAnchors';
 
@@ -56,6 +58,7 @@ interface NodeRendererProps {
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onNavigateChildDiagram?: (filename: string) => void;
   isReadOnly?: boolean;
+  showAggregationBadges?: boolean;
 }
 
 export const NodeRenderer: React.FC<NodeRendererProps> = ({
@@ -79,11 +82,25 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   onOpenChildDiagramModal,
   onNavigateChildDiagram,
   isReadOnly,
+  showAggregationBadges = true,
 }) => {
   const [isEditingLabel, setIsEditingLabel] = React.useState(false);
   const [editedLabel, setEditedLabel] = React.useState(node.label);
   const [isHovered, setIsHovered] = React.useState(false);
   const [mouseEntryPos, setMouseEntryPos] = React.useState<{ x: number; y: number } | null>(null);
+
+  // Parse special instruction tags (@type name: value) on this node
+  const nodeAggregationItems = React.useMemo(() => {
+    if (!showAggregationBadges || !node.documentation?.description) return [];
+    return parseAggregationLines(node.documentation.description, {
+      nodeId: node.id,
+      nodeLabel: node.label,
+      pageId: '',
+      pageTitle: '',
+      diagramFilename: '',
+      diagramTitle: '',
+    });
+  }, [showAggregationBadges, node.documentation?.description, node.id, node.label]);
   const [showChildQuickMenu, setShowChildQuickMenu] = React.useState(false);
   const activeCollaborator = collaborators.find(c => c.selectedNodeId === node.id);
 
@@ -113,13 +130,13 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                 onStartConnection?.(node.id, def.id, e);
               }}
               onMouseUp={e => {
-                if (isConnectingActive && isTargetCandidate) {
+                if (isConnectingActive) {
                   e.stopPropagation();
                   onCompleteConnection?.(node.id, def.id, e);
                 }
               }}
               onClick={e => {
-                if (isConnectingActive && isTargetCandidate) {
+                if (isConnectingActive) {
                   e.stopPropagation();
                   onCompleteConnection?.(node.id, def.id, e);
                 }
@@ -1575,10 +1592,13 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         return null;
       })()}
 
-      {/* External URL Link Badges on Node (Change 4) */}
+      {/* External URL Link Badges on Node (Change 6: Stack vertically rather than horizontally) */}
       {node.links && node.links.length > 0 && (
         <div
-          className={`absolute ${node.type === 'sticky-note' ? '-top-3 left-2' : '-top-3 right-2'} flex items-center gap-1 z-30 pointer-events-auto`}
+          className={`absolute ${
+            node.type === 'sticky-note' ? '-top-3 left-2 items-start' : '-top-3 right-1 items-end'
+          } flex flex-col gap-1 z-30 pointer-events-auto`}
+          style={{ transform: 'translateY(-100%)' }}
         >
           {node.links.map(link => (
             <a
@@ -1588,11 +1608,38 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
               title={`Open link: "${link.label}" (${link.url}) in new tab`}
-              className="px-1.5 py-0.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-sans font-medium flex items-center gap-1 shadow-md border border-blue-400/40 cursor-pointer transition-transform hover:scale-105"
+              className="px-2 py-0.5 rounded-md bg-blue-600/95 hover:bg-blue-500 text-white text-[9px] font-sans font-medium flex items-center gap-1 shadow-md border border-blue-400/40 cursor-pointer transition-transform hover:scale-105 whitespace-nowrap"
             >
-              <ExternalLink className="w-2.5 h-2.5" />
-              <span className="max-w-[70px] truncate">{link.label}</span>
+              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+              <span className="max-w-[110px] truncate">{link.label}</span>
             </a>
+          ))}
+        </div>
+      )}
+
+      {/* Aggregation Value Badges on Node (Can be toggled via tickboxes control) */}
+      {showAggregationBadges && nodeAggregationItems.length > 0 && (
+        <div
+          className="absolute -bottom-3 left-2 flex flex-wrap items-center gap-1 z-30 pointer-events-auto"
+          style={{ maxWidth: `${Math.max(node.width, 160)}px` }}
+        >
+          {nodeAggregationItems.map((item, idx) => (
+            <span
+              key={idx}
+              className={`px-1.5 py-0.5 rounded-md text-[8.5px] font-mono font-bold shadow-md border flex items-center gap-1 transition-transform hover:scale-105 ${
+                item.type === 'number'
+                  ? 'bg-emerald-950/95 text-emerald-300 border-emerald-600/70 shadow-emerald-950/40'
+                  : item.type === 'date'
+                  ? 'bg-amber-950/95 text-amber-300 border-amber-600/70 shadow-amber-950/40'
+                  : 'bg-sky-950/95 text-sky-300 border-sky-600/70 shadow-sky-950/40'
+              }`}
+              title={`@${item.type} ${item.displayName}: ${item.value}`}
+            >
+              {item.type === 'number' && <Hash className="w-2.5 h-2.5 shrink-0 text-emerald-400" />}
+              {item.type === 'date' && <Calendar className="w-2.5 h-2.5 shrink-0 text-amber-400" />}
+              {item.type === 'text' && <FileText className="w-2.5 h-2.5 shrink-0 text-sky-400" />}
+              <span className="truncate max-w-[90px]">{item.displayName}: {item.value}</span>
+            </span>
           ))}
         </div>
       )}

@@ -39,6 +39,8 @@ import {
   Hash,
   Calendar,
   FileText,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -77,6 +79,8 @@ interface AppHeaderProps {
   isAggregationsOpen?: boolean;
   onToggleAggregations?: () => void;
   onSelectAggregationField?: (name: string) => void;
+  showValuesOnCanvas?: boolean;
+  onToggleShowValuesOnCanvas?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -112,6 +116,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   isAggregationsOpen = false,
   onToggleAggregations,
   onSelectAggregationField,
+  showValuesOnCanvas = true,
+  onToggleShowValuesOnCanvas,
 }) => {
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
@@ -137,7 +143,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <img
             src="/assets/aistudio/brain_transparent.png"
             alt="MODEL MANAGER"
-            className="w-9 h-9 object-contain drop-shadow-md hover:scale-105 transition-transform"
+            className="w-6 h-6 object-contain drop-shadow-md hover:scale-105 transition-transform"
           />
           <div>
             <h1 className={`text-xs font-bold tracking-wide uppercase ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>MODEL MANAGER</h1>
@@ -312,7 +318,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-1 max-h-72 overflow-y-auto py-1">
+                <div className="space-y-1.5 max-h-72 overflow-y-auto py-1">
+                  {/* Canvas Value Badges Tickbox Control */}
+                  <div className={`p-2 rounded-lg mb-1.5 flex items-center justify-between border ${
+                    isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-100 border-slate-200'
+                  }`}>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={showValuesOnCanvas}
+                        onChange={onToggleShowValuesOnCanvas}
+                        className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 cursor-pointer"
+                      />
+                      <span className="text-[11px] font-medium text-slate-300">
+                        Show badges on canvas nodes
+                      </span>
+                    </label>
+                  </div>
+
                   <div className="px-2 py-0.5 text-[9px] font-mono uppercase text-slate-400">
                     Select name to display down right side:
                   </div>
@@ -336,6 +359,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
+                          {isSelected ? (
+                            <CheckSquare className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          ) : (
+                            <Square className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          )}
                           {group.type === 'number' ? (
                             <Hash className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                           ) : group.type === 'date' ? (
