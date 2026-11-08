@@ -44,6 +44,7 @@ import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
 import { collectAggregationsFromPageAndChildren } from './utils/descriptionAggregation';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
   // Document state
@@ -1226,36 +1227,38 @@ export default function App() {
         )}
 
         {/* Right Sidebar: Aggregations Breakdown & 3D Chart Down Right Side (Change 2) */}
-        <AggregationsPanel
-          isOpen={isAggregationsOpen}
-          onClose={() => setIsAggregationsOpen(false)}
-          groups={aggregationResult.groups}
-          selectedFieldName={selectedAggregationField}
-          onSelectFieldName={setSelectedAggregationField}
-          totalSearchedPages={aggregationResult.totalSearchedPages}
-          totalItemsFound={aggregationResult.totalItemsFound}
-          theme={settings.theme}
-          showValuesOnCanvas={showAggregationBadges}
-          onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
-          onFocusNode={nodeId => {
-            // Find if node exists on current page
-            const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
-            if (existsOnCurrent) {
-              setSelectedNodeIds([nodeId]);
-              setSelectedEdgeId(null);
-              setIsInspectorOpen(true);
-            } else {
-              // Search document pages
-              const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
-              if (targetPage) {
-                setActivePageId(targetPage.id);
+        <ErrorBoundary fallbackTitle="Aggregations Panel Error">
+          <AggregationsPanel
+            isOpen={isAggregationsOpen}
+            onClose={() => setIsAggregationsOpen(false)}
+            groups={aggregationResult.groups}
+            selectedFieldName={selectedAggregationField}
+            onSelectFieldName={setSelectedAggregationField}
+            totalSearchedPages={aggregationResult.totalSearchedPages}
+            totalItemsFound={aggregationResult.totalItemsFound}
+            theme={settings.theme}
+            showValuesOnCanvas={showAggregationBadges}
+            onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
+            onFocusNode={nodeId => {
+              // Find if node exists on current page
+              const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
+              if (existsOnCurrent) {
                 setSelectedNodeIds([nodeId]);
                 setSelectedEdgeId(null);
                 setIsInspectorOpen(true);
+              } else {
+                // Search document pages
+                const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
+                if (targetPage) {
+                  setActivePageId(targetPage.id);
+                  setSelectedNodeIds([nodeId]);
+                  setSelectedEdgeId(null);
+                  setIsInspectorOpen(true);
+                }
               }
-            }
-          }}
-        />
+            }}
+          />
+        </ErrorBoundary>
       </div>
 
       {/* Modals */}

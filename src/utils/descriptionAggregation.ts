@@ -108,7 +108,7 @@ export function parseAggregationLines(
     }
 
     items.push({
-      id: `${meta.nodeId}-${name}-${lineIndex}-${Math.random().toString(36).substring(2, 7)}`,
+      id: `${meta.nodeId}-${name}-${lineIndex}`,
       type,
       name,
       displayName,

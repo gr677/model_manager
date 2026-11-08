@@ -25,6 +25,7 @@ import { AggregationGroup, AggregatedItem, AggregationDataType } from '../../uti
 import { ThreeDChart, ChartDatum } from './ThreeDChart';
 import { AppTheme } from '../../types/diagram';
 import { THEMES } from '../../utils/themeConfig';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 
 interface AggregationsPanelProps {
   isOpen: boolean;
@@ -283,15 +284,17 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                 </div>
 
                 {/* Normal Bar / Circular Pie Chart matching page theme color */}
-                <ThreeDChart
-                  data={chartData}
-                  chartType={chartType}
-                  onChangeChartType={setChartType}
-                  isDark={isDark}
-                  totalSum={effectiveTotal}
-                  fieldName={activeGroup.displayName}
-                  backgroundColor={themeDef.canvasBg}
-                />
+                <ErrorBoundary fallbackTitle="Chart Display Error">
+                  <ThreeDChart
+                    data={chartData}
+                    chartType={chartType}
+                    onChangeChartType={setChartType}
+                    isDark={isDark}
+                    totalSum={effectiveTotal}
+                    fieldName={activeGroup.displayName}
+                    backgroundColor={themeDef.canvasBg}
+                  />
+                </ErrorBoundary>
 
                 {/* Values Breakdown List with Tickboxes */}
                 <div className="space-y-1.5 pt-1">
