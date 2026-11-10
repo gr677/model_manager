@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppTheme, StudioSettings, DiagramDocument } from '../../types/diagram';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -24,6 +24,7 @@ import {
   Sparkles,
   MousePointer,
   HelpCircle,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -51,6 +52,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
   const [rootDirInput, setRootDirInput] = useState(() => settings.rootDir || 'C:\\omnimind');
   const [rootDirSavedMsg, setRootDirSavedMsg] = useState(false);
+  const [persistenceInfo, setPersistenceInfo] = useState<{
+    userHomeConfig?: string;
+    rootDataConfig?: string;
+    appDataConfig?: string;
+    source?: string;
+  } | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSavedMsg, setProfileSavedMsg] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      workspaceService.fetchPersistentSettings().then(data => {
+        if (data) {
+          if (data.settings?.rootDir) {
+            setRootDirInput(data.settings.rootDir);
+          }
+          if (data.locations) {
+            setPersistenceInfo({
+              userHomeConfig: data.locations.userHomeConfig,
+              rootDataConfig: data.locations.rootDataConfig,
+              appDataConfig: data.locations.appDataConfig,
+              source: data.source,
+            });
+          }
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -68,10 +97,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSaveRootDir = async () => {
     const trimmed = (rootDirInput || 'C:\\omnimind').trim();
-    onUpdateSettings({ ...settings, rootDir: trimmed });
-    await workspaceService.updateServerRootDir(trimmed);
+    const updated = { ...settings, rootDir: trimmed };
+    onUpdateSettings(updated);
+    await workspaceService.savePersistentSettings(updated);
+    await workspaceService.updateServerRootDir(trimmed, updated);
     setRootDirSavedMsg(true);
     setTimeout(() => setRootDirSavedMsg(false), 2500);
+  };
+
+  const handleSaveAllToUserProfile = async () => {
+    setIsSavingProfile(true);
+    const trimmed = (rootDirInput || 'C:\\omnimind').trim();
+    const updatedSettings = { ...settings, rootDir: trimmed };
+    onUpdateSettings(updatedSettings);
+    await workspaceService.savePersistentSettings(updatedSettings);
+    await workspaceService.updateServerRootDir(trimmed, updatedSettings);
+    setIsSavingProfile(false);
+    setProfileSavedMsg(true);
+    setTimeout(() => setProfileSavedMsg(false), 3000);
   };
 
   const handleDownloadJson = () => {
@@ -288,6 +331,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 2: SAVING & FILE STORAGE */}
           {activeTab === 'saving' && (
             <div className="space-y-6">
+              {/* Git-Protected Persistence Card */}
+              <div className="p-4 rounded-xl border border-sky-500/30 bg-sky-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sky-400 font-semibold text-sm">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                    <span>Git-Safe Persistence: Protected Across App Updates</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Safe from git pull &amp; updates
+                  </span>
+                </div>
+
+                <p className={`text-xs leading-relaxed ${currentThemeDef.isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Your <strong>Root Directory</strong> and all studio preferences (theme, grid styles, auto-save, and connectors) are stored <strong>outside the git repository</strong> in your system user profile. When you run <code className="px-1.5 py-0.5 rounded bg-black/40 text-emerald-300 font-mono text-[11px]">git pull</code>, update packages, or pull new versions of the application, your custom paths and configurations will <strong>never be overwritten</strong>.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1 text-[11px] font-mono">
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-slate-800 space-y-1">
+                    <div className="text-slate-400 flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5 text-sky-400" />
+                      <span className="font-sans font-medium text-slate-300">User Profile Config (External to Git):</span>
+                    </div>
+                    <div className="text-emerald-400 truncate" title={persistenceInfo?.userHomeConfig || '~/.mind_suite/config.json'}>
+                      {persistenceInfo?.userHomeConfig || '~/.mind_suite/config.json'}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-slate-800 space-y-1">
+                    <div className="text-slate-400 flex items-center gap-1.5">
+                      <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="font-sans font-medium text-slate-300">Root Directory Backup:</span>
+                    </div>
+                    <div className="text-amber-400 truncate" title={persistenceInfo?.rootDataConfig || `${(rootDirInput || 'C:\\omnimind').replace(/[\/\\]+$/, '')}/.mind_suite_settings.json`}>
+                      {persistenceInfo?.rootDataConfig || `${(rootDirInput || 'C:\\omnimind').replace(/[\/\\]+$/, '')}/.mind_suite_settings.json`}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-sky-500/20">
+                  <span className="text-[11px] text-slate-400">
+                    Want to snapshot all current studio preferences directly to your user profile?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSaveAllToUserProfile}
+                    disabled={isSavingProfile}
+                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    {profileSavedMsg ? '✓ Persisted to User Profile!' : 'Save All Settings to User Profile'}
+                  </button>
+                </div>
+              </div>
+
               {/* How diagrams are saved explanation card */}
               <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 space-y-3">
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
@@ -342,7 +439,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <p className={`text-xs ${currentThemeDef.isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Configure the root filesystem path for all workspaces and diagrams. The browser sends and receives JSON diagrams directly to the server, and every workspace starts with a <strong className="text-sky-400 font-mono">root.json</strong> file as its designated starting point.
+                  Configure the root filesystem path for all workspaces and diagrams. Saved outside git in <code className="text-emerald-400 font-mono">~/.mind_suite/config.json</code>, so updating code with <code className="text-sky-400 font-mono">git pull</code> or upgrading the app will never reset this directory.
                 </p>
 
                 <div className="flex items-center gap-2">
@@ -362,7 +459,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClick={handleSaveRootDir}
                     className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs whitespace-nowrap"
                   >
-                    {rootDirSavedMsg ? '✓ Root Directory Saved' : 'Save Root Directory'}
+                    {rootDirSavedMsg ? '✓ Root Directory Saved (Git-Safe)' : 'Save Root Directory'}
                   </button>
                 </div>
 

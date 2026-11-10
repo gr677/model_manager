@@ -194,17 +194,18 @@ class WorkspaceService {
 
   private async initFromServer(): Promise<void> {
     try {
-      // 1. Fetch configured root directory from server
-      const configResp = await fetch('/api/storage/config');
-      if (configResp.ok) {
-        const configData = await configResp.json();
-        if (configData.configuredRootDir) {
-          Object.values(this.store.workspaces).forEach(ws => {
-            if (!ws.basePath || ws.basePath === DEFAULT_BASE_PATH) {
+      // 1. Fetch persistent settings & root directory from server
+      const settingsData = await this.fetchPersistentSettings();
+      if (!settingsData) {
+        const configResp = await fetch('/api/storage/config');
+        if (configResp.ok) {
+          const configData = await configResp.json();
+          if (configData.configuredRootDir) {
+            Object.values(this.store.workspaces).forEach(ws => {
               ws.basePath = configData.configuredRootDir;
-            }
-          });
-          this.saveStore();
+            });
+            this.saveStore();
+          }
         }
       }
 
@@ -503,13 +504,56 @@ class WorkspaceService {
     this.updateServerRootDir(newBasePath.trim()).catch(() => {});
   }
 
-  public async updateServerRootDir(newRootDir: string): Promise<string> {
+  public async fetchPersistentSettings(): Promise<{ settings: any; locations: any; source?: string } | null> {
+    try {
+      const resp = await fetch('/api/settings');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.settings && data.settings.rootDir) {
+          const root = data.settings.rootDir;
+          Object.values(this.store.workspaces).forEach(ws => {
+            ws.basePath = root;
+          });
+          this.saveStore();
+        }
+        return data;
+      }
+    } catch (e) {
+      console.warn('[WorkspaceService] Failed to fetch persistent settings from server:', e);
+    }
+    return null;
+  }
+
+  public async savePersistentSettings(settings: Record<string, any>): Promise<boolean> {
+    try {
+      const resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.settings?.rootDir) {
+          Object.values(this.store.workspaces).forEach(ws => {
+            ws.basePath = data.settings.rootDir;
+          });
+          this.saveStore();
+        }
+        return true;
+      }
+    } catch (e) {
+      console.warn('[WorkspaceService] Failed to save persistent settings to server:', e);
+    }
+    return false;
+  }
+
+  public async updateServerRootDir(newRootDir: string, otherSettings?: Record<string, any>): Promise<string> {
     const trimmed = (newRootDir || DEFAULT_BASE_PATH).trim();
     try {
       const resp = await fetch('/api/storage/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootDir: trimmed }),
+        body: JSON.stringify({ rootDir: trimmed, ...(otherSettings || {}) }),
       });
       if (resp.ok) {
         const data = await resp.json();

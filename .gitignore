@@ -7,4 +7,8 @@ coverage/
 .env*
 !.env.example
 .aistudio/
-
+.storage_root.txt
+settings.local.json
+*.local.json
+storage_data/
+.storage_data/

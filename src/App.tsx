@@ -172,6 +172,38 @@ export default function App() {
     };
   });
 
+  // Hydrate settings from persistent server config (outside git repo, in user profile)
+  useEffect(() => {
+    let isMounted = true;
+    workspaceService.fetchPersistentSettings().then(data => {
+      if (!isMounted || !data?.settings) return;
+      const s = data.settings;
+      setSettings(prev => {
+        const merged: StudioSettings = {
+          ...prev,
+          theme: s.theme || prev.theme,
+          gridStyle: s.gridStyle || prev.gridStyle,
+          gridSize: s.gridSize || prev.gridSize,
+          snapToGrid: typeof s.snapToGrid === 'boolean' ? s.snapToGrid : prev.snapToGrid,
+          showHoverTooltips: typeof s.showHoverTooltips === 'boolean' ? s.showHoverTooltips : prev.showHoverTooltips,
+          showCollaborators: typeof s.showCollaborators === 'boolean' ? s.showCollaborators : prev.showCollaborators,
+          autoSaveInterval: s.autoSaveInterval || prev.autoSaveInterval,
+          defaultConnectorType: s.defaultConnectorType || prev.defaultConnectorType,
+          rootDir: s.rootDir || prev.rootDir,
+        };
+        try {
+          localStorage.setItem('omnimind_settings_v1', JSON.stringify(merged));
+        } catch {
+          // ignore
+        }
+        return merged;
+      });
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const currentThemeDef = THEMES[settings.theme] || THEMES.dark;
 
   useEffect(() => {
@@ -1204,6 +1236,20 @@ export default function App() {
     } catch (e) {
       console.error('Failed to save settings to localStorage:', e);
     }
+    // Also persist to server user profile (git-protected outside repository)
+    workspaceService.savePersistentSettings({
+      theme: newSettings.theme,
+      gridStyle: newSettings.gridStyle,
+      gridSize: newSettings.gridSize,
+      snapToGrid: newSettings.snapToGrid,
+      showHoverTooltips: newSettings.showHoverTooltips,
+      showCollaborators: newSettings.showCollaborators,
+      autoSaveInterval: newSettings.autoSaveInterval,
+      defaultConnectorType: newSettings.defaultConnectorType,
+      rootDir: newSettings.rootDir,
+    }).catch(err => {
+      console.warn('Could not persist settings to server:', err);
+    });
   }, []);
 
   const handleToggleTheme = useCallback(() => {

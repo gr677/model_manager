@@ -11,6 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
+import os from 'os';
 import { initialDiagramDocument } from './src/data/seedDiagrams';
 import { getExampleDiagramForType } from './src/data/diagramExamples';
 import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge, DiagramType } from './src/types/diagram';
@@ -77,17 +78,218 @@ app.use((req, res, next) => {
 
 // Server-side physical disk storage configurations
 const FALLBACK_STORAGE_DIR = path.join(__dirname, 'storage_data');
-const CONFIG_FILE = path.join(__dirname, '.storage_root.txt');
 const DEFAULT_CONFIGURED_ROOT = 'c:/omnimind';
+
+export interface PersistentSettings {
+  rootDir: string;
+  theme?: string;
+  gridStyle?: string;
+  gridSize?: number;
+  snapToGrid?: boolean;
+  showHoverTooltips?: boolean;
+  showCollaborators?: boolean;
+  autoSaveInterval?: string;
+  defaultConnectorType?: string;
+  activeWorkspaceId?: string;
+  activeDiagramFilename?: string;
+  updatedAt?: string;
+  [key: string]: any;
+}
+
+// Location 1: User Home profile (~/.mind_suite/config.json or %USERPROFILE%\.mind_suite\config.json)
+// CRITICAL: Lives outside the Git repository so git pull/checkout/updates NEVER overwrite it!
+function getUserConfigFilePath(): string {
+  return path.join(os.homedir(), '.mind_suite', 'config.json');
+}
+
+// Location 2: Windows %APPDATA%\mind_suite\config.json (if on Windows)
+function getAppDataConfigFilePath(): string | null {
+  if (process.env.APPDATA) {
+    return path.join(process.env.APPDATA, 'mind_suite', 'config.json');
+  }
+  return null;
+}
+
+// Location 3: Local project untracked fallback (settings.local.json, in .gitignore)
+function getLocalConfigFilePath(): string {
+  return path.join(__dirname, 'settings.local.json');
+}
+
+// Location 4: Legacy text fallback (.storage_root.txt, in .gitignore)
+function getLegacyConfigFilePath(): string {
+  return path.join(__dirname, '.storage_root.txt');
+}
+
+function getPersistentSettings(): PersistentSettings {
+  // 1. Environment variable override has highest precedence
+  const envRoot = (
+    process.env.MIND_SUITE_ROOT_DIR ||
+    process.env.STORAGE_ROOT_DIR ||
+    process.env.OMNIMIND_ROOT_DIR ||
+    ''
+  ).trim();
+
+  let loaded: Partial<PersistentSettings> = {};
+
+  // 2. Primary External: User Home profile (~/.mind_suite/config.json) - OUTSIDE GIT REPO
+  const userFile = getUserConfigFilePath();
+  if (fs.existsSync(userFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+      if (parsed && typeof parsed === 'object') {
+        loaded = { ...loaded, ...parsed };
+      }
+    } catch (err) {
+      console.warn('[PersistentSettings] Error reading user home config:', err);
+    }
+  }
+
+  // 3. Windows %APPDATA%
+  const appDataFile = getAppDataConfigFilePath();
+  if (appDataFile && fs.existsSync(appDataFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(appDataFile, 'utf-8'));
+      if (parsed && typeof parsed === 'object') {
+        loaded = { ...loaded, ...parsed };
+      }
+    } catch (err) {}
+  }
+
+  // 4. Local untracked project config (settings.local.json & .storage_root.txt)
+  const localFile = getLocalConfigFilePath();
+  if (fs.existsSync(localFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(localFile, 'utf-8'));
+      if (parsed && typeof parsed === 'object') {
+        loaded = { ...loaded, ...parsed };
+      }
+    } catch (err) {}
+  }
+
+  const legacyFile = getLegacyConfigFilePath();
+  if (!loaded.rootDir && fs.existsSync(legacyFile)) {
+    try {
+      const txt = fs.readFileSync(legacyFile, 'utf-8').trim();
+      if (txt) loaded.rootDir = txt;
+    } catch (err) {}
+  }
+
+  // 5. Data Directory itself (<rootDir>/.mind_suite_settings.json)
+  const candidateRoot = envRoot || loaded.rootDir || DEFAULT_CONFIGURED_ROOT;
+  try {
+    const rootSettingsFile = path.join(candidateRoot, '.mind_suite_settings.json');
+    if (fs.existsSync(rootSettingsFile)) {
+      const parsed = JSON.parse(fs.readFileSync(rootSettingsFile, 'utf-8'));
+      if (parsed && typeof parsed === 'object') {
+        loaded = { ...loaded, ...parsed };
+      }
+    }
+  } catch (err) {}
+
+  // Apply environment override if provided
+  if (envRoot) {
+    loaded.rootDir = envRoot;
+  } else if (!loaded.rootDir) {
+    loaded.rootDir = DEFAULT_CONFIGURED_ROOT;
+  }
+
+  return {
+    rootDir: loaded.rootDir || DEFAULT_CONFIGURED_ROOT,
+    theme: loaded.theme || 'dark',
+    gridStyle: (loaded.gridStyle as any) || 'dots',
+    gridSize: loaded.gridSize || 48,
+    snapToGrid: loaded.snapToGrid !== false,
+    showHoverTooltips: loaded.showHoverTooltips !== false,
+    showCollaborators: loaded.showCollaborators !== false,
+    autoSaveInterval: (loaded.autoSaveInterval as any) || 'instant',
+    defaultConnectorType: (loaded.defaultConnectorType as any) || 'orthogonal',
+    ...loaded,
+  };
+}
+
+function savePersistentSettings(updates: Partial<PersistentSettings>): {
+  settings: PersistentSettings;
+  savedLocations: string[];
+} {
+  const current = getPersistentSettings();
+  const merged: PersistentSettings = {
+    ...current,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (merged.rootDir) {
+    merged.rootDir = merged.rootDir.trim();
+  }
+
+  const savedLocations: string[] = [];
+
+  // 1. Primary: Save to User Home directory (~/.mind_suite/config.json)
+  // This is completely OUTSIDE the git repository - SURVIVES GIT PULLS & APP UPDATES!
+  try {
+    const userDir = path.dirname(getUserConfigFilePath());
+    if (!fs.existsSync(userDir)) {
+      fs.mkdirSync(userDir, { recursive: true });
+    }
+    const userFile = getUserConfigFilePath();
+    fs.writeFileSync(userFile, JSON.stringify(merged, null, 2), 'utf-8');
+    savedLocations.push(userFile);
+    logDebug('info', 'PERSISTENCE', `Settings permanently saved outside git in: ${userFile}`);
+  } catch (err: any) {
+    console.warn('[PersistentSettings] Failed to write user home config:', err.message);
+  }
+
+  // 2. Secondary: Windows %APPDATA%
+  const appDataFile = getAppDataConfigFilePath();
+  if (appDataFile) {
+    try {
+      const appDataDir = path.dirname(appDataFile);
+      if (!fs.existsSync(appDataDir)) {
+        fs.mkdirSync(appDataDir, { recursive: true });
+      }
+      fs.writeFileSync(appDataFile, JSON.stringify(merged, null, 2), 'utf-8');
+      savedLocations.push(appDataFile);
+    } catch (err: any) {}
+  }
+
+  // 3. Tertiary: Save directly inside the configured data storage directory (e.g. C:\omnimind\.mind_suite_settings.json)
+  try {
+    const dataRoot = getPhysicalStorageDir();
+    if (fs.existsSync(dataRoot)) {
+      const dataFile = path.join(dataRoot, '.mind_suite_settings.json');
+      fs.writeFileSync(dataFile, JSON.stringify(merged, null, 2), 'utf-8');
+      savedLocations.push(dataFile);
+    }
+  } catch (err: any) {}
+
+  // 4. Quaternary: Local project untracked fallbacks (in .gitignore)
+  try {
+    const localFile = getLocalConfigFilePath();
+    fs.writeFileSync(localFile, JSON.stringify(merged, null, 2), 'utf-8');
+    savedLocations.push(localFile);
+  } catch (err: any) {}
+
+  try {
+    const legacyFile = getLegacyConfigFilePath();
+    fs.writeFileSync(legacyFile, merged.rootDir, 'utf-8');
+    savedLocations.push(legacyFile);
+  } catch (err: any) {}
+
+  // Invalidate cached effective directory so next call picks up any changed rootDir
+  effectiveStorageDir = null;
+
+  return {
+    settings: merged,
+    savedLocations,
+  };
+}
 
 function getConfiguredRootDir(): string {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const val = fs.readFileSync(CONFIG_FILE, 'utf-8').trim();
-      if (val) return val;
-    }
+    const settings = getPersistentSettings();
+    if (settings.rootDir) return settings.rootDir;
   } catch (err) {
-    console.warn('[Storage] Error reading config file:', err);
+    console.warn('[Storage] Error reading persistent config:', err);
   }
   return DEFAULT_CONFIGURED_ROOT;
 }
@@ -95,10 +297,10 @@ function getConfiguredRootDir(): string {
 function setConfiguredRootDir(newPath: string): string {
   try {
     const trimmed = (newPath || DEFAULT_CONFIGURED_ROOT).trim();
-    fs.writeFileSync(CONFIG_FILE, trimmed, 'utf-8');
+    savePersistentSettings({ rootDir: trimmed });
     return trimmed;
   } catch (err) {
-    console.error('[Storage] Error writing config file:', err);
+    console.error('[Storage] Error saving rootDir:', err);
     return DEFAULT_CONFIGURED_ROOT;
   }
 }
@@ -576,14 +778,52 @@ app.get('/api/github/archive', async (req: Request, res: Response) => {
 // ==========================================
 // WORKSPACE & PHYSICAL DISK STORAGE API
 // ==========================================
+// PERSISTENT SETTINGS & DISK STORAGE API
+// ==========================================
+
+// 0. Persistent Settings & Preferences API (Survives Git Pulls & App Updates)
+app.get('/api/settings', (req: Request, res: Response) => {
+  const settings = getPersistentSettings();
+  res.json({
+    success: true,
+    settings,
+    locations: {
+      userHomeConfig: getUserConfigFilePath(),
+      appDataConfig: getAppDataConfigFilePath(),
+      localConfig: getLocalConfigFilePath(),
+      rootDataConfig: path.join(getPhysicalStorageDir(), '.mind_suite_settings.json'),
+    },
+    isExternalPersisted: true,
+  });
+});
+
+app.post('/api/settings', (req: Request, res: Response) => {
+  const updates = req.body || {};
+  const { settings, savedLocations } = savePersistentSettings(updates);
+  res.json({
+    success: true,
+    settings,
+    savedLocations,
+    message: `Settings saved across ${savedLocations.length} locations (user home profile protected from git pull)`,
+  });
+});
 
 // 1. Get Root Directory Configuration
 app.get('/api/storage/config', (req: Request, res: Response) => {
-  const configuredRootDir = getConfiguredRootDir();
+  const settings = getPersistentSettings();
+  const configuredRootDir = settings.rootDir || DEFAULT_CONFIGURED_ROOT;
   res.json({
     configuredRootDir,
     serverDataDir: getPhysicalStorageDir(),
     defaultEntrypoint: 'root.json',
+    settings,
+    locations: {
+      userHomeConfig: getUserConfigFilePath(),
+      appDataConfig: getAppDataConfigFilePath(),
+      localConfig: getLocalConfigFilePath(),
+      rootDataConfig: path.join(getPhysicalStorageDir(), '.mind_suite_settings.json'),
+    },
+    isExternalPersisted: true,
   });
 });
 
@@ -602,17 +842,26 @@ app.get('/api/debug/logs', (req: Request, res: Response) => {
 
 // 2. Update Root Directory Configuration
 app.post('/api/storage/config', (req: Request, res: Response) => {
-  const { rootDir } = req.body;
+  const { rootDir, ...otherSettings } = req.body || {};
   if (!rootDir || typeof rootDir !== 'string') {
     logDebug('warn', 'STORAGE CONFIG', 'Rejected rootDir update: rootDir string is required');
     return res.status(400).json({ error: 'rootDir string is required' });
   }
   const updated = setConfiguredRootDir(rootDir);
-  logDebug('info', 'STORAGE CONFIG', `Configured root directory updated to: "${updated}"`);
+  if (Object.keys(otherSettings).length > 0) {
+    savePersistentSettings(otherSettings);
+  }
+  const settings = getPersistentSettings();
+  logDebug('info', 'STORAGE CONFIG', `Configured root directory updated to: "${updated}" and persisted outside git`);
   res.json({
     success: true,
     configuredRootDir: updated,
-    message: `Root directory configured to ${updated}`,
+    settings,
+    locations: {
+      userHomeConfig: getUserConfigFilePath(),
+      appDataConfig: getAppDataConfigFilePath(),
+    },
+    message: `Root directory configured to ${updated} (persisted in user home profile outside git repository)`,
   });
 });
 
