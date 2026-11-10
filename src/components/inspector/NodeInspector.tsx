@@ -2795,6 +2795,40 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               </div>
             )}
 
+            {/* Toggle: Display image preview card directly in node body on canvas */}
+            {(selectedNode.images || []).length > 0 && (
+              <label className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800 text-xs cursor-pointer select-none hover:border-slate-700">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200">
+                  <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Show image preview in node body</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={
+                    selectedNode.type === 'image' ||
+                    selectedNode.type === 'image-attachment' ||
+                    Boolean(selectedNode.data?.displayAsImagePreview) ||
+                    Boolean(selectedNode.data?.isImageNode)
+                  }
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    onUpdateNode({
+                      ...selectedNode,
+                      type: checked ? 'image' : (selectedNode.type === 'image' || selectedNode.type === 'image-attachment' ? 'process' : selectedNode.type),
+                      data: {
+                        ...(selectedNode.data || {}),
+                        displayAsImagePreview: checked,
+                        isImageNode: checked,
+                      },
+                      height: checked && selectedNode.height < 100 ? 125 : selectedNode.height,
+                      width: checked && selectedNode.width < 140 ? 160 : selectedNode.width,
+                    });
+                  }}
+                  className="w-3.5 h-3.5 rounded border-slate-700 text-sky-500 accent-sky-500 cursor-pointer"
+                />
+              </label>
+            )}
+
             {/* Attached Images List */}
             <div className="space-y-1.5">
               {(selectedNode.images || []).length === 0 ? (

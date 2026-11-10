@@ -554,12 +554,12 @@ export default function App() {
         const newNodeId = `node-img-${Date.now()}`;
         const newNode: DiagramNode = {
           id: newNodeId,
-          type: 'process',
+          type: 'image',
           label: cleanName,
           x: 240,
           y: 200,
-          width: 140,
-          height: 70,
+          width: 160,
+          height: 125,
           style: {
             fill: '#0f172a',
             stroke: '#38bdf8',
@@ -567,10 +567,13 @@ export default function App() {
             textColor: '#f8fafc',
             rounded: 10,
           },
-          data: {},
+          data: {
+            isImageNode: true,
+            displayAsImagePreview: true,
+          },
           images: [currentAttachment],
           documentation: {
-            description: `Image: ${file.name}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
+            description: `Image: ${file.name}\nStored in workspace images/ folder. Displays as a compact image card; click expand to view full size.`,
             tags: ['Image'],
             status: 'approved',
           },
@@ -637,12 +640,12 @@ export default function App() {
         const newNodeId = `node-img-${Date.now()}`;
         const newNode: DiagramNode = {
           id: newNodeId,
-          type: 'process',
+          type: 'image',
           label: cleanName,
           x: 240,
           y: 200,
-          width: 140,
-          height: 70,
+          width: 160,
+          height: 125,
           style: {
             fill: '#0f172a',
             stroke: '#38bdf8',
@@ -650,10 +653,13 @@ export default function App() {
             textColor: '#f8fafc',
             rounded: 10,
           },
-          data: {},
+          data: {
+            isImageNode: true,
+            displayAsImagePreview: true,
+          },
           images: [newAttachment],
           documentation: {
-            description: `Image: ${img.filename}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
+            description: `Image: ${img.filename}\nStored in workspace images/ folder. Displays as a compact image card; click expand to view full size.`,
             tags: ['Image'],
             status: 'approved',
           },

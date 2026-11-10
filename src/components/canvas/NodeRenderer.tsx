@@ -170,6 +170,90 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
 
   // Node Content based on type
   const renderNodeBody = () => {
+    // Dedicated Image Node Renderer: Displays the node as a smaller version of the image with label and expand button
+    if (
+      node.type === 'image' ||
+      node.type === 'image-attachment' ||
+      (node.images && node.images.length > 0 && (node.id.startsWith('node-img-') || node.data?.displayAsImagePreview || node.data?.isImageNode))
+    ) {
+      const primaryImage = node.images && node.images.length > 0 ? node.images[0] : null;
+      const fill = node.style?.fill || '#0f172a';
+      const stroke = node.style?.stroke || '#38bdf8';
+      const strokeWidth = node.style?.strokeWidth ?? 2;
+      const rounded = node.style?.rounded !== undefined ? `${node.style.rounded}px` : '10px';
+      const textColor = node.style?.textColor || '#f8fafc';
+
+      return (
+        <div
+          className="flex flex-col h-full w-full shadow-2xl transition-all overflow-hidden group/imgcard relative"
+          style={{
+            backgroundColor: fill,
+            borderColor: stroke,
+            borderWidth: `${strokeWidth}px`,
+            borderStyle: node.style?.strokeDasharray ? 'dashed' : 'solid',
+            borderRadius: rounded,
+            color: textColor,
+          }}
+        >
+          {/* Main Miniature Image Area */}
+          <div className="flex-1 w-full min-h-0 relative bg-slate-950/80 overflow-hidden flex items-center justify-center">
+            {primaryImage?.url ? (
+              <>
+                <img
+                  src={primaryImage.url}
+                  alt={primaryImage.title || node.label}
+                  className="w-full h-full object-contain pointer-events-none select-none transition-transform duration-200 group-hover/imgcard:scale-105"
+                  loading="lazy"
+                />
+                {/* Subtle dark gradient overlay at top/bottom for readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
+
+                {/* Expand / Lightbox Hover Button */}
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onOpenImageLightbox?.(primaryImage, node.images);
+                  }}
+                  className="absolute top-1.5 right-1.5 p-1 rounded-md bg-slate-900/85 hover:bg-sky-600 text-white shadow-lg backdrop-blur-sm opacity-0 group-hover/imgcard:opacity-100 transition-all cursor-pointer pointer-events-auto"
+                  title="Click to view full size image"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-white" />
+                </button>
+
+                {/* Multi-image count pill if more than 1 image */}
+                {node.images && node.images.length > 1 && (
+                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-slate-900/85 text-[8px] font-mono font-bold text-sky-300 border border-sky-500/40 shadow backdrop-blur-sm pointer-events-none">
+                    1/{node.images.length}
+                  </span>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-2 text-center text-slate-500">
+                <ImageIcon className="w-8 h-8 text-sky-400/60 mb-1" />
+                <span className="text-[10px] font-mono text-slate-400">No image attached</span>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Title / Caption Bar */}
+          <div className="px-2 py-1 bg-slate-950/95 border-t border-slate-800/80 flex items-center justify-between shrink-0 gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <ImageIcon className="w-3 h-3 text-sky-400 shrink-0" />
+              <span className="text-[10px] font-medium text-slate-200 truncate select-none leading-tight">
+                {node.label}
+              </span>
+            </div>
+            {primaryImage?.size && (
+              <span className="text-[8px] font-mono text-slate-400 shrink-0">
+                {(primaryImage.size / 1024).toFixed(0)}K
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     switch (node.type) {
       // 1. ERD Entity Table
       case 'erd-entity': {
@@ -1597,7 +1681,15 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       })()}
 
       {/* Attached Images on Node (Miniature thumbnail icon reflecting actual contents; click expands to full size) */}
-      {node.images && node.images.length > 0 && (
+      {node.images &&
+        node.images.length > 0 &&
+        !(
+          node.type === 'image' ||
+          node.type === 'image-attachment' ||
+          node.id.startsWith('node-img-') ||
+          node.data?.displayAsImagePreview ||
+          node.data?.isImageNode
+        ) && (
         <div
           className={`absolute -top-3 ${
             node.type === 'sticky-note' ? 'right-2' : 'left-1.5'

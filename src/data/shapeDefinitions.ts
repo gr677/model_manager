@@ -956,10 +956,10 @@ export const SHAPE_TEMPLATES: ShapeTemplate[] = [
     iconName: 'Image',
     description: 'Attached workspace image with miniature content icon expanding to full size',
     defaultNode: {
-      type: 'process',
+      type: 'image',
       label: 'Image Model',
-      width: 140,
-      height: 70,
+      width: 160,
+      height: 125,
       style: {
         fill: '#0f172a',
         stroke: '#38bdf8',
@@ -967,9 +967,12 @@ export const SHAPE_TEMPLATES: ShapeTemplate[] = [
         textColor: '#f8fafc',
         rounded: 10,
       },
-      data: {},
+      data: {
+        isImageNode: true,
+        displayAsImagePreview: true,
+      },
       documentation: {
-        description: 'Image model attached to workspace images/ folder. Click thumbnail icon to expand full size.',
+        description: 'Image model attached to workspace images/ folder. Displays as a compact image card; click expand to view full size.',
         tags: ['Image', 'Mockup'],
         status: 'approved',
       },
