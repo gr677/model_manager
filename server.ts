@@ -24,7 +24,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = parseInt(process.env.PORT || '3000', 10);
 
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // In-memory debug log buffer for inspection and UI display
 export interface ServerDebugLogEntry {
@@ -111,8 +112,11 @@ function normalizeToWindowsPath(inputPath: string): string {
 }
 
 // When running on Windows (e.g. C:\GIT\mind_suite), save DIRECTLY to C:\omnimind!
-// When running in a Linux/cloud container, fallback to local storage_data directory
+// When running in a Linux/cloud container, or if Windows non-admin permissions deny C:\, fallback to local storage_data directory
+let effectiveStorageDir: string | null = null;
+
 function getPhysicalStorageDir(): string {
+  if (effectiveStorageDir) return effectiveStorageDir;
   const configured = getConfiguredRootDir();
   if (process.platform === 'win32') {
     return normalizeToWindowsPath(configured);
@@ -135,9 +139,27 @@ function toWindowsPath(base: string, workspace: string, filename: string): strin
 
 // Ensure storage directories and default workspace with data/root.json exist on disk
 async function initStorageOnDisk() {
-  const storageDir = getPhysicalStorageDir();
+  let storageDir = getPhysicalStorageDir();
   try {
     await fsp.mkdir(storageDir, { recursive: true });
+    // Verify write permissions with a temporary probe
+    const probeFile = path.join(storageDir, '.write_probe');
+    await fsp.writeFile(probeFile, 'ok', 'utf-8');
+    await fsp.unlink(probeFile).catch(() => {});
+  } catch (err: any) {
+    if (storageDir !== FALLBACK_STORAGE_DIR) {
+      logDebug(
+        'warn',
+        'STORAGE',
+        `Permission or path issue writing to configured root "${storageDir}" (${err.code || err.message}). Gracefully falling back to local "${FALLBACK_STORAGE_DIR}"`
+      );
+      effectiveStorageDir = FALLBACK_STORAGE_DIR;
+      storageDir = FALLBACK_STORAGE_DIR;
+      await fsp.mkdir(storageDir, { recursive: true });
+    }
+  }
+
+  try {
     const entries = await fsp.readdir(storageDir, { withFileTypes: true });
     const existingDirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('$'));
 
@@ -913,15 +935,36 @@ app.delete('/api/workspaces/:workspaceId/files/:filename', async (req: Request, 
 // 8b. Upload / Import image into <workspace>/images/ (sibling of data/)
 app.post('/api/workspaces/:workspaceId/images', async (req: Request, res: Response) => {
   try {
-    const safeWs = sanitizeName(req.params.workspaceId);
-    const storageDir = getPhysicalStorageDir();
-    const imagesDir = path.join(storageDir, safeWs, 'images');
-    await fsp.mkdir(imagesDir, { recursive: true });
+    const safeWs = sanitizeName(req.params.workspaceId) || 'workspace1';
+    let storageDir = getPhysicalStorageDir();
+    let imagesDir = path.join(storageDir, safeWs, 'images');
+    try {
+      await fsp.mkdir(imagesDir, { recursive: true });
+    } catch (mkdirErr: any) {
+      if (storageDir !== FALLBACK_STORAGE_DIR) {
+        logDebug(
+          'warn',
+          'STORAGE IMAGE',
+          `Cannot create images directory in "${storageDir}" (${mkdirErr.code || mkdirErr.message}). Falling back to "${FALLBACK_STORAGE_DIR}"`
+        );
+        effectiveStorageDir = FALLBACK_STORAGE_DIR;
+        storageDir = FALLBACK_STORAGE_DIR;
+        imagesDir = path.join(storageDir, safeWs, 'images');
+        await fsp.mkdir(imagesDir, { recursive: true });
+      } else {
+        throw mkdirErr;
+      }
+    }
 
     // Accept dataUrl, data, base64, or image field names
-    const rawData = req.body.dataUrl || req.body.data || req.body.base64 || req.body.image;
+    const rawData = req.body?.dataUrl || req.body?.data || req.body?.base64 || req.body?.image;
     if (!rawData || typeof rawData !== 'string') {
-      return res.status(400).json({ error: 'Missing image data (expected dataUrl, data, or base64) in request body' });
+      const keys = Object.keys(req.body || {}).join(', ');
+      logDebug('warn', 'STORAGE IMAGE', `Rejected image upload: Missing image data string. Body keys: [${keys}]`);
+      return res.status(400).json({
+        error: 'Missing image data (expected dataUrl, data, or base64) in request body',
+        receivedKeys: Object.keys(req.body || {})
+      });
     }
 
     const origFilename = (req.body.filename || req.body.name || req.body.title || 'image.png').trim();

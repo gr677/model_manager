@@ -42,7 +42,7 @@ import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
 import { NodeImageAttachment } from './types/diagram';
 import { workspaceService } from './services/workspaceService';
-import { CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
 import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
@@ -105,7 +105,7 @@ export default function App() {
     image: NodeImageAttachment;
     allImages?: NodeImageAttachment[];
   } | null>(null);
-  const [imageNotice, setImageNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [imageNotice, setImageNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   useEffect(() => {
     if (imageNotice) {
@@ -514,67 +514,100 @@ export default function App() {
   // Add image file from bottom-left "+ Add Image" button
   const handleAddImageFile = useCallback(
     async (file: File) => {
-      try {
-        setSaveStatus('saving');
-        const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
+      // First, read locally as Data URL so node can appear IMMEDIATELY regardless of server state
+      const readAsDataUrl = (f: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
 
-        // If a node is currently selected on the canvas, attach image to it
+      let localDataUrl = '';
+      try {
+        localDataUrl = await readAsDataUrl(file);
+      } catch {
+        localDataUrl = URL.createObjectURL(file);
+      }
+
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const tempId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const currentAttachment: NodeImageAttachment = {
+        id: tempId,
+        filename: file.name,
+        title: cleanName,
+        url: localDataUrl,
+        size: file.size,
+        mimeType: file.type || 'image/png',
+        uploadedAt: new Date().toISOString(),
+      };
+
+      // Create or attach node on canvas FIRST so the user sees their image node immediately
+      if (selectedNode) {
+        const updatedImages = [...(selectedNode.images || []), currentAttachment];
+        handleUpdateSingleNode({
+          ...selectedNode,
+          images: updatedImages,
+        });
+        setIsInspectorOpen(true);
+      } else {
+        const newNodeId = `node-img-${Date.now()}`;
+        const newNode: DiagramNode = {
+          id: newNodeId,
+          type: 'process',
+          label: cleanName,
+          x: 240,
+          y: 200,
+          width: 140,
+          height: 70,
+          style: {
+            fill: '#0f172a',
+            stroke: '#38bdf8',
+            strokeWidth: 2,
+            textColor: '#f8fafc',
+            rounded: 10,
+          },
+          data: {},
+          images: [currentAttachment],
+          documentation: {
+            description: `Image: ${file.name}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
+            tags: ['Image'],
+            status: 'approved',
+          },
+        };
+
+        handleUpdateNodes([...currentPage.nodes, newNode]);
+        setSelectedNodeIds([newNodeId]);
+        setIsInspectorOpen(true);
+      }
+
+      setSaveStatus('saving');
+
+      // Now sync with server storage in background
+      try {
+        const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
+        // If node was updated, refresh with the server-persisted URL
         if (selectedNode) {
-          const updatedImages = [...(selectedNode.images || []), uploaded];
-          const updatedNode: DiagramNode = {
+          const updatedImages = (selectedNode.images || []).map(img => (img.id === tempId ? uploaded : img));
+          if (!updatedImages.some(img => img.id === uploaded.id)) {
+            updatedImages.push(uploaded);
+          }
+          handleUpdateSingleNode({
             ...selectedNode,
             images: updatedImages,
-          };
-          handleUpdateSingleNode(updatedNode);
-          setIsInspectorOpen(true);
-          setSaveStatus('saved');
-          setImageNotice({
-            type: 'success',
-            message: `Image "${uploaded.filename}" successfully attached to "${selectedNode.label}" and saved in images/!`,
-          });
-        } else {
-          // If no node is selected, create a new image node on canvas at (240, 200)
-          const cleanName = file.name.replace(/\.[^/.]+$/, '');
-          const newNodeId = `node-img-${Date.now()}`;
-          const newNode: DiagramNode = {
-            id: newNodeId,
-            type: 'process',
-            label: cleanName,
-            x: 240,
-            y: 200,
-            width: 140,
-            height: 70,
-            style: {
-              fill: '#0f172a',
-              stroke: '#38bdf8',
-              strokeWidth: 2,
-              textColor: '#f8fafc',
-              rounded: 10,
-            },
-            data: {},
-            images: [uploaded],
-            documentation: {
-              description: `Image: ${uploaded.filename}\nStored in workspace images/ folder. Click the thumbnail icon to expand full size.`,
-              tags: ['Image'],
-              status: 'approved',
-            },
-          };
-
-          handleUpdateNodes([...currentPage.nodes, newNode]);
-          setSelectedNodeIds([newNodeId]);
-          setIsInspectorOpen(true);
-          setSaveStatus('saved');
-          setImageNotice({
-            type: 'success',
-            message: `New Image Node "${cleanName}" created on canvas and saved in images/!`,
           });
         }
+        setSaveStatus('saved');
+        setImageNotice({
+          type: 'success',
+          message: `Image "${uploaded.filename}" saved to workspace images/ folder!`,
+        });
       } catch (err: any) {
-        console.error('Failed to add image from sidebar:', err);
+        console.warn('Server image upload had an issue, kept local image on canvas:', err);
         setSaveStatus('idle');
         setImageNotice({
-          type: 'error',
-          message: `Failed to upload image: ${err?.message || 'Server error'}`,
+          type: 'info',
+          message: `Image added to canvas using local data (Server: ${err?.message || 'saved locally'}).`,
         });
       }
     },
@@ -1373,38 +1406,40 @@ export default function App() {
         )}
 
         {/* Right Sidebar: Aggregations Breakdown & 3D Chart Down Right Side (Change 2) */}
-        <ErrorBoundary fallbackTitle="Aggregations Panel Error">
-          <AggregationsPanel
-            isOpen={isAggregationsOpen}
-            onClose={() => setIsAggregationsOpen(false)}
-            groups={aggregationResult.groups}
-            selectedFieldName={selectedAggregationField}
-            onSelectFieldName={setSelectedAggregationField}
-            totalSearchedPages={aggregationResult.totalSearchedPages}
-            totalItemsFound={aggregationResult.totalItemsFound}
-            theme={settings.theme}
-            showValuesOnCanvas={showAggregationBadges}
-            onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
-            onFocusNode={nodeId => {
-              // Find if node exists on current page
-              const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
-              if (existsOnCurrent) {
-                setSelectedNodeIds([nodeId]);
-                setSelectedEdgeId(null);
-                setIsInspectorOpen(true);
-              } else {
-                // Search document pages
-                const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
-                if (targetPage) {
-                  setActivePageId(targetPage.id);
+        {isAggregationsOpen && (
+          <ErrorBoundary fallbackTitle="Aggregations Panel Error">
+            <AggregationsPanel
+              isOpen={isAggregationsOpen}
+              onClose={() => setIsAggregationsOpen(false)}
+              groups={aggregationResult.groups}
+              selectedFieldName={selectedAggregationField}
+              onSelectFieldName={setSelectedAggregationField}
+              totalSearchedPages={aggregationResult.totalSearchedPages}
+              totalItemsFound={aggregationResult.totalItemsFound}
+              theme={settings.theme}
+              showValuesOnCanvas={showAggregationBadges}
+              onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
+              onFocusNode={nodeId => {
+                // Find if node exists on current page
+                const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
+                if (existsOnCurrent) {
                   setSelectedNodeIds([nodeId]);
                   setSelectedEdgeId(null);
                   setIsInspectorOpen(true);
+                } else {
+                  // Search document pages
+                  const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
+                  if (targetPage) {
+                    setActivePageId(targetPage.id);
+                    setSelectedNodeIds([nodeId]);
+                    setSelectedEdgeId(null);
+                    setIsInspectorOpen(true);
+                  }
                 }
-              }
-            }}
-          />
-        </ErrorBoundary>
+              }}
+            />
+          </ErrorBoundary>
+        )}
       </div>
 
       {/* Modals */}
@@ -1570,6 +1605,8 @@ export default function App() {
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-2xl border text-xs font-medium animate-in fade-in slide-in-from-top-4 duration-150 backdrop-blur-md bg-slate-900/95 border-slate-700 text-slate-100">
           {imageNotice.type === 'success' ? (
             <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : imageNotice.type === 'info' ? (
+            <Info className="w-4 h-4 text-sky-400 shrink-0" />
           ) : (
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
           )}
