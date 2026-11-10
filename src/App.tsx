@@ -1565,12 +1565,14 @@ export default function App() {
         onClose={() => setIsGenerateMindmapModalOpen(false)}
         currentPageName={currentPage.title}
         theme={settings.theme}
-        onMindmapGenerated={(title: string, description: string, genNodes: DiagramNode[], genEdges: DiagramEdge[]) => {
+        existingNodes={currentPage.nodes}
+        existingEdges={currentPage.edges}
+        onMindmapGenerated={(title: string, description: string, genNodes: DiagramNode[], genEdges: DiagramEdge[], isExtended?: boolean, addedNodeIds?: string[]) => {
           const updatedPages = document.pages.map(page => {
             if (page.id !== activePageId) return page;
             return {
               ...page,
-              title: page.title === 'Mind Map' || page.title.startsWith('Page ') || page.title === 'Untitled Diagram' ? title : page.title,
+              title: (!isExtended && (page.title === 'Mind Map' || page.title.startsWith('Page ') || page.title === 'Untitled Diagram')) ? title : page.title,
               nodes: genNodes,
               edges: genEdges,
             };
@@ -1584,7 +1586,20 @@ export default function App() {
 
           persistDocument(updatedDoc);
           setSaveStatus('unsaved');
-          setSelectedNodeIds(genNodes.map(n => n.id));
+
+          if (isExtended && addedNodeIds && addedNodeIds.length > 0) {
+            setSelectedNodeIds(addedNodeIds);
+            setImageNotice({
+              type: 'success',
+              message: `Added ${addedNodeIds.length} new node(s) connected to your mind map!`,
+            });
+          } else {
+            setSelectedNodeIds(genNodes.map(n => n.id));
+            setImageNotice({
+              type: 'success',
+              message: `Generated new mind map with ${genNodes.length} nodes!`,
+            });
+          }
         }}
       />
 

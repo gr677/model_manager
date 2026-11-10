@@ -1092,7 +1092,7 @@ app.delete('/api/workspaces/:workspaceId/images/:filename', async (req: Request,
 app.post('/api/ai/generate-mindmap', async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
-    const { topic } = req.body;
+    const { topic, extendMode, existingNodes, existingEdges, currentTitle } = req.body;
     if (!topic || typeof topic !== 'string' || topic.trim().length < 2) {
       return res.status(400).json({
         success: false,
@@ -1129,8 +1129,6 @@ app.post('/api/ai/generate-mindmap', async (req: Request, res: Response) => {
       });
     }
 
-    logDebug('info', 'GEMINI_AI', `Generating mind map for topic: "${topic.slice(0, 80)}..." using gemini-3.8-flash`);
-
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
@@ -1139,6 +1137,315 @@ app.post('/api/ai/generate-mindmap', async (req: Request, res: Response) => {
         },
       },
     });
+
+    const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+
+    // Helper to format NodeUrlLink objects
+    const formatLinks = (linksArray?: any[]) => {
+      if (!Array.isArray(linksArray)) return undefined;
+      const valid = linksArray
+        .filter(l => l && l.url && typeof l.url === 'string')
+        .map((l, idx) => ({
+          id: `link-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+          label: (l.label || l.title || 'Reference').slice(0, 32),
+          url: l.url.trim(),
+        }));
+      return valid.length > 0 ? valid : undefined;
+    };
+
+    // =========================================================================
+    // BRANCH A: EXTEND EXISTING MIND MAP (User already has nodes on the canvas)
+    // =========================================================================
+    if (extendMode === true && Array.isArray(existingNodes) && existingNodes.length > 0) {
+      logDebug('info', 'GEMINI_AI', `Extending existing mind map (${existingNodes.length} nodes) for prompt: "${topic.slice(0, 80)}..."`);
+
+      const nodeSummary = existingNodes.slice(0, 40).map((n: any) => ({
+        id: String(n.id),
+        label: String(n.label || 'Untitled'),
+        level: n.data?.level ?? 1,
+        x: Math.round(n.x || 0),
+        y: Math.round(n.y || 0),
+        description: (n.documentation?.description || '').slice(0, 140),
+      }));
+
+      const extendPromptText = `You are an expert system architect and knowledge mapper extending an existing mind map.
+The current mind map already contains the following existing nodes on the canvas:
+${JSON.stringify(nodeSummary, null, 2)}
+
+The user has given this request to expand and add to this mind map:
+"${topic.trim()}"
+
+INSTRUCTIONS FOR EXTENDING:
+1. Examine the existing nodes and the user prompt.
+2. Determine which existing node(s) the new concept(s) should attach to.
+   - For each new branch, you MUST provide "parentNodeId" which EXACTLY matches one of the existing node IDs from the list above.
+3. Generate 1 to 4 new branch concept(s) that directly build upon and expand the existing mind map according to the user's prompt.
+4. For every new node, provide in-depth technical explanations. If the prompt requests a specific description length (e.g. 10 sentences per node, or comprehensive paragraphs), faithfully fulfill that requirement with thorough, informative technical explanations, architectural context, best practices, and trade-offs. If no specific length is specified, provide rich, detailed explanations (3-8 sentences per node) rather than brief snippets.
+5. For every node where appropriate, include authoritative, high-quality external reference URL links.
+6. Each new branch can also have 1 to 3 subbranches.
+
+Return a JSON object conforming to the schema with:
+- newBranches: An array of 1 to 4 new branches to connect to the existing mind map. Each branch must have:
+  - parentNodeId: The exact ID of the existing node it connects to.
+  - title: Concept name (under 5 words).
+  - description: Thorough, deep technical explanation (matching any requested length, e.g. up to 10 sentences if requested).
+  - color: Hex color code (e.g. #3b82f6, #10b981, #f59e0b, #ec4899, #8b5cf6, #06b6d4).
+  - links: Array of 1 to 2 authoritative external URL links where appropriate.
+  - subbranches: An array of 1 to 3 sub-topics under this branch, each with:
+    - title: Sub-topic name (under 4 words).
+    - description: In-depth technical explanation (matching requested sentence count).
+    - links: Array of 1 to 2 authoritative external URL links where appropriate.`;
+
+      let extendResponse: any = null;
+      let lastExtendError: any = null;
+
+      for (const modelName of modelsToTry) {
+        try {
+          logDebug('info', 'GEMINI_AI', `Attempting model ${modelName} to extend mind map...`);
+          extendResponse = await ai.models.generateContent({
+            model: modelName,
+            contents: extendPromptText,
+            config: {
+              maxOutputTokens: 8192,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  newBranches: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        parentNodeId: { type: Type.STRING },
+                        title: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        color: { type: Type.STRING },
+                        links: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              label: { type: Type.STRING },
+                              url: { type: Type.STRING },
+                            },
+                            required: ['label', 'url'],
+                          },
+                        },
+                        subbranches: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              title: { type: Type.STRING },
+                              description: { type: Type.STRING },
+                              links: {
+                                type: Type.ARRAY,
+                                items: {
+                                  type: Type.OBJECT,
+                                  properties: {
+                                    label: { type: Type.STRING },
+                                    url: { type: Type.STRING },
+                                  },
+                                  required: ['label', 'url'],
+                                },
+                              },
+                            },
+                            required: ['title', 'description'],
+                          },
+                        },
+                      },
+                      required: ['parentNodeId', 'title', 'description'],
+                    },
+                  },
+                },
+                required: ['newBranches'],
+              },
+            },
+          });
+          if (extendResponse && extendResponse.text) {
+            break;
+          }
+        } catch (err: any) {
+          lastExtendError = err;
+          logDebug('warn', 'GEMINI_AI', `Model ${modelName} failed during extension: ${err?.message || err}`);
+        }
+      }
+
+      if (!extendResponse || !extendResponse.text) {
+        throw lastExtendError || new Error('No response from Gemini API models during mind map extension.');
+      }
+
+      const parsed = JSON.parse(extendResponse.text.trim());
+      const newBranches = Array.isArray(parsed.newBranches) ? parsed.newBranches : [];
+
+      // Calculate center of existing mind map
+      const avgX = existingNodes.reduce((acc: number, n: any) => acc + (n.x || 0), 0) / existingNodes.length || 600;
+      const avgY = existingNodes.reduce((acc: number, n: any) => acc + (n.y || 0), 0) / existingNodes.length || 350;
+
+      const occupiedPositions: Array<{ x: number; y: number }> = existingNodes.map((n: any) => ({
+        x: n.x || 0,
+        y: n.y || 0,
+      }));
+
+      const isPositionOccupied = (x: number, y: number, tolerance = 60) => {
+        return occupiedPositions.some(p => Math.abs(p.x - x) < tolerance * 1.5 && Math.abs(p.y - y) < tolerance);
+      };
+
+      const newGeneratedNodes: DiagramNode[] = [];
+      const newGeneratedEdges: DiagramEdge[] = [];
+      const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+
+      newBranches.forEach((b: any, bIdx: number) => {
+        const parent =
+          existingNodes.find((n: any) => n.id === b.parentNodeId) ||
+          existingNodes.find((n: any) => n.data?.level === 0) ||
+          existingNodes[0];
+
+        const parentX = parent?.x ?? avgX;
+        const parentY = parent?.y ?? avgY;
+        const parentLevel = parent?.data?.level ?? 1;
+
+        // Side relative to parent or center
+        const side: 'left' | 'right' =
+          parentX < avgX ? 'left' : parentX > avgX ? 'right' : bIdx % 2 === 0 ? 'right' : 'left';
+        const color = b.color || defaultColors[(existingNodes.length + bIdx) % defaultColors.length];
+
+        const branchX = side === 'left' ? parentX - 280 : parentX + 280;
+        let branchY = parentY + (bIdx - (newBranches.length - 1) / 2) * 85;
+
+        // Avoid overlap with existing nodes
+        let attempts = 0;
+        while (isPositionOccupied(branchX, branchY) && attempts < 12) {
+          branchY += attempts % 2 === 0 ? 75 * (attempts + 1) : -75 * (attempts + 1);
+          attempts++;
+        }
+        occupiedPositions.push({ x: branchX, y: branchY });
+
+        const branchId = `mm-ext-${Date.now()}-${bIdx}`;
+        newGeneratedNodes.push({
+          id: branchId,
+          type: 'mindmap-oval',
+          label: b.title,
+          x: branchX,
+          y: branchY,
+          width: 115,
+          height: 55,
+          style: {
+            fill: `${color}E6`,
+            stroke: color,
+            strokeWidth: 2,
+            textColor: '#ffffff',
+            gradient: true,
+          },
+          data: { level: parentLevel + 1 },
+          documentation: {
+            description: b.description,
+            status: 'approved',
+            tags: ['MindMap', 'Extended'],
+          },
+          links: formatLinks(b.links),
+        });
+
+        // Edge from existing parent to new branch
+        newGeneratedEdges.push({
+          id: `edge-${parent.id}-${branchId}`,
+          sourceNodeId: parent.id,
+          targetNodeId: branchId,
+          sourceAnchor: side === 'left' ? 'left' : 'right',
+          targetAnchor: side === 'left' ? 'right' : 'left',
+          type: 'curved',
+          lineStyle: 'solid',
+          markerStart: 'none',
+          markerEnd: 'none',
+          color: color,
+          strokeWidth: 2.5,
+        });
+
+        // Subbranches
+        const subbranches = Array.isArray(b.subbranches) ? b.subbranches : [];
+        const subCount = subbranches.length;
+        if (subCount > 0) {
+          const subSpacingY = 70;
+          const subStartY = branchY - ((subCount - 1) * subSpacingY) / 2;
+          const subX = side === 'left' ? branchX - 250 : branchX + 250;
+
+          subbranches.forEach((sub: any, sIdx: number) => {
+            const subId = `mm-ext-sub-${Date.now()}-${bIdx}-${sIdx}`;
+            let subY = subStartY + sIdx * subSpacingY;
+
+            let sAttempts = 0;
+            while (isPositionOccupied(subX, subY) && sAttempts < 12) {
+              subY += sAttempts % 2 === 0 ? 60 * (sAttempts + 1) : -60 * (sAttempts + 1);
+              sAttempts++;
+            }
+            occupiedPositions.push({ x: subX, y: subY });
+
+            newGeneratedNodes.push({
+              id: subId,
+              type: 'mindmap-oval',
+              label: sub.title,
+              x: subX,
+              y: subY,
+              width: 115,
+              height: 55,
+              style: {
+                fill: `${color}B3`,
+                stroke: color,
+                strokeWidth: 1.5,
+                textColor: '#ffffff',
+                gradient: true,
+              },
+              data: { level: parentLevel + 2 },
+              documentation: {
+                description: sub.description,
+                status: 'approved',
+                tags: ['MindMap', 'ExtendedSubtopic'],
+              },
+              links: formatLinks(sub.links),
+            });
+
+            newGeneratedEdges.push({
+              id: `edge-${branchId}-${subId}`,
+              sourceNodeId: branchId,
+              targetNodeId: subId,
+              sourceAnchor: side === 'left' ? 'left' : 'right',
+              targetAnchor: side === 'left' ? 'right' : 'left',
+              type: 'curved',
+              lineStyle: 'solid',
+              markerStart: 'none',
+              markerEnd: 'none',
+              color: color,
+              strokeWidth: 2,
+            });
+          });
+        }
+      });
+
+      const durationMs = Date.now() - startTime;
+      logDebug(
+        'success',
+        'GEMINI_AI',
+        `Extended mind map with ${newGeneratedNodes.length} new nodes and ${newGeneratedEdges.length} new edges in ${durationMs}ms`
+      );
+
+      return res.json({
+        success: true,
+        extended: true,
+        title: currentTitle || 'Extended Mind Map',
+        nodes: [...existingNodes, ...newGeneratedNodes],
+        edges: [...(existingEdges || []), ...newGeneratedEdges],
+        addedNodes: newGeneratedNodes,
+        addedEdges: newGeneratedEdges,
+        addedNodeCount: newGeneratedNodes.length,
+        addedNodeIds: newGeneratedNodes.map(n => n.id),
+        durationMs,
+      });
+    }
+
+    // =========================================================================
+    // BRANCH B: GENERATE FRESH MIND MAP FROM SCRATCH
+    // =========================================================================
+    logDebug('info', 'GEMINI_AI', `Generating fresh mind map for topic: "${topic.slice(0, 80)}..." using gemini-3.8-flash`);
 
     const promptText = `You are an expert system architect, researcher, and knowledge mapper.
 Create a comprehensive, richly structured mind map for the following topic:
@@ -1164,7 +1471,6 @@ Return a JSON object conforming to the schema with:
     - description: In-depth technical explanation (expand to the requested sentence count, e.g. up to 10 sentences if requested).
     - links: Array of 1 to 2 authoritative external URL links where appropriate.`;
 
-    const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
     let response: any = null;
     let lastError: any = null;
 
@@ -1265,18 +1571,7 @@ Return a JSON object conforming to the schema with:
     const centralDescription = data.centralDescription || `Mind map exploration of ${topic.trim()}`;
     const branches = Array.isArray(data.branches) ? data.branches : [];
 
-    // Helper to format NodeUrlLink objects
-    const formatLinks = (linksArray?: any[]) => {
-      if (!Array.isArray(linksArray)) return undefined;
-      const valid = linksArray
-        .filter(l => l && l.url && typeof l.url === 'string')
-        .map((l, idx) => ({
-          id: `link-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-          label: (l.label || l.title || 'Reference').slice(0, 32),
-          url: l.url.trim(),
-        }));
-      return valid.length > 0 ? valid : undefined;
-    };
+    // Using formatLinks defined above for Branch A and B
 
     // Construct diagram nodes & edges with radial coordinate distribution
     const generatedNodes: DiagramNode[] = [];

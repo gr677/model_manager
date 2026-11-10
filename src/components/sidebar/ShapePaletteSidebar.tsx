@@ -447,10 +447,14 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
             type="button"
             disabled={isReadOnly}
             onClick={() => onSelectTemplate('sticky-note')}
-            className="flex items-center justify-center gap-1.5 py-2 px-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 shadow-xs group"
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 shadow-xs group ${
+              themeDef.isDark
+                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+            }`}
             title="Add a new sticky note to canvas"
           >
-            <StickyNote className="w-3.5 h-3.5 shrink-0 text-amber-400 group-hover:scale-110 transition-transform" />
+            <StickyNote className="w-3.5 h-3.5 shrink-0 text-amber-500 group-hover:scale-110 transition-transform" />
             <span className="truncate">+ Sticky Note</span>
           </button>
 
@@ -459,12 +463,16 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
             type="button"
             disabled={isReadOnly}
             onClick={() => imageFileInputRef.current?.click()}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs group ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-xs group ${
+              themeDef.isDark
+                ? 'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300'
+            } ${
               isReadOnly ? 'opacity-50 pointer-events-none' : ''
             }`}
             title="Import an image into workspace images/ folder and attach to selected node or add to canvas"
           >
-            <ImageIcon className="w-3.5 h-3.5 shrink-0 text-sky-400 group-hover:scale-110 transition-transform" />
+            <ImageIcon className="w-3.5 h-3.5 shrink-0 text-sky-500 group-hover:scale-110 transition-transform" />
             <span className="truncate">+ Add Image</span>
           </button>
           <input

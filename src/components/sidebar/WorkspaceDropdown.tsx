@@ -231,14 +231,16 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
           {/* Header with path */}
           <div
             className={`p-2.5 border-b flex items-center justify-between ${
-              isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+              isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-700'
             }`}
           >
             <div className="text-[10px] font-mono tracking-wider font-semibold">
-              <span className="uppercase text-slate-400">Directories in</span>{' '}
-              <span className="text-amber-400 font-bold normal-case font-mono">{windowsRootDisplay}</span>
+              <span className={`uppercase ${isDark ? 'text-slate-400' : 'text-slate-600 font-semibold'}`}>Directories in</span>{' '}
+              <span className={`font-bold normal-case font-mono ${isDark ? 'text-amber-400' : 'text-amber-800'}`}>{windowsRootDisplay}</span>
             </div>
-            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono border ${
+              isDark ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-100 text-amber-900 border-amber-300 font-semibold'
+            }`}>
               {Object.keys(store.workspaces).length} Workspaces
             </span>
           </div>
@@ -419,7 +421,11 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
                   setIsAddingWorkspace(true);
                   setNewWsName(`workspace${Object.keys(store.workspaces).length + 1}`);
                 }}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs ${
+                  isDark
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                }`}
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 <span>+ Add Workspace</span>

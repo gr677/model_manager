@@ -125,6 +125,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   const [showWorkspaceImagePicker, setShowWorkspaceImagePicker] = useState(false);
 
   const themeDef = THEMES[theme] || THEMES.dark;
+  const isDark = themeDef.isDark;
 
   if (selectedEdge && !selectedNode) {
     const sourceNode = currentPage.nodes.find(n => n.id === selectedEdge.sourceNodeId);
@@ -1119,13 +1120,17 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-800 bg-slate-950/40 text-xs">
+      <div className={`flex items-center border-b text-xs ${isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-100/90'}`}>
         <button
           onClick={() => setActiveTab('props')}
           className={`flex-1 py-2 text-center border-b-2 font-medium cursor-pointer transition-colors ${
             activeTab === 'props'
-              ? 'border-blue-500 text-blue-400 bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? isDark
+                ? 'border-blue-500 text-blue-400 bg-slate-900/60 font-semibold'
+                : 'border-blue-600 text-blue-700 bg-white font-bold shadow-xs'
+              : isDark
+                ? 'border-transparent text-slate-400 hover:text-slate-200'
+                : 'border-transparent text-slate-600 hover:text-slate-900 font-semibold hover:bg-slate-200/50'
           }`}
         >
           Properties
@@ -1134,8 +1139,12 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           onClick={() => setActiveTab('docs')}
           className={`flex-1 py-2 text-center border-b-2 font-medium cursor-pointer transition-colors ${
             activeTab === 'docs'
-              ? 'border-blue-500 text-blue-400 bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? isDark
+                ? 'border-blue-500 text-blue-400 bg-slate-900/60 font-semibold'
+                : 'border-blue-600 text-blue-700 bg-white font-bold shadow-xs'
+              : isDark
+                ? 'border-transparent text-slate-400 hover:text-slate-200'
+                : 'border-transparent text-slate-600 hover:text-slate-900 font-semibold hover:bg-slate-200/50'
           }`}
         >
           Docs &amp; Notes
@@ -1144,8 +1153,12 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           onClick={() => setActiveTab('comments')}
           className={`flex-1 py-2 text-center border-b-2 font-medium cursor-pointer transition-colors ${
             activeTab === 'comments'
-              ? 'border-blue-500 text-blue-400 bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? isDark
+                ? 'border-blue-500 text-blue-400 bg-slate-900/60 font-semibold'
+                : 'border-blue-600 text-blue-700 bg-white font-bold shadow-xs'
+              : isDark
+                ? 'border-transparent text-slate-400 hover:text-slate-200'
+                : 'border-transparent text-slate-600 hover:text-slate-900 font-semibold hover:bg-slate-200/50'
           }`}
         >
           Comments
@@ -1154,8 +1167,12 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           onClick={() => setActiveTab('group')}
           className={`flex-1 py-2 text-center border-b-2 font-medium cursor-pointer transition-colors ${
             activeTab === 'group'
-              ? 'border-blue-500 text-blue-400 bg-slate-900/60'
-              : 'border-transparent text-slate-400 hover:text-slate-200'
+              ? isDark
+                ? 'border-blue-500 text-blue-400 bg-slate-900/60 font-semibold'
+                : 'border-blue-600 text-blue-700 bg-white font-bold shadow-xs'
+              : isDark
+                ? 'border-transparent text-slate-400 hover:text-slate-200'
+                : 'border-transparent text-slate-600 hover:text-slate-900 font-semibold hover:bg-slate-200/50'
           }`}
         >
           Hierarchy
@@ -1166,20 +1183,22 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
       {activeTab === 'props' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5 text-xs">
           <div>
-            <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1">Node Title / Label</label>
+            <label className={`text-[10px] uppercase font-mono block mb-1 ${isDark ? 'text-slate-400' : 'text-slate-600 font-semibold'}`}>Node Title / Label</label>
             <input
               type="text"
               disabled={isReadOnly}
               value={selectedNode.label}
               onChange={e => onUpdateNode({ ...selectedNode, label: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+              className={`w-full border rounded p-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 ${
+                isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
+              }`}
             />
           </div>
 
           {/* Sticky Note Color Switcher (Change 2: Customizable Note Colors) */}
           {selectedNode.type === 'sticky-note' && (
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
-              <label className="text-[10px] uppercase font-mono text-amber-300 font-bold block">
+            <div className={`p-3 rounded-xl space-y-2 ${isDark ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-amber-50/80 border border-amber-200 shadow-2xs'}`}>
+              <label className={`text-[10px] uppercase font-mono font-bold block ${isDark ? 'text-amber-300' : 'text-amber-900'}`}>
                 Sticky Note Color Preset
               </label>
               <div className="grid grid-cols-6 gap-1.5">
@@ -1218,9 +1237,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               </div>
 
               {/* Direct Docs & Notes Content for Sticky Note (Change 4) */}
-              <div className="pt-2 border-t border-amber-500/20">
-                <label className="text-[10px] uppercase font-mono text-amber-300 font-bold block mb-1">
-                  Docs & Notes Text
+              <div className={`pt-2 border-t ${isDark ? 'border-amber-500/20' : 'border-amber-200'}`}>
+                <label className={`text-[10px] uppercase font-mono font-bold block mb-1 ${isDark ? 'text-amber-300' : 'text-amber-900'}`}>
+                  Docs &amp; Notes Text
                 </label>
                 <textarea
                   rows={4}
@@ -1239,17 +1258,23 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     });
                   }}
                   placeholder="Enter docs, commentary, and notes to show on this sticky note..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500 disabled:opacity-50 font-sans leading-relaxed"
+                  className={`w-full border rounded p-2 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50 font-sans leading-relaxed ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-white border-amber-300 text-slate-900 shadow-2xs'
+                  }`}
                 />
               </div>
             </div>
           )}
 
           {/* External URL Links Management Section (Change 4: Labeled URLs opening in new tab) */}
-          <div className="p-3 rounded-xl bg-sky-950/20 border border-sky-500/30 space-y-2.5">
+          <div className={`p-3 rounded-xl space-y-2.5 border ${
+            isDark ? 'bg-sky-950/20 border-sky-500/30' : 'bg-sky-50/80 border-sky-200 shadow-2xs'
+          }`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
-                <Link2 className="w-3.5 h-3.5 text-sky-400" />
+              <div className={`flex items-center gap-1.5 font-bold text-xs ${
+                isDark ? 'text-sky-300' : 'text-sky-900'
+              }`}>
+                <Link2 className="w-3.5 h-3.5 text-sky-500" />
                 <span>External URL Links ({(selectedNode.links || []).length})</span>
               </div>
             </div>
@@ -1260,13 +1285,19 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                 {selectedNode.links!.map(link => (
                   <div
                     key={link.id}
-                    className="p-2 rounded-lg bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-2"
+                    className={`p-2 rounded-lg border flex items-center justify-between gap-2 ${
+                      isDark ? 'bg-slate-950/90 border-slate-800' : 'bg-white border-sky-200 shadow-2xs'
+                    }`}
                   >
                     <div className="truncate min-w-0 flex-1">
-                      <div className="font-semibold text-sky-200 text-xs truncate flex items-center gap-1">
+                      <div className={`font-semibold text-xs truncate flex items-center gap-1 ${
+                        isDark ? 'text-sky-200' : 'text-sky-800'
+                      }`}>
                         <span>{link.label}</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono truncate">
+                      <div className={`text-[10px] font-mono truncate ${
+                        isDark ? 'text-slate-400' : 'text-slate-600'
+                      }`}>
                         {link.url}
                       </div>
                     </div>
@@ -1284,7 +1315,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveLink(link.id)}
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
+                          className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 cursor-pointer transition-colors"
                           title="Remove link"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1295,15 +1326,17 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                 ))}
               </div>
             ) : (
-              <p className="text-[11px] text-slate-400">
+              <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                 Attach labeled links to this node. Clicking a link opens it in a new browser tab.
               </p>
             )}
 
             {/* Add new link form */}
             {!isReadOnly && (
-              <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
-                <span className="text-[10px] font-mono text-slate-400 uppercase font-semibold block">Add URL Link</span>
+              <div className={`pt-2 border-t space-y-1.5 ${isDark ? 'border-slate-800/80' : 'border-sky-200'}`}>
+                <span className={`text-[10px] font-mono uppercase font-semibold block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Add URL Link
+                </span>
                 <input
                   type="text"
                   placeholder="URL (e.g. https://example.com/docs)"
@@ -1312,7 +1345,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                   onKeyDown={e => {
                     if (e.key === 'Enter') handleAddLink();
                   }}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-sky-500"
+                  className={`w-full border rounded px-2 py-1 text-xs focus:outline-none focus:border-sky-500 ${
+                    isDark ? 'bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600' : 'bg-white border-slate-300 text-slate-800 placeholder:text-slate-400 shadow-2xs'
+                  }`}
                 />
                 <div className="flex items-center gap-1.5">
                   <input
@@ -2602,7 +2637,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs">
           {/* Documentation Status */}
           <div>
-            <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1">Architecture Status</label>
+            <label className={`text-[10px] uppercase font-mono block mb-1 ${isDark ? 'text-slate-400' : 'text-slate-600 font-semibold'}`}>
+              Architecture Status
+            </label>
             <div className="flex items-center gap-1">
               {(['approved', 'in-review', 'draft', 'deprecated'] as const).map(st => (
                 <button
@@ -2611,8 +2648,10 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                   onClick={() => updateDocs({ status: st })}
                   className={`px-2 py-1 rounded text-[10px] font-mono uppercase tracking-wider cursor-pointer transition-all ${
                     (selectedNode.documentation?.status || 'draft') === st
-                      ? 'bg-blue-600 text-white font-bold'
-                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-blue-600 text-white font-bold shadow-xs'
+                      : isDark
+                      ? 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 font-medium'
                   }`}
                 >
                   {st}
@@ -2624,8 +2663,12 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           {/* Description & Specs */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] uppercase font-mono text-slate-400">Documentation &amp; Specifications</label>
-              <span className="text-[9px] font-mono text-blue-400/80">Supports @type name: val</span>
+              <label className={`text-[10px] uppercase font-mono ${isDark ? 'text-slate-400' : 'text-slate-700 font-bold'}`}>
+                Documentation &amp; Specifications
+              </label>
+              <span className={`text-[9px] font-mono ${isDark ? 'text-blue-400/80' : 'text-blue-700 font-medium'}`}>
+                Supports @type name: val
+              </span>
             </div>
             <textarea
               rows={4}
@@ -2633,12 +2676,14 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               value={selectedNode.documentation?.description || ''}
               onChange={e => updateDocs({ description: e.target.value })}
               placeholder="e.g. Core microservice.\n@text todo: wash the car\n@number share: 345\n@date due: 2027-10-25"
-              className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono text-[11px] leading-relaxed"
+              className={`w-full border rounded p-2 text-xs focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono text-[11px] leading-relaxed ${
+                isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
+              }`}
             />
             {/* Quick-insert instruction chips */}
             {!isReadOnly && (
               <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                <span className="text-[9px] text-slate-500 font-mono mr-0.5">Quick add:</span>
+                <span className={`text-[9px] font-mono mr-0.5 ${isDark ? 'text-slate-500' : 'text-slate-600 font-semibold'}`}>Quick add:</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -2646,7 +2691,11 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
                     updateDocs({ description: `${current}${newline}@text todo: ` });
                   }}
-                  className="px-1.5 py-0.5 text-[9px] font-mono bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 border border-sky-800/60 rounded flex items-center gap-1 transition-colors"
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
+                    isDark
+                      ? 'bg-sky-950/60 hover:bg-sky-900/60 text-sky-300 border border-sky-800/60'
+                      : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 font-medium'
+                  }`}
                   title="Insert @text instruction"
                 >
                   <FileText className="w-2.5 h-2.5" />
@@ -2659,7 +2708,11 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
                     updateDocs({ description: `${current}${newline}@number share: 100` });
                   }}
-                  className="px-1.5 py-0.5 text-[9px] font-mono bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60 rounded flex items-center gap-1 transition-colors"
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
+                    isDark
+                      ? 'bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60'
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-medium'
+                  }`}
                   title="Insert @number instruction (3D bar/pie chart enabled)"
                 >
                   <BarChart3 className="w-2.5 h-2.5" />
@@ -2673,7 +2726,11 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     const todayStr = new Date().toISOString().slice(0, 10);
                     updateDocs({ description: `${current}${newline}@date due: ${todayStr}` });
                   }}
-                  className="px-1.5 py-0.5 text-[9px] font-mono bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 rounded flex items-center gap-1 transition-colors"
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
+                    isDark
+                      ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60'
+                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-medium'
+                  }`}
                   title="Insert @date instruction (sorted ascending)"
                 >
                   <Calendar className="w-2.5 h-2.5" />
@@ -2685,24 +2742,30 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
           {/* API Endpoint mapping */}
           <div>
-            <label className="text-[10px] uppercase font-mono text-slate-400 block mb-1">Linked REST API Endpoint</label>
-            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-slate-300 font-mono text-[11px]">
-              <Code className="w-3.5 h-3.5 text-blue-400" />
+            <label className={`text-[10px] uppercase font-mono block mb-1 ${isDark ? 'text-slate-400' : 'text-slate-600 font-semibold'}`}>
+              Linked REST API Endpoint
+            </label>
+            <div className={`flex items-center gap-1.5 border rounded px-2 py-1 font-mono text-[11px] ${
+              isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
+            }`}>
+              <Code className="w-3.5 h-3.5 text-blue-500" />
               <input
                 type="text"
                 disabled={isReadOnly}
                 value={selectedNode.documentation?.apiEndpoint || ''}
                 onChange={e => updateDocs({ apiEndpoint: e.target.value })}
                 placeholder="e.g. POST /api/v1/orders"
-                className="w-full bg-transparent focus:outline-none text-slate-100"
+                className={`w-full bg-transparent focus:outline-none ${isDark ? 'text-slate-100' : 'text-slate-900'}`}
               />
             </div>
           </div>
 
           {/* Sticky Notes section */}
-          <div className="pt-3 border-t border-slate-800 space-y-2">
+          <div className={`pt-3 border-t space-y-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-mono text-amber-300 font-bold flex items-center gap-1">
+              <label className={`text-[10px] uppercase font-mono font-bold flex items-center gap-1 ${
+                isDark ? 'text-amber-300' : 'text-amber-900'
+              }`}>
                 <StickyIcon className="w-3.5 h-3.5" />
                 Attached Sticky Notes ({selectedNode.stickyNotes?.length || 0})
               </label>
@@ -2738,13 +2801,17 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
             {/* Add Sticky Note Form */}
             {!isReadOnly && (
-              <div className="p-2.5 bg-slate-950 rounded border border-slate-800 space-y-2">
+              <div className={`p-2.5 rounded border space-y-2 ${
+                isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
                 <input
                   type="text"
                   value={newStickyText}
                   onChange={e => setNewStickyText(e.target.value)}
                   placeholder="New sticky annotation note..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-100 focus:outline-none"
+                  className={`w-full border rounded p-1.5 text-xs focus:outline-none ${
+                    isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
+                  }`}
                 />
                 <div className="flex items-center justify-between">
                   {/* Color pickers */}
@@ -2777,13 +2844,15 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
           </div>
 
           {/* Change 2: Attached Images Section (Stored in workspace images/ folder, miniature icon reflects contents, click expands to full size) */}
-          <div className="pt-3 border-t border-slate-800 space-y-2">
+          <div className={`pt-3 border-t space-y-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-mono text-sky-400 font-bold flex items-center gap-1.5">
+              <label className={`text-[10px] uppercase font-mono font-bold flex items-center gap-1.5 ${
+                isDark ? 'text-sky-400' : 'text-sky-700'
+              }`}>
                 <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
                 <span>Attached Images ({selectedNode.images?.length || 0})</span>
               </label>
-              <span className="text-[9px] font-mono text-slate-500">
+              <span className={`text-[9px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>
                 images/
               </span>
             </div>
@@ -2797,8 +2866,12 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
             {/* Toggle: Display image preview card directly in node body on canvas */}
             {(selectedNode.images || []).length > 0 && (
-              <label className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800 text-xs cursor-pointer select-none hover:border-slate-700">
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200">
+              <label className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer select-none transition-colors ${
+                isDark
+                  ? 'bg-slate-950/80 border-slate-800 text-slate-200 hover:border-slate-700'
+                  : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 shadow-2xs'
+              }`}>
+                <span className={`flex items-center gap-1.5 text-[11px] font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                   <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
                   <span>Show image preview in node body</span>
                 </span>
@@ -2832,14 +2905,22 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             {/* Attached Images List */}
             <div className="space-y-1.5">
               {(selectedNode.images || []).length === 0 ? (
-                <div className="p-2.5 rounded-lg border border-slate-800 bg-slate-950/60 text-slate-500 text-[11px] text-center italic">
-                  No images attached yet. Import screenshots, mockups, or diagrams stored in your workspace <code className="text-sky-400">images/</code> folder.
+                <div className={`p-2.5 rounded-lg border text-[11px] text-center italic ${
+                  isDark
+                    ? 'border-slate-800 bg-slate-950/60 text-slate-500'
+                    : 'border-slate-200 bg-slate-50 text-slate-600'
+                }`}>
+                  No images attached yet. Import screenshots, mockups, or diagrams stored in your workspace <code className="text-sky-500 font-mono">images/</code> folder.
                 </div>
               ) : (
                 (selectedNode.images || []).map(img => (
                   <div
                     key={img.id}
-                    className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 transition-colors hover:border-slate-700 group"
+                    className={`p-2 rounded-lg border flex items-center justify-between gap-2 transition-colors group ${
+                      isDark
+                        ? 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                        : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                    }`}
                   >
                     <div
                       className="flex items-center gap-2.5 min-w-0 cursor-pointer"
@@ -2857,10 +2938,14 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                         </div>
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-slate-200 truncate group-hover:text-sky-400 transition-colors">
+                        <div className={`text-xs font-semibold truncate transition-colors ${
+                          isDark ? 'text-slate-200 group-hover:text-sky-400' : 'text-slate-800 group-hover:text-sky-700'
+                        }`}>
                           {img.title || img.filename}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-400 truncate flex items-center gap-2">
+                        <div className={`text-[10px] font-mono truncate flex items-center gap-2 ${
+                          isDark ? 'text-slate-400' : 'text-slate-600'
+                        }`}>
                           <span className="truncate">{img.filename}</span>
                           {img.size && (
                             <>
@@ -2876,7 +2961,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenImageLightbox?.(img, selectedNode.images)}
-                        className="p-1 rounded text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                        className={`p-1 rounded transition-colors cursor-pointer ${
+                          isDark ? 'text-slate-400 hover:text-sky-400 hover:bg-slate-800' : 'text-slate-500 hover:text-sky-600 hover:bg-slate-100'
+                        }`}
                         title="Expand image to full size"
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
@@ -3047,14 +3134,16 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               </div>
             ) : (
               (selectedNode.comments || []).map(comm => (
-                <div key={comm.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
+                <div key={comm.id} className={`p-2.5 border rounded-lg space-y-1 ${
+                  isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
+                }`}>
                   <div className="flex items-center justify-between text-[10px]">
                     <span className="font-semibold" style={{ color: comm.authorColor }}>
                       {comm.author}
                     </span>
-                    <span className="text-slate-500 font-mono">{comm.createdAt}</span>
+                    <span className={`font-mono ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>{comm.createdAt}</span>
                   </div>
-                  <p className="text-slate-200 leading-snug">{comm.text}</p>
+                  <p className={`leading-snug ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{comm.text}</p>
                 </div>
               ))
             )}
@@ -3062,7 +3151,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
           {/* Add comment input */}
           {userRole !== 'viewer' && (
-            <div className="pt-2 border-t border-slate-800 mt-2 flex items-center gap-1.5">
+            <div className={`pt-2 border-t mt-2 flex items-center gap-1.5 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
               <input
                 type="text"
                 value={newCommentText}
@@ -3071,7 +3160,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                   if (e.key === 'Enter') handleAddComment();
                 }}
                 placeholder="Write a comment..."
-                className="flex-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                className={`flex-1 border rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 ${
+                  isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
+                }`}
               />
               <button
                 onClick={handleAddComment}
@@ -3088,18 +3179,24 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
       {activeTab === 'group' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 text-xs">
           {/* Change 4 & User Request 9: Dedicated Child Diagrams (Multi-Child Support) */}
-          <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-2.5">
+          <div className={`p-3 rounded-xl space-y-2.5 ${
+            isDark ? 'bg-purple-950/30 border border-purple-500/30' : 'bg-purple-50/80 border border-purple-200 shadow-2xs'
+          }`}>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-mono text-purple-300 font-bold flex items-center gap-1.5">
+              <label className={`text-[10px] uppercase font-mono font-bold flex items-center gap-1.5 ${
+                isDark ? 'text-purple-300' : 'text-purple-900'
+              }`}>
                 <FolderTree className="w-3.5 h-3.5 text-purple-400" />
                 <span>Child Diagrams ({getNodeChildDiagrams(selectedNode).length})</span>
               </label>
-              <span className="text-[9px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-500/30">
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                isDark ? 'text-purple-300 bg-purple-500/20 border-purple-500/30' : 'text-purple-800 bg-purple-100 border-purple-200'
+              }`}>
                 Multi-Child Enabled
               </span>
             </div>
 
-            <p className="text-[11px] text-slate-300 leading-relaxed">
+            <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
               Every node can link multiple child diagrams of any type. Right-click the node on the canvas to quickly navigate between them.
             </p>
 
@@ -3112,18 +3209,26 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                       {children.map((child, idx) => (
                         <div
                           key={child.id || child.filename || idx}
-                          className="p-2 bg-slate-950 rounded-lg border border-purple-500/30 flex items-center justify-between gap-2"
+                          className={`p-2 rounded-lg border flex items-center justify-between gap-2 ${
+                            isDark ? 'bg-slate-950 border-purple-500/30' : 'bg-white border-purple-200 shadow-2xs'
+                          }`}
                         >
                           <div className="truncate min-w-0 flex-1">
-                            <div className="font-bold text-xs text-purple-200 truncate flex items-center gap-1.5">
+                            <div className={`font-bold text-xs truncate flex items-center gap-1.5 ${
+                              isDark ? 'text-purple-200' : 'text-purple-900'
+                            }`}>
                               <span>{child.title || child.filename}</span>
                               {child.diagramType && (
-                                <span className="text-[8px] uppercase font-mono px-1 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                                <span className={`text-[8px] uppercase font-mono px-1 py-0.2 rounded border shrink-0 ${
+                                  isDark ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-purple-100 text-purple-800 border-purple-200'
+                                }`}>
                                   {child.diagramType}
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] font-mono text-slate-400 truncate">
+                            <div className={`text-[10px] font-mono truncate ${
+                              isDark ? 'text-slate-400' : 'text-slate-600'
+                            }`}>
                               {child.filename}
                             </div>
                           </div>
