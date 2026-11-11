@@ -618,27 +618,30 @@ class WorkspaceService {
 
     ws.activeDiagramFilename = safeFilename;
 
-    if (ws.diagrams[safeFilename]?.document) {
-      this.saveStore();
-      return ws.diagrams[safeFilename].document;
-    }
-
+    // Try fetching latest document from server first to ensure fresh data
     try {
       const doc = await this.fetchDiagramFromServer(ws.id, safeFilename);
+      const cloned = JSON.parse(JSON.stringify(doc));
       ws.diagrams[safeFilename] = {
         filename: safeFilename,
         name: doc.name || safeFilename.replace('.json', ''),
         lastModified: new Date().toISOString(),
-        document: doc,
+        document: cloned,
       };
       this.saveStore();
-      return doc;
+      return JSON.parse(JSON.stringify(cloned));
     } catch (err) {
-      console.warn(`[WorkspaceService] Could not fetch ${safeFilename} from server:`, err);
+      console.warn(`[WorkspaceService] Server fetch failed for ${safeFilename}, checking local cache:`, err);
+    }
+
+    // Fallback to local memory cache if available
+    if (ws.diagrams[safeFilename]?.document) {
+      this.saveStore();
+      return JSON.parse(JSON.stringify(ws.diagrams[safeFilename].document));
     }
 
     this.saveStore();
-    return this.getActiveDiagram().document;
+    return JSON.parse(JSON.stringify(this.getActiveDiagram().document));
   }
 
   public saveCurrentDiagram(doc: DiagramDocument, customFilename?: string): void {

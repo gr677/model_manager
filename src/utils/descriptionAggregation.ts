@@ -5,6 +5,7 @@
 
 import { DiagramDocument, DiagramPage, DiagramNode, getNodeChildDiagrams } from '../types/diagram';
 import { Workspace } from '../services/workspaceService';
+import { scriptEvaluationService } from '../services/scriptEvaluationService';
 
 export type AggregationDataType = 'text' | 'number' | 'date';
 
@@ -17,6 +18,8 @@ export interface AggregatedItem {
   numericValue?: number; // Parsed numeric value if type is 'number'
   dateValue?: Date; // Parsed Date object if type is 'date'
   formattedDate?: string;
+  isScriptEvaluated?: boolean;
+  scriptFormatted?: string;
   nodeId: string;
   nodeLabel: string;
   nodeType?: string;
@@ -59,12 +62,14 @@ export function parseAggregationLines(
     pageTitle: string;
     diagramFilename: string;
     diagramTitle: string;
-  }
+  },
+  workspaceId?: string
 ): AggregatedItem[] {
   if (!rawText || typeof rawText !== 'string') return [];
 
   const items: AggregatedItem[] = [];
   const lines = rawText.split(/\r?\n/);
+  const activeWsId = workspaceId || 'workspace1';
 
   lines.forEach((line, lineIndex) => {
     const trimmed = line.trim();
@@ -81,11 +86,25 @@ export function parseAggregationLines(
     let numericValue: number | undefined = undefined;
     let dateValue: Date | undefined = undefined;
     let formattedDate: string | undefined = undefined;
+    let isScriptEvaluated = false;
+    let scriptFormatted: string | undefined = undefined;
 
     if (type === 'number') {
-      const cleaned = rawValue.replace(/[^0-9.-]/g, '');
-      const parsedNum = parseFloat(cleaned);
-      numericValue = !isNaN(parsedNum) ? parsedNum : 0;
+      if (scriptEvaluationService.isScriptExpression(rawValue)) {
+        isScriptEvaluated = true;
+        const evalNum = scriptEvaluationService.getEvaluatedNumber(activeWsId, rawValue);
+        if (evalNum !== null && typeof evalNum === 'number') {
+          numericValue = evalNum;
+          scriptFormatted = scriptEvaluationService.getFormattedResult(activeWsId, rawValue) || `£${evalNum.toFixed(2)}`;
+        } else {
+          numericValue = 0;
+          scriptEvaluationService.evaluateAsync(activeWsId, rawValue).catch(() => {});
+        }
+      } else {
+        const cleaned = rawValue.replace(/[^0-9.-]/g, '');
+        const parsedNum = parseFloat(cleaned);
+        numericValue = !isNaN(parsedNum) ? parsedNum : 0;
+      }
     } else if (type === 'date') {
       const parsed = new Date(rawValue);
       if (!isNaN(parsed.getTime())) {
@@ -116,6 +135,8 @@ export function parseAggregationLines(
       numericValue,
       dateValue,
       formattedDate,
+      isScriptEvaluated,
+      scriptFormatted,
       nodeId: meta.nodeId,
       nodeLabel: meta.nodeLabel || 'Untitled Node',
       nodeType: meta.nodeType,
@@ -198,7 +219,7 @@ export function collectAggregationsFromPageAndChildren(
           pageTitle: page.title || 'Page',
           diagramFilename,
           diagramTitle,
-        });
+        }, workspace?.id);
         allItems.push(...parsed);
       }
 
@@ -289,6 +310,14 @@ export function collectAggregationsFromPageAndChildren(
     }
     return a.displayName.localeCompare(b.displayName);
   });
+
+  // Trigger batch evaluation for any script expressions that are pending
+  const scriptExprs = allItems
+    .filter(it => it.isScriptEvaluated && it.value)
+    .map(it => it.value);
+  if (scriptExprs.length > 0) {
+    scriptEvaluationService.evaluateBatch(workspace?.id || 'workspace1', scriptExprs).catch(() => {});
+  }
 
   return {
     groups,

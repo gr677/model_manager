@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { scriptEvaluationService } from './services/scriptEvaluationService';
 import {
   DiagramDocument,
   DiagramPage,
@@ -54,6 +55,22 @@ export default function App() {
   const [document, setDocument] = useState<DiagramDocument>(() => {
     return offlineSyncService.getCachedDocument() || initialDiagramDocument;
   });
+
+  const activeDiagramFilenameRef = useRef<string>(
+    workspaceService.getActiveWorkspace().activeDiagramFilename || 'root.json'
+  );
+  const documentRef = useRef<DiagramDocument>(document);
+  useEffect(() => {
+    documentRef.current = document;
+  }, [document]);
+
+  const [scriptEvalVersion, setScriptEvalVersion] = useState(0);
+  useEffect(() => {
+    const unsub = scriptEvaluationService.subscribe(() => {
+      setScriptEvalVersion(v => v + 1);
+    });
+    return unsub;
+  }, []);
 
   const [activePageId, setActivePageId] = useState<string>(() => {
     return (
@@ -264,7 +281,7 @@ export default function App() {
   const aggregationResult = React.useMemo(() => {
     if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
     return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
-  }, [currentPage, document, activeWs]);
+  }, [currentPage, document, activeWs, scriptEvalVersion]);
 
   // Subscribe to offline sync & collaboration services
   useEffect(() => {
@@ -323,20 +340,23 @@ export default function App() {
 
   // Save document state in memory and mark unsaved (manual save writes to server disk)
   const persistDocument = useCallback((updatedDoc: DiagramDocument) => {
+    documentRef.current = updatedDoc;
     setDocument(updatedDoc);
     setSaveStatus('unsaved');
     offlineSyncService.cacheDocument(updatedDoc);
-    const ws = workspaceService.getActiveWorkspace();
-    workspaceService.saveCurrentDiagram(updatedDoc, ws.activeDiagramFilename);
+    const filename = activeDiagramFilenameRef.current || workspaceService.getActiveWorkspace().activeDiagramFilename || 'root.json';
+    workspaceService.saveCurrentDiagram(updatedDoc, filename);
   }, []);
 
-  const handleManualSave = useCallback(async () => {
+  const handleManualSave = useCallback(async (customTargetFilename?: string) => {
     setSaveStatus('saving');
     const ws = workspaceService.getActiveWorkspace();
-    const filename = ws.activeDiagramFilename || 'root.json';
-    workspaceService.saveCurrentDiagram(document, filename);
+    const filename = customTargetFilename || activeDiagramFilenameRef.current || ws.activeDiagramFilename || 'root.json';
+    const docToSave = JSON.parse(JSON.stringify(documentRef.current));
+    workspaceService.saveCurrentDiagram(docToSave, filename);
+    workspaceService.updateLocalDiagramCache(filename, docToSave);
     // Persist synchronously to server disk
-    const result = await workspaceService.saveCurrentDiagramToServer(document, filename);
+    const result = await workspaceService.saveCurrentDiagramToServer(docToSave, filename);
     if (!result.success) {
       console.error('[OmniMind App] Save diagram failed:', result.error, result.details);
       setSaveStatus('unsaved');
@@ -349,7 +369,7 @@ export default function App() {
     );
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2500);
-  }, [document]);
+  }, []);
 
   // Intercept navigation when there are unsaved changes on the current page (Change 6)
   const requestNavigation = useCallback(

@@ -7,7 +7,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
@@ -18,6 +18,7 @@ import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge,
 import { GoogleGenAI, Type } from '@google/genai';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -881,7 +882,23 @@ app.get('/api/workspaces', async (req: Request, res: Response) => {
         const wsId = folder.name;
         const wsPath = path.join(storageDir, wsId);
         const dataPath = path.join(wsPath, 'data');
+        const imagesPath = path.join(wsPath, 'images');
+        const scriptsPath = path.join(wsPath, 'scripts');
         await fsp.mkdir(dataPath, { recursive: true });
+        await fsp.mkdir(imagesPath, { recursive: true });
+        await fsp.mkdir(scriptsPath, { recursive: true });
+
+        // Seed default scripts if not present
+        const assetScript = path.join(scriptsPath, 'asset.py');
+        const cryptoScript = path.join(scriptsPath, 'crypto_gbp.py');
+        const templateAsset = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'asset_9f86d022.py');
+        const templateCrypto = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'crypto_gbp_d8ff28cf.py');
+        if (!fs.existsSync(assetScript) && fs.existsSync(templateAsset)) {
+          try { await fsp.copyFile(templateAsset, assetScript); } catch {}
+        }
+        if (!fs.existsSync(cryptoScript) && fs.existsSync(templateCrypto)) {
+          try { await fsp.copyFile(templateCrypto, cryptoScript); } catch {}
+        }
 
         // Migrate root.json from parent if it was placed there previously
         const rootInParent = path.join(wsPath, 'root.json');
@@ -1334,6 +1351,237 @@ app.delete('/api/workspaces/:workspaceId/images/:filename', async (req: Request,
     res.status(404).json({ error: 'Image not found' });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete image' });
+  }
+});
+
+// 8f. List scripts in <workspace>/scripts
+app.get('/api/workspaces/:workspaceId/scripts', async (req: Request, res: Response) => {
+  try {
+    const safeWs = sanitizeName(req.params.workspaceId);
+    const storageDir = getPhysicalStorageDir();
+    const scriptsDir = path.join(storageDir, safeWs, 'scripts');
+    await fsp.mkdir(scriptsDir, { recursive: true });
+
+    // Seed default scripts if not present
+    const assetScript = path.join(scriptsDir, 'asset.py');
+    const cryptoScript = path.join(scriptsDir, 'crypto_gbp.py');
+    const templateAsset = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'asset_9f86d022.py');
+    const templateCrypto = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'crypto_gbp_d8ff28cf.py');
+    if (!fs.existsSync(assetScript) && fs.existsSync(templateAsset)) {
+      try { await fsp.copyFile(templateAsset, assetScript); } catch {}
+    }
+    if (!fs.existsSync(cryptoScript) && fs.existsSync(templateCrypto)) {
+      try { await fsp.copyFile(templateCrypto, cryptoScript); } catch {}
+    }
+
+    const files = await fsp.readdir(scriptsDir);
+    const pyFiles = files.filter(f => f.endsWith('.py'));
+    res.json({ success: true, workspaceId: safeWs, scripts: pyFiles });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list workspace scripts' });
+  }
+});
+
+// Helper to evaluate a script call expression via Python3 (with Node.js fallback)
+async function evaluateScriptExpression(workspaceId: string, rawExpression: string): Promise<{ success: boolean; result?: number; formatted?: string; error?: string }> {
+  const trimmed = rawExpression.trim();
+  const match = trimmed.match(/^([a-zA-Z0-9_-]+)\s*\(([\s\S]*)\)$/);
+  if (!match) {
+    return { success: false, error: `Invalid script expression: ${rawExpression}` };
+  }
+
+  const fnName = match[1];
+  const argsRaw = match[2];
+
+  // Parse arguments carefully: support single/double quotes and numbers
+  let parsedArgs: any[] = [];
+  try {
+    // Try wrapping in brackets and parsing with relaxed quotes
+    const jsonReady = argsRaw
+      .replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, '"$1"')
+      .trim();
+    parsedArgs = JSON.parse(`[${jsonReady}]`);
+  } catch {
+    // Regex tokenize fallback
+    const tokens = argsRaw.split(',').map(s => {
+      const t = s.trim().replace(/^['"]|['"]$/g, '');
+      const num = Number(t);
+      return !isNaN(num) && t !== '' ? num : t;
+    });
+    parsedArgs = tokens;
+  }
+
+  const storageDir = getPhysicalStorageDir();
+  const scriptPath = path.join(storageDir, sanitizeName(workspaceId), 'scripts', `${fnName}.py`);
+  
+  // Also check fallback in public assets
+  let targetScriptPath = scriptPath;
+  if (!fs.existsSync(targetScriptPath)) {
+    if (fnName === 'asset') {
+      targetScriptPath = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'asset_9f86d022.py');
+    } else if (fnName === 'crypto_gbp') {
+      targetScriptPath = path.join(process.cwd(), 'public', 'assets', 'aistudio', 'crypto_gbp_d8ff28cf.py');
+    }
+  }
+
+  // 1. Try executing via Python 3 with urllib/requests fallback
+  if (fs.existsSync(targetScriptPath)) {
+    const pythonCode = `
+import sys, json, os, urllib.request, urllib.parse
+
+# Inject requests fallback shim if not installed
+if 'requests' not in sys.modules:
+    try:
+        import requests
+    except ImportError:
+        class RequestsResponse:
+            def __init__(self, data, status_code=200):
+                self._data = data
+                self.status_code = status_code
+            def json(self):
+                return json.loads(self._data.decode('utf-8'))
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise Exception(f'HTTP {self.status_code}')
+        class RequestsShim:
+            @staticmethod
+            def get(url, params=None, headers=None, timeout=15):
+                if params:
+                    url += '?' + urllib.parse.urlencode(params)
+                req = urllib.request.Request(url, headers=headers or {'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return RequestsResponse(resp.read(), resp.status)
+        sys.modules['requests'] = RequestsShim()
+
+import importlib.util
+script_path = sys.argv[1]
+args_json = sys.argv[2]
+args = json.loads(args_json)
+
+spec = importlib.util.spec_from_file_location('custom_script', script_path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+if not hasattr(mod, 'evaluate'):
+    raise Exception("Script does not define an evaluate(...) function")
+
+result = mod.evaluate(*args)
+print(json.dumps({"success": True, "result": result}))
+`;
+
+    try {
+      const argsJson = JSON.stringify(parsedArgs);
+      // Run Python script safely via execFileAsync (no shell escaping issues)
+      const { stdout } = await execFileAsync('python3', ['-c', pythonCode, targetScriptPath, argsJson], {
+        timeout: 15000,
+      });
+
+      const parsed = JSON.parse(stdout.trim());
+      if (parsed.success && (typeof parsed.result === 'number' || !isNaN(parseFloat(parsed.result)))) {
+        const num = parseFloat(parsed.result);
+        return { success: true, result: Math.round(num * 100) / 100, formatted: `£${(Math.round(num * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` };
+      }
+    } catch (pyErr: any) {
+      logDebug('warn', 'PYTHON SCRIPT', `Python exec failed, trying Node fallback for ${fnName}: ${pyErr.message}`);
+    }
+  }
+
+  // 2. High-availability Node.js fallback for asset and crypto_gbp
+  try {
+    if (fnName === 'asset' && parsedArgs.length >= 3) {
+      const [ticker, shares, fromCurrency] = parsedArgs;
+      const cleanTicker = String(ticker).toUpperCase().trim();
+      const numShares = parseFloat(shares);
+      const cleanFromCurr = String(fromCurrency).toUpperCase().trim();
+
+      const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanTicker}?interval=1m&range=1d`;
+      const yfRes = await fetch(yfUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!yfRes.ok) throw new Error(`Yahoo Finance HTTP ${yfRes.status}`);
+      const yfData: any = await yfRes.json();
+      const meta = yfData?.chart?.result?.[0]?.meta;
+      const priceNative = parseFloat(meta?.regularMarketPrice || meta?.previousClose || meta?.chartPreviousClose || 0);
+
+      let fx = 1.0;
+      if (cleanFromCurr === 'GBX') {
+        const resVal = Math.round(((priceNative / 100) * numShares) * 100) / 100;
+        return { success: true, result: resVal, formatted: `£${resVal.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` };
+      }
+      if (cleanFromCurr !== 'GBP') {
+        const fxRes = await fetch(`https://api.frankfurter.app/latest?from=${cleanFromCurr}&to=GBP`);
+        if (fxRes.ok) {
+          const fxData: any = await fxRes.json();
+          fx = parseFloat(fxData?.rates?.GBP || 1.0);
+        }
+      }
+      const totalGbp = Math.round((priceNative * fx * numShares) * 100) / 100;
+      return { success: true, result: totalGbp, formatted: `£${totalGbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` };
+    }
+
+    if (fnName === 'crypto_gbp' && parsedArgs.length >= 2) {
+      const [amount, cryptoSymbol] = parsedArgs;
+      const numAmount = parseFloat(amount);
+      const cleanSymbol = String(cryptoSymbol).toUpperCase().trim();
+
+      const cbRes = await fetch(`https://api.coinbase.com/v2/exchange-rates?currency=${cleanSymbol}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Cortex-Engine)' },
+      });
+      if (!cbRes.ok) throw new Error(`Coinbase HTTP ${cbRes.status}`);
+      const cbData: any = await cbRes.json();
+      const gbpRate = parseFloat(cbData?.data?.rates?.GBP);
+      if (!isNaN(gbpRate)) {
+        const total = Math.round((numAmount * gbpRate) * 100) / 100;
+        return { success: true, result: total, formatted: `£${total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` };
+      }
+    }
+  } catch (nodeErr: any) {
+    logDebug('error', 'SCRIPT EVAL', `Node fallback failed: ${nodeErr.message}`);
+  }
+
+  return { success: false, error: `Could not evaluate script expression '${rawExpression}'` };
+}
+
+// 8g. Evaluate a single python script expression e.g. asset('TSLA', 1392, 'USD')
+app.post('/api/workspaces/:workspaceId/scripts/evaluate', async (req: Request, res: Response) => {
+  try {
+    const { workspaceId } = req.params;
+    const { expression } = req.body;
+    if (!expression || typeof expression !== 'string') {
+      return res.status(400).json({ success: false, error: 'expression string is required' });
+    }
+
+    const evalResult = await evaluateScriptExpression(workspaceId, expression);
+    res.json(evalResult);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Evaluation failed' });
+  }
+});
+
+// 8h. Evaluate batch of script expressions in parallel
+app.post('/api/workspaces/:workspaceId/scripts/evaluate-batch', async (req: Request, res: Response) => {
+  try {
+    const { workspaceId } = req.params;
+    const { expressions } = req.body;
+    if (!Array.isArray(expressions)) {
+      return res.status(400).json({ success: false, error: 'expressions array is required' });
+    }
+
+    const results: Record<string, { result: number; formatted: string }> = {};
+    await Promise.all(
+      expressions.map(async (expr: string) => {
+        try {
+          const evalRes = await evaluateScriptExpression(workspaceId, expr);
+          if (evalRes.success && typeof evalRes.result === 'number') {
+            results[expr] = { result: evalRes.result, formatted: evalRes.formatted || `£${evalRes.result.toFixed(2)}` };
+          }
+        } catch {
+          // ignore individual expression errors
+        }
+      })
+    );
+
+    res.json({ success: true, results });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Batch evaluation failed' });
   }
 });
 
