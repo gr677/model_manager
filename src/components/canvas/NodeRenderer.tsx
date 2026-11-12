@@ -62,6 +62,7 @@ interface NodeRendererProps {
   onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
   isReadOnly?: boolean;
   showAggregationBadges?: boolean;
+  nodeIndex?: number;
 }
 
 export const NodeRenderer: React.FC<NodeRendererProps> = ({
@@ -87,6 +88,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   onOpenImageLightbox,
   isReadOnly,
   showAggregationBadges = true,
+  nodeIndex = 0,
 }) => {
   const [isEditingLabel, setIsEditingLabel] = React.useState(false);
   const [editedLabel, setEditedLabel] = React.useState(node.label);
@@ -1471,16 +1473,15 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         width: `${node.width}px`,
         height: `${node.height}px`,
         touchAction: 'none',
+        zIndex: isSelected ? 500 + nodeIndex : isDeemphasized ? 0 : (node.isGroup ? 2 + nodeIndex : 20 + nodeIndex),
         opacity: isDeemphasized ? 0.22 : 1,
         filter: isDeemphasized ? 'grayscale(45%)' : 'none',
         transition: 'opacity 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease',
       }}
       className={`absolute group select-none pointer-events-auto ${
         isSelected
-          ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950 z-20 shadow-xl'
-          : isDeemphasized
-          ? 'z-0'
-          : 'z-10'
+          ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950 shadow-xl'
+          : ''
       } ${isDragging ? 'cursor-grabbing opacity-90' : 'cursor-grab'}`}
       onMouseEnter={e => {
         const rect = e.currentTarget.getBoundingClientRect();

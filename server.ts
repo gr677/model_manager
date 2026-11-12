@@ -1090,6 +1090,12 @@ app.post('/api/workspaces/:workspaceId/files/:filename', async (req: Request, re
     let safeFile = sanitizeName(req.params.filename);
     if (!safeFile.endsWith('.json')) safeFile += '.json';
 
+    // Prevent saving files named "_object_Object_.json" from event serialization errors
+    if (safeFile.toLowerCase().includes('object_object') || safeFile === '_.json' || safeFile === '_object_.json') {
+      logDebug('warn', 'STORAGE SAVE', `Blocked invalid filename "${safeFile}", defaulting to "root.json"`);
+      safeFile = 'root.json';
+    }
+
     const configuredRoot = getConfiguredRootDir();
     const winPath = toWindowsPath(configuredRoot, safeWs, safeFile);
     const storageDir = getPhysicalStorageDir();

@@ -11,6 +11,9 @@ import {
   Copy,
   ArrowUp,
   ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
+  Layers,
   Plus,
   Palette,
   Maximize2,
@@ -47,14 +50,18 @@ interface ContextMenuProps {
   selectedEdge?: DiagramEdge | null;
   diagramType?: DiagramType;
   otherNodes?: DiagramNode[];
+  overlappingNodes?: DiagramNode[];
   theme?: AppTheme;
   onClose: () => void;
+  onSelectNode?: (nodeId: string, isMulti?: boolean) => void;
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge?: (edgeId: string) => void;
   onUpdateEdge?: (edge: DiagramEdge) => void;
   onDuplicateNode: (nodeId: string) => void;
   onBringToFront: (nodeId: string) => void;
   onSendToBack: (nodeId: string) => void;
+  onBringForward?: (nodeId: string) => void;
+  onSendBackward?: (nodeId: string) => void;
   onOpenEditModal: (node: DiagramNode) => void;
   onQuickAddColumn?: (nodeId: string) => void;
   onQuickAddMethod?: (nodeId: string) => void;
@@ -79,14 +86,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   selectedEdge,
   diagramType = 'generic',
   otherNodes = [],
+  overlappingNodes = [],
   theme = 'dark',
   onClose,
+  onSelectNode,
   onDeleteNode,
   onDeleteEdge,
   onUpdateEdge,
   onDuplicateNode,
   onBringToFront,
   onSendToBack,
+  onBringForward,
+  onSendBackward,
   onOpenEditModal,
   onQuickAddColumn,
   onQuickAddMethod,
@@ -543,37 +554,127 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </button>
           )}
 
-          {/* BRING TO FRONT */}
-          <button
-            onClick={() => {
-              onBringToFront(selectedNode.id);
-              onClose();
-            }}
-            className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${
-              isDark
-                ? 'hover:bg-slate-800 hover:text-white text-slate-300'
-                : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
-            }`}
-          >
-            <ArrowUp className="w-3.5 h-3.5 text-slate-400" />
-            <span>Bring to Front</span>
-          </button>
+          {/* BRING TO FRONT & BRING FORWARD */}
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              onClick={() => {
+                onBringToFront(selectedNode.id);
+                onClose();
+              }}
+              className={`text-left px-2 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-medium ${
+                isDark
+                  ? 'hover:bg-slate-800 hover:text-white text-slate-300'
+                  : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
+              }`}
+              title="Bring to very top layer (highest Z-index)"
+            >
+              <ChevronsUp className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>To Front</span>
+            </button>
+            <button
+              onClick={() => {
+                onBringForward?.(selectedNode.id);
+                onClose();
+              }}
+              className={`text-left px-2 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-medium ${
+                isDark
+                  ? 'hover:bg-slate-800 hover:text-white text-slate-300'
+                  : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
+              }`}
+              title="Move one layer forward"
+            >
+              <ArrowUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Forward</span>
+            </button>
+          </div>
 
-          {/* SEND TO BACK */}
-          <button
-            onClick={() => {
-              onSendToBack(selectedNode.id);
-              onClose();
-            }}
-            className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${
-              isDark
-                ? 'hover:bg-slate-800 hover:text-white text-slate-300'
-                : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
-            }`}
-          >
-            <ArrowDown className="w-3.5 h-3.5 text-slate-400" />
-            <span>Send to Back</span>
-          </button>
+          {/* SEND BACKWARD & SEND TO BACK */}
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              onClick={() => {
+                onSendBackward?.(selectedNode.id);
+                onClose();
+              }}
+              className={`text-left px-2 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-medium ${
+                isDark
+                  ? 'hover:bg-slate-800 hover:text-white text-slate-300'
+                  : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
+              }`}
+              title="Move one layer backward"
+            >
+              <ArrowDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Backward</span>
+            </button>
+            <button
+              onClick={() => {
+                onSendToBack(selectedNode.id);
+                onClose();
+              }}
+              className={`text-left px-2 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-medium ${
+                isDark
+                  ? 'hover:bg-slate-800 hover:text-white text-slate-300'
+                  : 'hover:bg-slate-100 hover:text-slate-900 text-slate-700'
+              }`}
+              title="Send to lowest bottom layer (lowest Z-index)"
+            >
+              <ChevronsDown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>To Back</span>
+            </button>
+          </div>
+
+          {/* OVERLAPPING OBJECTS PICKER (Solves selecting & bringing objects inside other objects) */}
+          {overlappingNodes.length > 1 && (
+            <div className={`mt-1 pt-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+              <div className="px-2 py-0.5 text-[10px] font-mono uppercase text-sky-400 flex items-center justify-between font-bold">
+                <span className="flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-sky-400" />
+                  <span>Layers Here ({overlappingNodes.length})</span>
+                </span>
+                <span className="text-[9px] text-slate-400 lowercase">click to select</span>
+              </div>
+              <div className="max-h-28 overflow-y-auto space-y-0.5 mt-0.5 pr-0.5">
+                {overlappingNodes.map(node => {
+                  const isCurrent = node.id === selectedNode.id;
+                  return (
+                    <div
+                      key={node.id}
+                      className={`px-2 py-1 rounded text-xs flex items-center justify-between gap-1 transition-colors ${
+                        isCurrent
+                          ? 'bg-sky-600/20 text-sky-300 font-semibold border border-sky-500/30'
+                          : isDark
+                          ? 'hover:bg-slate-800 text-slate-300'
+                          : 'hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectNode?.(node.id, false);
+                          onClose();
+                        }}
+                        className="truncate text-left flex-1 min-w-0 cursor-pointer"
+                        title={`Select "${node.label}"`}
+                      >
+                        <span className="truncate block">{node.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onBringToFront(node.id);
+                          onSelectNode?.(node.id, false);
+                          onClose();
+                        }}
+                        className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-blue-500/20 hover:bg-blue-500 text-blue-300 hover:text-white shrink-0 cursor-pointer"
+                        title={`Bring "${node.label}" to front`}
+                      >
+                        Bring Up
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Open Docs in Inspector */}
           <button
@@ -757,6 +858,37 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       ) : (
         // CANVAS BACKGROUND CONTEXT MENU
         <div className="space-y-0.5">
+          {overlappingNodes.length > 0 && (
+            <div className={`p-1 mb-1 rounded-lg border ${isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="px-1.5 py-0.5 text-[10px] font-mono uppercase text-sky-400 font-bold flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-sky-400" />
+                  <span>Objects Here ({overlappingNodes.length})</span>
+                </span>
+              </div>
+              <div className="max-h-32 overflow-y-auto space-y-0.5 mt-1">
+                {overlappingNodes.map(node => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectNode?.(node.id, false);
+                      onClose();
+                    }}
+                    className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                      isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <span className="truncate max-w-[150px] font-medium">{node.label}</span>
+                    <span className="text-[9px] font-mono text-slate-400 uppercase shrink-0">
+                      {node.type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className={`h-[1px] my-1 ${isDark ? 'bg-slate-800/80' : 'bg-slate-200'}`} />
+            </div>
+          )}
           <div
             className={`px-2.5 py-1 border-b text-[10px] uppercase font-mono mb-1 ${
               isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'

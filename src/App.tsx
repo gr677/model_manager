@@ -348,10 +348,17 @@ export default function App() {
     workspaceService.saveCurrentDiagram(updatedDoc, filename);
   }, []);
 
-  const handleManualSave = useCallback(async (customTargetFilename?: string) => {
+  const handleManualSave = useCallback(async (customTargetFilename?: unknown) => {
     setSaveStatus('saving');
     const ws = workspaceService.getActiveWorkspace();
-    const filename = customTargetFilename || activeDiagramFilenameRef.current || ws.activeDiagramFilename || 'root.json';
+    const explicitFilename =
+      typeof customTargetFilename === 'string' &&
+      customTargetFilename.trim() &&
+      !customTargetFilename.includes('[object') &&
+      !customTargetFilename.includes('object_Object')
+        ? customTargetFilename.trim()
+        : null;
+    const filename = explicitFilename || activeDiagramFilenameRef.current || ws.activeDiagramFilename || 'root.json';
     const docToSave = JSON.parse(JSON.stringify(documentRef.current));
     workspaceService.saveCurrentDiagram(docToSave, filename);
     workspaceService.updateLocalDiagramCache(filename, docToSave);
@@ -1103,11 +1110,14 @@ export default function App() {
       // Save child diagram synchronously to server disk
       await workspaceService.saveCurrentDiagramToServer(childDoc, safeFilename);
 
-      // 5. Activate the child diagram and update state to display the empty new child diagram
+      // 5. Activate the child diagram and update state atomically to display the empty new child diagram
+      activeDiagramFilenameRef.current = safeFilename;
+      documentRef.current = childDoc;
       workspaceService.setActiveDiagram(safeFilename);
-      setActiveWs({ ...workspaceService.getActiveWorkspace() });
+      setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: safeFilename });
       setDocument(childDoc);
       offlineSyncService.cacheDocument(childDoc);
+      setSaveStatus('idle');
       if (childDoc.pages && childDoc.pages.length > 0) {
         setActivePageId(childDoc.activePageId || childDoc.pages[0].id);
       }
@@ -1128,35 +1138,40 @@ export default function App() {
   // Navigate into a child diagram JSON file (pushing current parent to history stack)
   const handleNavigateToChildDiagram = useCallback(
     async (filename: string, nodeLabel?: string) => {
-      const currentWs = workspaceService.getActiveWorkspace();
-      const currentFilename = currentWs.activeDiagramFilename || 'root.json';
+      const currentFilename = activeDiagramFilenameRef.current || 'root.json';
+      const currentDoc = JSON.parse(JSON.stringify(documentRef.current));
 
       // Save current document before navigating explicitly to currentFilename
-      workspaceService.saveCurrentDiagram(document, currentFilename);
-      workspaceService.updateLocalDiagramCache(currentFilename, document);
-      await workspaceService.saveCurrentDiagramToServer(document, currentFilename);
+      workspaceService.saveCurrentDiagram(currentDoc, currentFilename);
+      workspaceService.updateLocalDiagramCache(currentFilename, currentDoc);
+      await workspaceService.saveCurrentDiagramToServer(currentDoc, currentFilename);
 
       // Push to history
       setNavigationHistory(prev => [
         ...prev,
         {
           filename: currentFilename,
-          diagramName: document.name || currentFilename,
+          diagramName: currentDoc.name || currentFilename,
           pageId: activePageId,
           nodeLabel: nodeLabel || selectedNode?.label,
         },
       ]);
 
       // Load child diagram from workspace storage or server disk
+      activeDiagramFilenameRef.current = filename;
       const childDoc = await workspaceService.loadAndSetActiveDiagram(filename);
-      setActiveWs({ ...workspaceService.getActiveWorkspace() });
-      setDocument(childDoc);
-      offlineSyncService.cacheDocument(childDoc);
-      if (childDoc.pages && childDoc.pages.length > 0) {
-        setActivePageId(childDoc.activePageId || childDoc.pages[0].id);
+      const freshChildDoc = JSON.parse(JSON.stringify(childDoc));
+      documentRef.current = freshChildDoc;
+      workspaceService.setActiveDiagram(filename);
+      setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: filename });
+      setDocument(freshChildDoc);
+      offlineSyncService.cacheDocument(freshChildDoc);
+      setSaveStatus('idle');
+      if (freshChildDoc.pages && freshChildDoc.pages.length > 0) {
+        setActivePageId(freshChildDoc.activePageId || freshChildDoc.pages[0].id);
       }
-      if (childDoc.pages?.[0]?.diagramType) {
-        setSelectedCategory(childDoc.pages[0].diagramType);
+      if (freshChildDoc.pages?.[0]?.diagramType) {
+        setSelectedCategory(freshChildDoc.pages[0].diagramType);
       }
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
@@ -1166,36 +1181,44 @@ export default function App() {
         `Navigated into child diagram '${filename}'`
       );
     },
-    [document, activePageId, selectedNode]
+    [activePageId, selectedNode]
   );
 
   // Return to the parent diagram in the breadcrumb history
   const handleNavigateBackParent = useCallback(async () => {
     if (navigationHistory.length === 0) return;
 
-    const currentWs = workspaceService.getActiveWorkspace();
-    const currentFilename = currentWs.activeDiagramFilename || 'child.json';
+    // Explicitly save the current child diagram with its actual filename and content
+    const childFilename = activeDiagramFilenameRef.current || 'child.json';
+    const childDocToSave = JSON.parse(JSON.stringify(documentRef.current));
 
-    // Save current child diagram
-    workspaceService.saveCurrentDiagram(document, currentFilename);
-    workspaceService.updateLocalDiagramCache(currentFilename, document);
-    await workspaceService.saveCurrentDiagramToServer(document, currentFilename);
+    workspaceService.saveCurrentDiagram(childDocToSave, childFilename);
+    workspaceService.updateLocalDiagramCache(childFilename, childDocToSave);
+    await workspaceService.saveCurrentDiagramToServer(childDocToSave, childFilename);
 
     const prevHistory = [...navigationHistory];
     const parentEntry = prevHistory.pop()!;
     setNavigationHistory(prevHistory);
 
+    // Switch active diagram filename reference to parent before loading
+    activeDiagramFilenameRef.current = parentEntry.filename;
+
     const parentDoc = await workspaceService.loadAndSetActiveDiagram(parentEntry.filename);
-    setActiveWs({ ...workspaceService.getActiveWorkspace() });
-    setDocument(parentDoc);
-    offlineSyncService.cacheDocument(parentDoc);
-    if (parentEntry.pageId && parentDoc.pages.some(p => p.id === parentEntry.pageId)) {
+    const freshParentDoc = JSON.parse(JSON.stringify(parentDoc));
+    documentRef.current = freshParentDoc;
+    workspaceService.setActiveDiagram(parentEntry.filename);
+    setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: parentEntry.filename });
+    setDocument(freshParentDoc);
+    offlineSyncService.cacheDocument(freshParentDoc);
+    setSaveStatus('idle'); // Crucial: Reset to idle so unprompted save doesn't trigger!
+
+    if (parentEntry.pageId && freshParentDoc.pages?.some((p: DiagramPage) => p.id === parentEntry.pageId)) {
       setActivePageId(parentEntry.pageId);
-    } else if (parentDoc.pages && parentDoc.pages.length > 0) {
-      setActivePageId(parentDoc.activePageId || parentDoc.pages[0].id);
+    } else if (freshParentDoc.pages && freshParentDoc.pages.length > 0) {
+      setActivePageId(freshParentDoc.activePageId || freshParentDoc.pages[0].id);
     }
-    if (parentDoc.pages?.[0]?.diagramType) {
-      setSelectedCategory(parentDoc.pages[0].diagramType);
+    if (freshParentDoc.pages?.[0]?.diagramType) {
+      setSelectedCategory(freshParentDoc.pages[0].diagramType);
     }
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
@@ -1204,35 +1227,39 @@ export default function App() {
       '#3b82f6',
       `Returned to parent diagram '${parentEntry.filename}'`
     );
-  }, [document, navigationHistory]);
+  }, [navigationHistory]);
 
   // Switch directly to any diagram in the workspace
   const handleSwitchDiagram = useCallback(
     async (filename: string) => {
-      const currentWs = workspaceService.getActiveWorkspace();
-      const currentFilename = currentWs.activeDiagramFilename || 'root.json';
+      const currentFilename = activeDiagramFilenameRef.current || 'root.json';
       if (filename === currentFilename) return;
 
       // Save current document before switching
-      workspaceService.saveCurrentDiagram(document, currentFilename);
-      workspaceService.updateLocalDiagramCache(currentFilename, document);
-      await workspaceService.saveCurrentDiagramToServer(document, currentFilename);
+      const currentDoc = JSON.parse(JSON.stringify(documentRef.current));
+      workspaceService.saveCurrentDiagram(currentDoc, currentFilename);
+      workspaceService.updateLocalDiagramCache(currentFilename, currentDoc);
+      await workspaceService.saveCurrentDiagramToServer(currentDoc, currentFilename);
 
+      activeDiagramFilenameRef.current = filename;
       const targetDoc = await workspaceService.loadAndSetActiveDiagram(filename);
-      setActiveWs({ ...workspaceService.getActiveWorkspace() });
-      setDocument(targetDoc);
-      offlineSyncService.cacheDocument(targetDoc);
+      const freshTargetDoc = JSON.parse(JSON.stringify(targetDoc));
+      documentRef.current = freshTargetDoc;
+      workspaceService.setActiveDiagram(filename);
+      setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: filename });
+      setDocument(freshTargetDoc);
+      offlineSyncService.cacheDocument(freshTargetDoc);
       setSaveStatus('idle');
-      if (targetDoc.pages && targetDoc.pages.length > 0) {
-        setActivePageId(targetDoc.activePageId || targetDoc.pages[0].id);
+      if (freshTargetDoc.pages && freshTargetDoc.pages.length > 0) {
+        setActivePageId(freshTargetDoc.activePageId || freshTargetDoc.pages[0].id);
       }
-      if (targetDoc.pages?.[0]?.diagramType) {
-        setSelectedCategory(targetDoc.pages[0].diagramType);
+      if (freshTargetDoc.pages?.[0]?.diagramType) {
+        setSelectedCategory(freshTargetDoc.pages[0].diagramType);
       }
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
     },
-    [document]
+    []
   );
 
   const handleLoadWorkspaceDiagram = useCallback(
@@ -1325,7 +1352,7 @@ export default function App() {
         onNavigateBack={handleNavigateBackParent}
         onOpenWorkspaceModal={() => setIsWorkspaceModalOpen(true)}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onManualSave={handleManualSave}
+        onManualSave={() => handleManualSave()}
         onSelectPage={pageId => {
           const target = document.pages.find(p => p.id === pageId);
           requestNavigation(() => {
@@ -1614,7 +1641,7 @@ export default function App() {
         onUpdateSettings={handleUpdateSettings}
         document={document}
         activeWorkspacePath={workspaceService.getActiveWorkspacePath()}
-        onManualSave={handleManualSave}
+        onManualSave={() => handleManualSave()}
         onOpenWorkspaceModal={() => setIsWorkspaceModalOpen(true)}
       />
 

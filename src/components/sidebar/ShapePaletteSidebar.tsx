@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { SHAPE_TEMPLATES } from '../../data/shapeDefinitions';
-import { DiagramType, UserRole, AppTheme } from '../../types/diagram';
+import { DiagramType, UserRole, AppTheme, getNodeChildDiagrams } from '../../types/diagram';
 import {
   Search,
   Table,
@@ -21,6 +21,9 @@ import {
   BoxSelect,
   Grid,
   ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  CornerDownRight,
   Sparkles,
   ArrowDownUp,
   Users,
@@ -76,9 +79,22 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isDiagramsListExpanded, setIsDiagramsListExpanded] = useState(false);
+  const [collapsedDiagramNodes, setCollapsedDiagramNodes] = useState<Set<string>>(new Set());
   const [showImagesDrawer, setShowImagesDrawer] = useState(false);
   const [workspaceImagesList, setWorkspaceImagesList] = useState<Array<{ filename: string; url: string; size: number }>>([]);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleDiagramNodeCollapse = (filename: string) => {
+    setCollapsedDiagramNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(filename)) {
+        next.delete(filename);
+      } else {
+        next.add(filename);
+      }
+      return next;
+    });
+  };
 
   const categories = [
     { id: 'all', label: 'All Diagram Shapes' },
@@ -179,58 +195,240 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
           </button>
         )}
 
-        {/* Workspace Diagrams Files Switcher Accordion */}
+        {/* Workspace Diagrams Files Tree Switcher Accordion (Change 1) */}
         {(() => {
           const ws = workspaceService.getActiveWorkspace();
-          const diagramList = Object.values(ws.diagrams);
-          if (diagramList.length <= 1 && !isDiagramsListExpanded) return null;
-          return (
-            <div className={`rounded-xl border p-2 text-xs space-y-1.5 ${themeDef.isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-              <button
-                type="button"
-                onClick={() => setIsDiagramsListExpanded(v => !v)}
-                className="w-full flex items-center justify-between text-[11px] font-bold text-sky-400 cursor-pointer"
-                title="Click to view and switch between diagram files in this workspace"
-              >
-                <div className="flex items-center gap-1.5">
-                  <FolderTree className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Workspace Diagrams ({diagramList.length})</span>
-                </div>
-                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isDiagramsListExpanded ? 'rotate-180 text-sky-400' : ''}`} />
-              </button>
-              {isDiagramsListExpanded && (
-                <div className="space-y-1 max-h-40 overflow-y-auto pt-1 border-t border-slate-800/60">
-                  {diagramList.map(diag => {
-                    const isCurrent = diag.filename === (activeDiagramFilename || ws.activeDiagramFilename || 'root.json');
-                    const firstType = diag.document?.pages?.[0]?.diagramType;
-                    return (
+          const allDiagrams = ws.diagrams || {};
+          const filenames = Object.keys(allDiagrams);
+          if (filenames.length <= 1 && !isDiagramsListExpanded) return null;
+
+          // Build parent-child relationships map
+          const parentOfMap = new Map<string, { parentFilename: string; parentNodeLabel: string }>();
+          const childrenMap = new Map<string, Array<{ filename: string; parentNodeLabel: string }>>();
+
+          filenames.forEach(f => {
+            const diag = allDiagrams[f];
+            const pages = diag?.document?.pages || [];
+            pages.forEach(p => {
+              (p.nodes || []).forEach(n => {
+                const childRefs = getNodeChildDiagrams(n);
+                childRefs.forEach(ref => {
+                  if (ref.filename && allDiagrams[ref.filename] && ref.filename !== f) {
+                    if (!parentOfMap.has(ref.filename)) {
+                      parentOfMap.set(ref.filename, {
+                        parentFilename: f,
+                        parentNodeLabel: n.label || 'Node',
+                      });
+                    }
+                    const list = childrenMap.get(f) || [];
+                    if (!list.some(item => item.filename === ref.filename)) {
+                      list.push({ filename: ref.filename, parentNodeLabel: n.label || 'Node' });
+                      childrenMap.set(f, list);
+                    }
+                  }
+                });
+              });
+            });
+          });
+
+          // Identify root diagrams (unparented or root.json)
+          const rootFilenames: string[] = [];
+          if (allDiagrams['root.json']) {
+            rootFilenames.push('root.json');
+          }
+          filenames.forEach(f => {
+            if (!parentOfMap.has(f) && f !== 'root.json') {
+              rootFilenames.push(f);
+            }
+          });
+          if (rootFilenames.length === 0 && filenames.length > 0) {
+            rootFilenames.push(filenames[0]);
+          }
+
+          interface DiagramTreeNode {
+            filename: string;
+            name: string;
+            diagramType?: string;
+            parentFilename?: string;
+            parentNodeLabel?: string;
+            children: DiagramTreeNode[];
+            depth: number;
+          }
+
+          const visited = new Set<string>();
+          function buildTree(fname: string, depth: number): DiagramTreeNode {
+            visited.add(fname);
+            const diag = allDiagrams[fname];
+            const firstType = diag?.document?.pages?.[0]?.diagramType;
+            const parentInfo = parentOfMap.get(fname);
+            const childList = childrenMap.get(fname) || [];
+            const children: DiagramTreeNode[] = [];
+            childList.forEach(c => {
+              if (!visited.has(c.filename) && allDiagrams[c.filename]) {
+                children.push(buildTree(c.filename, depth + 1));
+              }
+            });
+            return {
+              filename: fname,
+              name: diag?.name || fname,
+              diagramType: firstType,
+              parentFilename: parentInfo?.parentFilename,
+              parentNodeLabel: parentInfo?.parentNodeLabel,
+              children,
+              depth,
+            };
+          }
+
+          const treeRoots: DiagramTreeNode[] = rootFilenames.map(f => buildTree(f, 0));
+          filenames.forEach(f => {
+            if (!visited.has(f)) {
+              treeRoots.push(buildTree(f, 0));
+            }
+          });
+
+          const currentFilename = activeDiagramFilename || ws.activeDiagramFilename || 'root.json';
+
+          const renderNode = (item: DiagramTreeNode): React.ReactNode => {
+            const isCurrent = item.filename === currentFilename;
+            const hasChildren = item.children.length > 0;
+            const isCollapsed = collapsedDiagramNodes.has(item.filename);
+
+            return (
+              <div key={item.filename} className="space-y-0.5">
+                <div
+                  className={`w-full text-left rounded-lg flex items-center justify-between gap-1 transition-colors cursor-pointer text-xs group ${
+                    isCurrent
+                      ? 'bg-sky-600/20 text-sky-300 font-bold border border-sky-500/40 shadow-xs'
+                      : themeDef.isDark
+                      ? 'hover:bg-slate-800 text-slate-300'
+                      : 'hover:bg-slate-200 text-slate-700'
+                  }`}
+                  style={{
+                    paddingLeft: `${item.depth * 14 + 6}px`,
+                    paddingRight: '6px',
+                    paddingTop: '4px',
+                    paddingBottom: '4px',
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-1.5 min-w-0 flex-1"
+                    onClick={() => onSwitchDiagram?.(item.filename)}
+                    title={`Switch to diagram: ${item.name || item.filename}`}
+                  >
+                    {item.depth > 0 && (
+                      <CornerDownRight className="w-3 h-3 text-purple-400 shrink-0 opacity-80" />
+                    )}
+
+                    {hasChildren ? (
                       <button
-                        key={diag.filename}
                         type="button"
-                        onClick={() => onSwitchDiagram?.(diag.filename)}
-                        className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between gap-1 transition-colors cursor-pointer text-xs ${
-                          isCurrent
-                            ? 'bg-sky-600/20 text-sky-300 font-bold border border-sky-500/40'
-                            : themeDef.isDark
-                            ? 'hover:bg-slate-800 text-slate-300'
-                            : 'hover:bg-slate-200 text-slate-700'
-                        }`}
+                        onClick={e => {
+                          e.stopPropagation();
+                          toggleDiagramNodeCollapse(item.filename);
+                        }}
+                        className="p-0.5 -ml-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-white cursor-pointer shrink-0"
+                        title={isCollapsed ? 'Expand sub-diagrams' : 'Collapse sub-diagrams'}
                       >
-                        <div className="truncate min-w-0 flex items-center gap-1.5">
-                          <FileCode className="w-3 h-3 text-sky-400 shrink-0" />
-                          <span className="truncate">{diag.name || diag.filename}</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {firstType && (
-                            <span className="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-sky-500/15 text-sky-300 border border-sky-500/20">
-                              {firstType}
-                            </span>
-                          )}
-                          {isCurrent && <Check className="w-3 h-3 text-sky-400" />}
-                        </div>
+                        <ChevronDown
+                          className={`w-3 h-3 transition-transform ${
+                            isCollapsed ? '-rotate-90 text-purple-400' : 'text-slate-400'
+                          }`}
+                        />
                       </button>
-                    );
-                  })}
+                    ) : (
+                      <span className="w-2 shrink-0" />
+                    )}
+
+                    <FileCode
+                      className={`w-3 h-3 shrink-0 ${
+                        isCurrent
+                          ? 'text-sky-400'
+                          : item.depth > 0
+                          ? 'text-purple-400'
+                          : 'text-slate-400'
+                      }`}
+                    />
+
+                    <div className="min-w-0 flex flex-col flex-1">
+                      <span className="truncate leading-tight">{item.name || item.filename}</span>
+                      {item.parentNodeLabel && (
+                        <span className="text-[8.5px] font-mono text-purple-300/80 truncate leading-none mt-0.5">
+                          ↳ from {item.parentNodeLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0 ml-1">
+                    {item.diagramType && (
+                      <span className="text-[7.5px] font-mono uppercase px-1 py-0.2 rounded bg-sky-500/15 text-sky-300 border border-sky-500/20">
+                        {item.diagramType}
+                      </span>
+                    )}
+                    {isCurrent && <Check className="w-3 h-3 text-sky-400 shrink-0" />}
+                  </div>
+                </div>
+
+                {/* Sub-diagrams / Child Branches */}
+                {hasChildren && !isCollapsed && (
+                  <div className="space-y-0.5 border-l border-purple-500/25 ml-2 pl-0.5">
+                    {item.children.map(child => renderNode(child))}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          return (
+            <div
+              className={`rounded-xl border p-2 text-xs space-y-1.5 ${
+                themeDef.isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsDiagramsListExpanded(v => !v)}
+                  className="flex items-center gap-1.5 text-[11px] font-bold text-sky-400 cursor-pointer flex-1"
+                  title="Click to view diagram hierarchy and switch between files"
+                >
+                  <FolderTree className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Workspace Hierarchy ({filenames.length})</span>
+                </button>
+                <div className="flex items-center gap-1">
+                  {isDiagramsListExpanded && filenames.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (collapsedDiagramNodes.size > 0) {
+                          setCollapsedDiagramNodes(new Set());
+                        } else {
+                          setCollapsedDiagramNodes(new Set(filenames));
+                        }
+                      }}
+                      className="text-[9px] font-mono text-slate-400 hover:text-sky-300 px-1 py-0.5 rounded cursor-pointer"
+                      title="Toggle expand/collapse all"
+                    >
+                      {collapsedDiagramNodes.size > 0 ? 'Expand' : 'Collapse'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsDiagramsListExpanded(v => !v)}
+                    className="p-0.5 rounded hover:bg-slate-800 text-slate-400 cursor-pointer"
+                  >
+                    <ChevronDown
+                      className={`w-3 h-3 text-slate-400 transition-transform ${
+                        isDiagramsListExpanded ? 'rotate-180 text-sky-400' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {isDiagramsListExpanded && (
+                <div className="space-y-1 max-h-56 overflow-y-auto pt-1.5 border-t border-slate-800/60 pr-0.5">
+                  {treeRoots.map(root => renderNode(root))}
                 </div>
               )}
             </div>

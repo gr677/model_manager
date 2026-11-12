@@ -287,6 +287,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     if (!target) return;
     const rest = nodes.filter(n => n.id !== nodeId);
     onUpdateNodes([...rest, target]);
+    onSelectNode(nodeId, false);
   };
 
   const handleSendToBack = (nodeId: string) => {
@@ -294,6 +295,28 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     if (!target) return;
     const rest = nodes.filter(n => n.id !== nodeId);
     onUpdateNodes([target, ...rest]);
+    // Clear selection so sent-to-back node doesn't stay forced on top with elevated selection z-index
+    onSelectNode(null);
+  };
+
+  const handleBringForward = (nodeId: string) => {
+    const idx = nodes.findIndex(n => n.id === nodeId);
+    if (idx === -1 || idx === nodes.length - 1) return;
+    const copy = [...nodes];
+    const temp = copy[idx];
+    copy[idx] = copy[idx + 1];
+    copy[idx + 1] = temp;
+    onUpdateNodes(copy);
+  };
+
+  const handleSendBackward = (nodeId: string) => {
+    const idx = nodes.findIndex(n => n.id === nodeId);
+    if (idx <= 0) return;
+    const copy = [...nodes];
+    const temp = copy[idx];
+    copy[idx] = copy[idx - 1];
+    copy[idx - 1] = temp;
+    onUpdateNodes(copy);
   };
 
   const handleQuickAddColumn = (nodeId: string) => {
@@ -539,6 +562,25 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
 
     // Normal click: if node is not already selected, select it as sole node
     const isAlreadySelected = effectiveSelectedNodeIds.includes(nodeId);
+    const canvasCoords = screenToCanvasCoords(e.clientX, e.clientY);
+
+    // If clicking an already selected node and multiple nodes overlap at this mouse position,
+    // cycle selection to the next overlapping node so the user can easily select objects inside objects!
+    if (isAlreadySelected) {
+      const overlapping = nodes.filter(
+        n => canvasCoords.x >= n.x && canvasCoords.x <= n.x + n.width && canvasCoords.y >= n.y && canvasCoords.y <= n.y + n.height
+      );
+      if (overlapping.length > 1) {
+        const currentIdx = overlapping.findIndex(n => n.id === nodeId);
+        const nextNode = overlapping[(currentIdx + 1) % overlapping.length];
+        if (nextNode && nextNode.id !== nodeId) {
+          onSelectNode(nextNode.id, false);
+          onSelectEdge(null);
+          return;
+        }
+      }
+    }
+
     if (!isAlreadySelected) {
       onSelectNode(nodeId, false);
       onSelectEdge(null);
@@ -547,7 +589,6 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     if (isReadOnly) return;
 
     // Setup multi-node dragging for all selected nodes
-    const canvasCoords = screenToCanvasCoords(e.clientX, e.clientY);
     const activeDragIds = isAlreadySelected ? effectiveSelectedNodeIds : [nodeId];
 
     const positions: Record<string, { x: number; y: number }> = {};
@@ -1617,7 +1658,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
           transformOrigin: '0 0',
         }}
       >
-        {nodes.map(node => {
+        {nodes.map((node, nodeIndex) => {
           const isNodeLinked = linkedNodeIds ? linkedNodeIds.has(node.id) : true;
           const isNodeSelected = effectiveSelectedNodeIds.includes(node.id);
 
@@ -1631,6 +1672,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             <NodeRenderer
               key={node.id}
               node={node}
+              nodeIndex={nodeIndex}
               isSelected={isNodeSelected}
               isDragging={draggingNodeId === node.id}
               collaborators={collaborators}
@@ -1805,42 +1847,62 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
       )}
 
       {/* Context Menu for right click */}
-      <ContextMenu
-        position={contextMenu}
-        selectedNode={contextMenu?.nodeId ? (nodes.find(n => n.id === contextMenu.nodeId) || null) : null}
-        selectedEdge={contextMenu?.edgeId ? (edges.find(e => e.id === contextMenu.edgeId) || null) : null}
-        diagramType={diagramType}
-        otherNodes={nodes.filter(n => n.id !== contextMenu?.nodeId)}
-        theme={theme}
-        onClose={() => setContextMenu(null)}
-        onDeleteNode={handleDeleteNode}
-        onDuplicateNode={handleDuplicateNode}
-        onBringToFront={handleBringToFront}
-        onSendToBack={handleSendToBack}
-        onOpenEditModal={node => setEditingNodeForModal(node)}
-        onQuickAddColumn={handleQuickAddColumn}
-        onQuickAddMethod={handleQuickAddMethod}
-        onChangeColor={handleChangeColor}
-        onOpenDoc={onOpenDoc}
-        onDeleteEdge={edgeId => onDeleteEdge?.(edgeId)}
-        onUpdateEdge={edge => onUpdateEdge?.(edge)}
-        onResetZoom={() => {
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-        }}
-        onToggleGridSnap={() => setGridSnap(s => !s)}
-        onToggleGrid={() => setShowGrid(g => !g)}
-        onOpenNewPageModal={() => onOpenNewPageModal?.()}
-        onStartConnectFromNode={nodeId => {
-          setConnectingFrom({ nodeId, anchor: 'right' });
-        }}
-        onConnectNodes={handleConnectDirect}
-        onNavigateChildDiagram={onNavigateChildDiagram}
-        onOpenChildDiagramModal={onOpenChildDiagramModal}
-        onOpenImportSqlModal={onOpenImportSqlModal}
-        onOpenGenerateMindmapModal={onOpenGenerateMindmapModal}
-        isReadOnly={isReadOnly}
-      />
+      {(() => {
+        const overlappingNodesAtContextMenu = contextMenu
+          ? nodes.filter(n => {
+              const coords = screenToCanvasCoords(contextMenu.x, contextMenu.y);
+              return (
+                coords.x >= n.x &&
+                coords.x <= n.x + n.width &&
+                coords.y >= n.y &&
+                coords.y <= n.y + n.height
+              );
+            })
+          : [];
+
+        return (
+          <ContextMenu
+            position={contextMenu}
+            selectedNode={contextMenu?.nodeId ? (nodes.find(n => n.id === contextMenu.nodeId) || null) : null}
+            selectedEdge={contextMenu?.edgeId ? (edges.find(e => e.id === contextMenu.edgeId) || null) : null}
+            diagramType={diagramType}
+            otherNodes={nodes.filter(n => n.id !== contextMenu?.nodeId)}
+            overlappingNodes={overlappingNodesAtContextMenu}
+            theme={theme}
+            onClose={() => setContextMenu(null)}
+            onSelectNode={onSelectNode}
+            onDeleteNode={handleDeleteNode}
+            onDuplicateNode={handleDuplicateNode}
+            onBringToFront={handleBringToFront}
+            onSendToBack={handleSendToBack}
+            onBringForward={handleBringForward}
+            onSendBackward={handleSendBackward}
+            onOpenEditModal={node => setEditingNodeForModal(node)}
+            onQuickAddColumn={handleQuickAddColumn}
+            onQuickAddMethod={handleQuickAddMethod}
+            onChangeColor={handleChangeColor}
+            onOpenDoc={onOpenDoc}
+            onDeleteEdge={edgeId => onDeleteEdge?.(edgeId)}
+            onUpdateEdge={edge => onUpdateEdge?.(edge)}
+            onResetZoom={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            onToggleGridSnap={() => setGridSnap(s => !s)}
+            onToggleGrid={() => setShowGrid(g => !g)}
+            onOpenNewPageModal={() => onOpenNewPageModal?.()}
+            onStartConnectFromNode={nodeId => {
+              setConnectingFrom({ nodeId, anchor: 'right' });
+            }}
+            onConnectNodes={handleConnectDirect}
+            onNavigateChildDiagram={onNavigateChildDiagram}
+            onOpenChildDiagramModal={onOpenChildDiagramModal}
+            onOpenImportSqlModal={onOpenImportSqlModal}
+            onOpenGenerateMindmapModal={onOpenGenerateMindmapModal}
+            isReadOnly={isReadOnly}
+          />
+        );
+      })()}
 
       {/* Direct Node Schema & Content Edit Modal */}
       <NodeContentEditModal

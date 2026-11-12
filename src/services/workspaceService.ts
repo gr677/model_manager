@@ -644,9 +644,16 @@ class WorkspaceService {
     return JSON.parse(JSON.stringify(this.getActiveDiagram().document));
   }
 
-  public saveCurrentDiagram(doc: DiagramDocument, customFilename?: string): void {
+  public saveCurrentDiagram(doc: DiagramDocument, customFilename?: unknown): void {
     const ws = this.getActiveWorkspace();
-    const filename = customFilename || ws.activeDiagramFilename || 'root.json';
+    const explicitFilename =
+      typeof customFilename === 'string' &&
+      customFilename.trim() &&
+      !customFilename.includes('[object') &&
+      !customFilename.includes('object_Object')
+        ? customFilename.trim()
+        : null;
+    const filename = explicitFilename || ws.activeDiagramFilename || 'root.json';
     ws.diagrams[filename] = {
       filename,
       name: doc.name || filename.replace('.json', ''),
@@ -656,9 +663,16 @@ class WorkspaceService {
     this.saveStore();
   }
 
-  public updateLocalDiagramCache(filename: string, doc: DiagramDocument): void {
+  public updateLocalDiagramCache(filename: unknown, doc: DiagramDocument): void {
     const ws = this.getActiveWorkspace();
-    const safeFilename = filename || ws.activeDiagramFilename || 'root.json';
+    const explicitFilename =
+      typeof filename === 'string' &&
+      filename.trim() &&
+      !filename.includes('[object') &&
+      !filename.includes('object_Object')
+        ? filename.trim()
+        : null;
+    const safeFilename = explicitFilename || ws.activeDiagramFilename || 'root.json';
     ws.diagrams[safeFilename] = {
       filename: safeFilename,
       name: doc.name || safeFilename.replace('.json', ''),
@@ -674,10 +688,17 @@ class WorkspaceService {
 
   public async saveCurrentDiagramToServer(
     doc: DiagramDocument,
-    customFilename?: string
+    customFilename?: unknown
   ): Promise<ServerSaveResult> {
     const ws = this.getActiveWorkspace();
-    const filename = customFilename || ws.activeDiagramFilename || 'root.json';
+    const explicitFilename =
+      typeof customFilename === 'string' &&
+      customFilename.trim() &&
+      !customFilename.includes('[object') &&
+      !customFilename.includes('object_Object')
+        ? customFilename.trim()
+        : null;
+    const filename = explicitFilename || ws.activeDiagramFilename || 'root.json';
 
     const targetPath = this.getWindowsFullPath(ws.id, filename);
     console.log(`[Storage Save] 💾 Sending save to server: workspace="${ws.id}", file="${filename}" (Target: ${targetPath})`);

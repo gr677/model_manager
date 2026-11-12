@@ -20,12 +20,15 @@ import {
   Square,
   Check,
   Eye,
+  RotateCw,
 } from 'lucide-react';
 import { AggregationGroup, AggregatedItem, AggregationDataType } from '../../utils/descriptionAggregation';
 import { ThreeDChart, ChartDatum } from './ThreeDChart';
 import { AppTheme } from '../../types/diagram';
 import { THEMES } from '../../utils/themeConfig';
 import { ErrorBoundary } from '../common/ErrorBoundary';
+import { workspaceService } from '../../services/workspaceService';
+import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 
 interface AggregationsPanelProps {
   isOpen: boolean;
@@ -57,6 +60,17 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
   const [searchFilter, setSearchFilter] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [isRefreshingRates, setIsRefreshingRates] = useState(false);
+
+  const handleRefreshRates = async () => {
+    setIsRefreshingRates(true);
+    try {
+      const ws = workspaceService.getActiveWorkspace();
+      await scriptEvaluationService.refreshAllRates(ws.id);
+    } finally {
+      setIsRefreshingRates(false);
+    }
+  };
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -302,8 +316,23 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     <div className="flex items-center gap-1.5">
                       <span>Values ({activeTickedItems.length}/{activeGroup.items.length})</span>
                     </div>
-                    {/* Tickbox controls: Select All / None */}
-                    <div className="flex items-center gap-1 text-[10px] font-mono">
+                    {/* Live rates refresh & Tickbox controls: Select All / None */}
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                      <button
+                        type="button"
+                        disabled={isRefreshingRates}
+                        onClick={handleRefreshRates}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono border transition-all cursor-pointer ${
+                          isDark
+                            ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/60'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-medium'
+                        }`}
+                        title="Re-run Python stock & crypto evaluation scripts to fetch live market rates"
+                      >
+                        <RotateCw className={`w-2.5 h-2.5 ${isRefreshingRates ? 'animate-spin' : ''}`} />
+                        <span>{isRefreshingRates ? 'Updating...' : 'Live Rates'}</span>
+                      </button>
+                      <span className="text-slate-600">|</span>
                       <button
                         type="button"
                         onClick={handleSelectAll}
@@ -371,6 +400,13 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                                 {(item.numericValue ?? 0).toLocaleString()}
                               </span>
                             </div>
+                            {/* Script Expression Indicator (e.g. asset(...) or crypto_gbp(...)) */}
+                            {scriptEvaluationService.isScriptExpression(item.value) && (
+                              <div className="text-[9.5px] font-mono text-emerald-400/90 truncate flex items-center gap-1 mt-0.5">
+                                <TrendingUp className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                                <span className="truncate">{item.value}</span>
+                              </div>
+                            )}
                             {/* Percentage progress bar */}
                             {isTicked && (
                               <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mt-1">

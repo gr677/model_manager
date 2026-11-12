@@ -54,8 +54,11 @@ import {
   Upload,
   Maximize2,
   Loader2,
+  Coins,
+  TrendingUp,
 } from 'lucide-react';
 import { workspaceService } from '../../services/workspaceService';
+import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram, CONNECTOR_STYLE_OPTIONS } from '../../utils/diagramConnectorConfig';
 import {
@@ -2675,7 +2678,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               disabled={isReadOnly}
               value={selectedNode.documentation?.description || ''}
               onChange={e => updateDocs({ description: e.target.value })}
-              placeholder="e.g. Core microservice.\n@text todo: wash the car\n@number share: 345\n@date due: 2027-10-25"
+              placeholder={`e.g. Core microservice.\n@text todo: wash the car\n@number share: 345\n@number shares: asset('TSLA', 1392, 'USD')\n@number crypto: crypto_gbp(35, "AVAX")\n@date due: 2027-10-25`}
               className={`w-full border rounded p-2 text-xs focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono text-[11px] leading-relaxed ${
                 isDark ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-white border-slate-300 text-slate-900 shadow-2xs'
               }`}
@@ -2723,13 +2726,47 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                   onClick={() => {
                     const current = selectedNode.documentation?.description || '';
                     const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
-                    const todayStr = new Date().toISOString().slice(0, 10);
-                    updateDocs({ description: `${current}${newline}@date due: ${todayStr}` });
+                    updateDocs({ description: `${current}${newline}@number shares: asset('TSLA', 1392, 'USD')` });
                   }}
                   className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
                     isDark
                       ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60'
                       : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-medium'
+                  }`}
+                  title="Insert @number shares: asset('TSLA', 1392, 'USD') via Python scripts/asset.py"
+                >
+                  <TrendingUp className="w-2.5 h-2.5 text-emerald-400" />
+                  + asset(TSLA)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedNode.documentation?.description || '';
+                    const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
+                    updateDocs({ description: `${current}${newline}@number crypto: crypto_gbp(35, "AVAX")` });
+                  }}
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
+                    isDark
+                      ? 'bg-purple-950/60 hover:bg-purple-900/60 text-purple-300 border border-purple-800/60'
+                      : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 font-medium'
+                  }`}
+                  title="Insert @number crypto: crypto_gbp(35, 'AVAX') via Python scripts/crypto_gbp.py"
+                >
+                  <Coins className="w-2.5 h-2.5 text-purple-400" />
+                  + crypto_gbp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedNode.documentation?.description || '';
+                    const newline = current ? (current.endsWith('\n') ? '' : '\n') : '';
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    updateDocs({ description: `${current}${newline}@date due: ${todayStr}` });
+                  }}
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded flex items-center gap-1 transition-colors ${
+                    isDark
+                      ? 'bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60'
+                      : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 font-medium'
                   }`}
                   title="Insert @date instruction (sorted ascending)"
                 >
@@ -2738,6 +2775,52 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                 </button>
               </div>
             )}
+
+            {/* Live Python Script Evaluation Preview if description contains asset() or crypto_gbp() */}
+            {(() => {
+              const desc = selectedNode.documentation?.description || '';
+              const scriptMatches = desc.match(/@number\s+([^:]+):\s*([a-zA-Z0-9_-]+\s*\([^)]+\))/gi);
+              if (!scriptMatches || scriptMatches.length === 0) return null;
+              const activeWs = workspaceService.getActiveWorkspace();
+
+              return (
+                <div className={`mt-2 p-2 rounded-lg border text-xs space-y-1 ${
+                  isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400 font-bold">
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3 text-emerald-400" />
+                      <span>Evaluated Script Directives</span>
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-normal">via scripts/</span>
+                  </div>
+                  {scriptMatches.map((m, idx) => {
+                    const colonIdx = m.indexOf(':');
+                    const labelPart = m.slice(7, colonIdx).trim();
+                    const expr = m.slice(colonIdx + 1).trim();
+                    const formatted = scriptEvaluationService.getFormattedResult(activeWs.id, expr);
+                    const numVal = scriptEvaluationService.getEvaluatedNumber(activeWs.id, expr);
+
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-slate-800/40">
+                        <span className="text-slate-300 truncate max-w-[140px]">{labelPart}</span>
+                        <div className="flex items-center gap-1">
+                          {numVal !== null ? (
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                              {formatted || `£${numVal.toFixed(2)}`}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 animate-pulse text-[10px]">
+                              calculating...
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* API Endpoint mapping */}
