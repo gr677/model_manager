@@ -170,9 +170,13 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
 
   if (!isOpen) return null;
 
+  const isPieView = activeGroup?.type === 'number' && chartType === 'pie';
+
   return (
     <aside
-      className={`fixed top-14 right-0 bottom-0 w-80 md:w-96 border-l z-40 flex flex-col shadow-2xl backdrop-blur-md transition-all duration-200 animate-in slide-in-from-right ${
+      className={`fixed top-14 right-0 bottom-0 ${
+        isPieView ? 'w-96 md:w-[490px]' : 'w-80 md:w-96'
+      } border-l z-40 flex flex-col shadow-2xl backdrop-blur-md transition-all duration-200 animate-in slide-in-from-right ${
         isDark
           ? 'bg-slate-900/98 border-slate-800 text-slate-100 shadow-slate-950/80'
           : 'bg-white/98 border-slate-200 text-slate-800 shadow-slate-300'

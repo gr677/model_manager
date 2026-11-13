@@ -193,58 +193,105 @@ const SvgFallbackChart: React.FC<{
     );
   }
 
-  // 2. Refined Circular Pie Chart SVG (starts at 12 o'clock, subtle slice gradients & percentage labels)
-  const size = 220;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = 84;
+  // 2. Refined Circular Pie Chart SVG (starts at 12 o'clock, subtle slice gradients & callout labels)
+  const width = 460;
+  const height = 304;
+  const cx = width / 2;
+  const cy = height / 2 + 4;
+  const r = 86;
 
   let accAngle = -Math.PI / 2;
-  const slices = validData.map((item, idx) => {
-    const fraction = item.value / effectiveTotal;
-    const angle = fraction * Math.PI * 2;
-    const startAngle = accAngle;
-    const endAngle = accAngle + angle;
-    const midAngle = startAngle + angle / 2;
-    accAngle = endAngle;
+  const slices = validData
+    .map((item, idx) => {
+      const fraction = item.value / effectiveTotal;
+      const angle = fraction * Math.PI * 2;
+      const startAngle = accAngle;
+      const endAngle = accAngle + angle;
+      const midAngle = startAngle + angle / 2;
+      accAngle = endAngle;
 
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    const largeArc = angle > Math.PI ? 1 : 0;
-    const isFullCircle = fraction >= 0.999;
-    const path = isFullCircle
-      ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
-      : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      const largeArc = angle > Math.PI ? 1 : 0;
+      const isFullCircle = fraction >= 0.999;
+      const path = isFullCircle
+        ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
-    const color = item.color || PALETTE[idx % PALETTE.length];
-    const percent = Math.round(fraction * 100);
-    const labelRadius = isFullCircle ? 0 : r * 0.62;
-    const labelX = cx + labelRadius * Math.cos(midAngle);
-    const labelY = cy + labelRadius * Math.sin(midAngle);
+      const color = item.color || PALETTE[idx % PALETTE.length];
+      const percent = Math.round(fraction * 100);
+      const labelRadius = isFullCircle ? 0 : r * 0.62;
+      const innerX = cx + labelRadius * Math.cos(midAngle);
+      const innerY = cy + labelRadius * Math.sin(midAngle);
 
-    return {
-      item,
-      path,
-      color,
-      lightColor: lightenHex(color, 0.24),
-      darkColor: darkenHex(color, 0.14),
-      percent,
-      angle,
-      midAngle,
-      labelX,
-      labelY,
-      gradId: `pie-grad-${idx}`,
-    };
-  });
+      const cosM = Math.cos(midAngle);
+      const sinM = Math.sin(midAngle);
+      const edgeX = cx + (r + 2) * cosM;
+      const edgeY = cy + (r + 2) * sinM;
+      const radialOutX = cx + (r + 18) * cosM;
+      const radialOutY = cy + (r + 18) * sinM;
+
+      return {
+        item,
+        idx,
+        path,
+        color,
+        lightColor: lightenHex(color, 0.24),
+        darkColor: darkenHex(color, 0.14),
+        labelTint: isDark ? lightenHex(color, 0.35) : darkenHex(color, 0.2),
+        percent,
+        angle,
+        midAngle,
+        cosM,
+        innerX,
+        innerY,
+        edgeX,
+        edgeY,
+        radialOutX,
+        radialOutY,
+        isRight: isFullCircle ? true : cosM >= 0,
+        gradId: `pie-grad-${idx}`,
+      };
+    })
+    .filter(s => s.angle >= 0.005);
+
+  // De-overlap callout labels vertically per side
+  const placeSideLabels = (sideSlices: typeof slices, minTop: number, maxBottom: number) => {
+    const sorted = [...sideSlices].sort((a, b) => a.radialOutY - b.radialOutY);
+    const minGap = 20;
+    const ys = sorted.map(s => Math.max(minTop, Math.min(maxBottom, s.radialOutY)));
+    for (let i = 1; i < ys.length; i++) {
+      if (ys[i] < ys[i - 1] + minGap) {
+        ys[i] = ys[i - 1] + minGap;
+      }
+    }
+    if (ys.length > 0 && ys[ys.length - 1] > maxBottom) {
+      ys[ys.length - 1] = maxBottom;
+      for (let i = ys.length - 2; i >= 0; i--) {
+        if (ys[i] > ys[i + 1] - minGap) {
+          ys[i] = ys[i + 1] - minGap;
+        }
+      }
+      for (let i = 0; i < ys.length; i++) {
+        if (ys[i] < minTop) ys[i] = minTop;
+      }
+    }
+    const yMap = new Map<number, number>();
+    sorted.forEach((s, i) => yMap.set(s.idx, ys[i]));
+    return yMap;
+  };
+
+  const rightYMap = placeSideLabels(slices.filter(s => s.isRight), 24, height - 16);
+  const leftYMap = placeSideLabels(slices.filter(s => !s.isRight), 34, height - 16);
 
   return (
     <div
-      className="w-full h-56 flex items-center justify-center select-none relative overflow-hidden"
+      className="w-full h-80 flex items-center justify-center select-none relative overflow-hidden"
       style={{ backgroundColor: effectiveBgColor }}
     >
-      <svg viewBox={`0 0 ${size} ${size}`} className="w-48 h-48 overflow-visible">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
         <defs>
           <filter id="pie-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow
@@ -280,7 +327,7 @@ const SvgFallbackChart: React.FC<{
         />
 
         <g filter="url(#pie-soft-shadow)">
-          {slices.map((slice, idx) => {
+          {slices.map(slice => {
             const isHovered = hoveredItem?.label === slice.item.label;
             const popOffset = isHovered && slices.length > 1 ? 5.5 : 0;
             const tx = Math.cos(slice.midAngle) * popOffset;
@@ -288,7 +335,7 @@ const SvgFallbackChart: React.FC<{
 
             return (
               <g
-                key={slice.item.id || idx}
+                key={slice.item.id || slice.idx}
                 transform={`translate(${tx}, ${ty})`}
                 className="cursor-pointer transition-transform duration-200 ease-out"
                 onMouseEnter={() =>
@@ -310,10 +357,10 @@ const SvgFallbackChart: React.FC<{
                   opacity={hoveredItem ? (isHovered ? 1 : 0.52) : 0.98}
                   className="transition-opacity duration-150"
                 />
-                {slice.angle >= 0.34 && (
+                {slice.angle >= 0.42 && (
                   <text
-                    x={slice.labelX}
-                    y={slice.labelY}
+                    x={slice.innerX}
+                    y={slice.innerY}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize="10"
@@ -333,6 +380,66 @@ const SvgFallbackChart: React.FC<{
 
         {/* Subtle circular gloss highlight */}
         <circle cx={cx} cy={cy} r={r} fill="url(#pie-gloss-overlay)" className="pointer-events-none" />
+
+        {/* Callout Leader Lines & Slice Labels */}
+        {slices.map(slice => {
+          const isHovered = hoveredItem?.label === slice.item.label;
+          const labelY = slice.isRight
+            ? rightYMap.get(slice.idx) ?? slice.radialOutY
+            : leftYMap.get(slice.idx) ?? slice.radialOutY;
+          const elbowX = slice.isRight
+            ? Math.min(width - 114, Math.max(slice.edgeX + 10, slice.radialOutX))
+            : Math.max(114, Math.min(slice.edgeX - 10, slice.radialOutX));
+          const shelfEndX = slice.isRight ? elbowX + 12 : elbowX - 12;
+          const textX = slice.isRight ? shelfEndX + 5 : shelfEndX - 5;
+          const shortName =
+            slice.item.label.length > 14 ? `${slice.item.label.slice(0, 13)}…` : slice.item.label;
+
+          return (
+            <g
+              key={`lbl-${slice.item.id || slice.idx}`}
+              opacity={hoveredItem ? (isHovered ? 1 : 0.4) : 0.95}
+              className="cursor-pointer transition-opacity duration-150"
+              onMouseEnter={() =>
+                onHoverItem({
+                  label: slice.item.label,
+                  value: slice.item.value,
+                  percent: slice.percent,
+                  color: slice.color,
+                })
+              }
+              onMouseLeave={() => onHoverItem(null)}
+            >
+              <polyline
+                points={`${slice.edgeX.toFixed(1)},${slice.edgeY.toFixed(1)} ${elbowX.toFixed(1)},${labelY.toFixed(1)} ${shelfEndX.toFixed(1)},${labelY.toFixed(1)}`}
+                fill="none"
+                stroke={slice.color}
+                strokeOpacity={isHovered ? 0.95 : 0.72}
+                strokeWidth={isHovered ? '1.6' : '1.15'}
+                strokeLinejoin="round"
+              />
+              <circle cx={slice.edgeX} cy={slice.edgeY} r="2.2" fill={slice.color} />
+              <text
+                x={textX}
+                y={labelY}
+                textAnchor={slice.isRight ? 'start' : 'end'}
+                dominantBaseline="central"
+                fontSize="10.5"
+              >
+                <tspan fill={isDark ? '#e2e8f0' : '#0f172a'} fontWeight="600">
+                  {shortName}{' '}
+                </tspan>
+                <tspan
+                  fill={slice.labelTint}
+                  fontWeight="700"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                >
+                  {slice.percent}%
+                </tspan>
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -361,19 +468,57 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
   const animFrameRef = useRef<number | null>(null);
   const meshesRef = useRef<
     Array<{
+      key: string;
       mesh: THREE.Mesh;
       datum: ChartDatum;
       percent: number;
       initialPos: THREE.Vector3;
       midAngle?: number;
+      sliceAngle?: number;
+      pieRadius?: number;
+      pieHeight?: number;
     }>
   >([]);
+  const overlaySliceRefs = useRef<
+    Map<
+      string,
+      {
+        g: SVGGElement | null;
+        line: SVGPolylineElement | null;
+        dot: SVGCircleElement | null;
+        text: SVGTextElement | null;
+      }
+    >
+  >(new Map());
   const chartTypeRef = useRef(chartType);
   chartTypeRef.current = chartType;
   const isRotatingRef = useRef(isRotating);
   isRotatingRef.current = isRotating;
+  const hoveredLabelRef = useRef<string | null>(null);
+  hoveredLabelRef.current = hoveredItem?.label || null;
   const isPointerDownRef = useRef(false);
   const prevPointerPosRef = useRef({ x: 0, y: 0 });
+
+  const pieSlicesMeta = useMemo(() => {
+    const valid = data.filter(d => Number.isFinite(d.value) && d.value > 0);
+    const effTotal = totalSum > 0 ? totalSum : valid.reduce((acc, curr) => acc + curr.value, 0) || 1;
+    return valid
+      .map((item, idx) => {
+        const fraction = item.value / effTotal;
+        const sliceAngle = fraction * Math.PI * 2;
+        const color = item.color || PALETTE[idx % PALETTE.length];
+        const percent = Math.round(fraction * 100);
+        return {
+          key: item.id || String(idx),
+          item,
+          color,
+          labelTint: isDark ? lightenHex(color, 0.35) : darkenHex(color, 0.2),
+          percent,
+          sliceAngle,
+        };
+      })
+      .filter(s => s.sliceAngle >= 0.005);
+  }, [data, totalSum, isDark]);
 
   const effectiveBgColor = backgroundColor || (isDark ? '#020617' : '#f8fafc');
 
@@ -551,6 +696,126 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
     resizeObserver.observe(container);
 
     let clock = new THREE.Clock();
+    const tmpEdgeVec = new THREE.Vector3();
+    const tmpCenterVec = new THREE.Vector3();
+
+    const updatePieOverlayLabels = () => {
+      if (chartTypeRef.current !== 'pie' || meshesRef.current.length === 0) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w <= 0 || h <= 0) return;
+
+      chartGroup.updateMatrixWorld();
+      tmpCenterVec.set(0, 0, 0).applyMatrix4(chartGroup.matrixWorld).project(camera);
+      const centerX = (tmpCenterVec.x * 0.5 + 0.5) * w;
+      const centerY = (-tmpCenterVec.y * 0.5 + 0.5) * h;
+
+      interface ProjectedLabelItem {
+        key: string;
+        label: string;
+        edgeX: number;
+        edgeY: number;
+        ux: number;
+        uy: number;
+        naturalY: number;
+        isRight: boolean;
+      }
+
+      const projected: ProjectedLabelItem[] = [];
+      meshesRef.current.forEach(m => {
+        if (m.midAngle === undefined || m.pieRadius === undefined) return;
+        const frontZ = m.mesh.position.z + (m.pieHeight || 0.28) * 0.65;
+        tmpEdgeVec
+          .set(
+            m.mesh.position.x + Math.cos(m.midAngle) * m.pieRadius,
+            m.mesh.position.y + Math.sin(m.midAngle) * m.pieRadius,
+            frontZ
+          )
+          .applyMatrix4(chartGroup.matrixWorld)
+          .project(camera);
+
+        const edgeX = (tmpEdgeVec.x * 0.5 + 0.5) * w;
+        const edgeY = (-tmpEdgeVec.y * 0.5 + 0.5) * h;
+        const vx = edgeX - centerX;
+        const vy = edgeY - centerY;
+        const dist = Math.hypot(vx, vy) || 1;
+        const ux = vx / dist;
+        const uy = vy / dist;
+        const isRight = meshesRef.current.length === 1 ? true : ux >= 0;
+
+        projected.push({
+          key: m.key,
+          label: m.datum.label,
+          edgeX,
+          edgeY,
+          ux,
+          uy,
+          naturalY: edgeY + uy * 14,
+          isRight,
+        });
+      });
+
+      const placeSide = (items: ProjectedLabelItem[], minTop: number, maxBottom: number) => {
+        const sorted = [...items].sort((a, b) => a.naturalY - b.naturalY);
+        const minGap = 19;
+        const ys = sorted.map(s => Math.max(minTop, Math.min(maxBottom, s.naturalY)));
+        for (let i = 1; i < ys.length; i++) {
+          if (ys[i] < ys[i - 1] + minGap) {
+            ys[i] = ys[i - 1] + minGap;
+          }
+        }
+        if (ys.length > 0 && ys[ys.length - 1] > maxBottom) {
+          ys[ys.length - 1] = maxBottom;
+          for (let i = ys.length - 2; i >= 0; i--) {
+            if (ys[i] > ys[i + 1] - minGap) {
+              ys[i] = ys[i + 1] - minGap;
+            }
+          }
+          for (let i = 0; i < ys.length; i++) {
+            if (ys[i] < minTop) ys[i] = minTop;
+          }
+        }
+        const yMap = new Map<string, number>();
+        sorted.forEach((s, i) => yMap.set(s.key, ys[i]));
+        return yMap;
+      };
+
+      const rightY = placeSide(projected.filter(p => p.isRight), 22, h - 14);
+      const leftY = placeSide(projected.filter(p => !p.isRight), 34, h - 14);
+      const labelReserve = Math.min(122, Math.max(96, w * 0.26));
+      const activeHover = hoveredLabelRef.current;
+
+      projected.forEach(p => {
+        const refs = overlaySliceRefs.current.get(p.key);
+        if (!refs) return;
+        const labelY = p.isRight ? rightY.get(p.key) ?? p.naturalY : leftY.get(p.key) ?? p.naturalY;
+        const elbowX = p.isRight
+          ? Math.min(w - labelReserve, Math.max(p.edgeX + 8, p.edgeX + Math.abs(p.ux) * 14 + 4))
+          : Math.max(labelReserve, Math.min(p.edgeX - 8, p.edgeX - Math.abs(p.ux) * 14 - 4));
+        const shelfEndX = p.isRight ? elbowX + 10 : elbowX - 10;
+        const textX = p.isRight ? shelfEndX + 4 : shelfEndX - 4;
+
+        if (refs.g) {
+          refs.g.style.opacity = activeHover ? (activeHover === p.label ? '1' : '0.38') : '0.96';
+        }
+        if (refs.line) {
+          refs.line.setAttribute(
+            'points',
+            `${p.edgeX.toFixed(1)},${p.edgeY.toFixed(1)} ${elbowX.toFixed(1)},${labelY.toFixed(1)} ${shelfEndX.toFixed(1)},${labelY.toFixed(1)}`
+          );
+        }
+        if (refs.dot) {
+          refs.dot.setAttribute('cx', p.edgeX.toFixed(1));
+          refs.dot.setAttribute('cy', p.edgeY.toFixed(1));
+        }
+        if (refs.text) {
+          refs.text.setAttribute('x', textX.toFixed(1));
+          refs.text.setAttribute('y', labelY.toFixed(1));
+          refs.text.setAttribute('text-anchor', p.isRight ? 'start' : 'end');
+        }
+      });
+    };
+
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
       const delta = clock.getDelta();
@@ -558,6 +823,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         chartGroup.rotation.y += delta * 0.45;
       }
       renderer.render(scene, camera);
+      updatePieOverlayLabels();
     };
     animate();
 
@@ -596,7 +862,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
       camera.lookAt(0, 1.1, 0);
       chartGroup.rotation.set(0, 0, 0);
     } else {
-      camera.position.set(0, 0.15, 5.25);
+      camera.position.set(0, 0.12, 5.45);
       camera.lookAt(0, 0, 0);
       chartGroup.rotation.set(-0.34, 0.06, 0);
     }
@@ -674,6 +940,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
 
         const percent = Math.round((item.value / effectiveTotal) * 100);
         meshesRef.current.push({
+          key: item.id || String(idx),
           mesh,
           datum: item,
           percent,
@@ -683,8 +950,8 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
     } else {
       // 2. POLISHED CIRCULAR 3D PIE CHART (starts at 12 o'clock, silky smooth arc, glossy clearcoat)
       let currentAngle = Math.PI / 2;
-      const pieHeight = 0.32;
-      const pieRadius = 1.92;
+      const pieHeight = 0.28;
+      const pieRadius = 1.48;
       const zCenter = -pieHeight / 2;
       const singleSlice = validData.length === 1;
 
@@ -759,11 +1026,15 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
 
         const percent = Math.round(fraction * 100);
         meshesRef.current.push({
+          key: item.id || String(idx),
           mesh,
           datum: item,
           percent,
           initialPos: new THREE.Vector3(exX, exY, zCenter),
           midAngle,
+          sliceAngle,
+          pieRadius,
+          pieHeight,
         });
 
         currentAngle -= sliceAngle;
@@ -792,13 +1063,100 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
       className="relative w-full flex flex-col rounded-xl overflow-hidden border border-slate-700/50 shadow-md transition-colors"
       style={{ backgroundColor: effectiveBgColor }}
     >
-      {/* Chart Canvas Area */}
+      {/* Chart Canvas Area (taller block for Pie so callout labels have generous room) */}
       {viewMode === '3d' && webGlAvailable ? (
         <div
-          ref={mountRef}
-          className="w-full h-56 relative cursor-grab active:cursor-grabbing select-none"
-          title="Click and drag to rotate chart"
-        />
+          className={`w-full relative select-none transition-all duration-200 ${
+            chartType === 'pie' ? 'h-80' : 'h-56'
+          }`}
+        >
+          <div
+            ref={mountRef}
+            className="w-full h-full cursor-grab active:cursor-grabbing"
+            title="Click and drag to rotate chart"
+          />
+          {chartType === 'pie' && pieSlicesMeta.length > 0 && (
+            <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden">
+              {pieSlicesMeta.map(s => {
+                const shortName =
+                  s.item.label.length > 12 ? `${s.item.label.slice(0, 11)}…` : s.item.label;
+                return (
+                  <g
+                    key={s.key}
+                    ref={el => {
+                      const prev = overlaySliceRefs.current.get(s.key) || {
+                        g: null,
+                        line: null,
+                        dot: null,
+                        text: null,
+                      };
+                      prev.g = el;
+                      overlaySliceRefs.current.set(s.key, prev);
+                    }}
+                    className="transition-opacity duration-150"
+                  >
+                    <polyline
+                      ref={el => {
+                        const prev = overlaySliceRefs.current.get(s.key) || {
+                          g: null,
+                          line: null,
+                          dot: null,
+                          text: null,
+                        };
+                        prev.line = el;
+                        overlaySliceRefs.current.set(s.key, prev);
+                      }}
+                      fill="none"
+                      stroke={s.color}
+                      strokeOpacity="0.78"
+                      strokeWidth="1.25"
+                      strokeLinejoin="round"
+                    />
+                    <circle
+                      ref={el => {
+                        const prev = overlaySliceRefs.current.get(s.key) || {
+                          g: null,
+                          line: null,
+                          dot: null,
+                          text: null,
+                        };
+                        prev.dot = el;
+                        overlaySliceRefs.current.set(s.key, prev);
+                      }}
+                      r="2.3"
+                      fill={s.color}
+                    />
+                    <text
+                      ref={el => {
+                        const prev = overlaySliceRefs.current.get(s.key) || {
+                          g: null,
+                          line: null,
+                          dot: null,
+                          text: null,
+                        };
+                        prev.text = el;
+                        overlaySliceRefs.current.set(s.key, prev);
+                      }}
+                      dominantBaseline="central"
+                      fontSize="10.5"
+                    >
+                      <tspan fill={isDark ? '#e2e8f0' : '#0f172a'} fontWeight="600">
+                        {shortName}{' '}
+                      </tspan>
+                      <tspan
+                        fill={s.labelTint}
+                        fontWeight="700"
+                        fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                      >
+                        {s.percent}%
+                      </tspan>
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+        </div>
       ) : (
         <SvgFallbackChart
           data={data}
