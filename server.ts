@@ -201,7 +201,7 @@ function getPersistentSettings(): PersistentSettings {
     gridSize: loaded.gridSize || 48,
     snapToGrid: loaded.snapToGrid !== false,
     showHoverTooltips: loaded.showHoverTooltips !== false,
-    showCollaborators: loaded.showCollaborators !== false,
+    showCollaborators: loaded.showCollaborators === true,
     autoSaveInterval: (loaded.autoSaveInterval as any) || 'instant',
     defaultConnectorType: (loaded.defaultConnectorType as any) || 'orthogonal',
     ...loaded,
