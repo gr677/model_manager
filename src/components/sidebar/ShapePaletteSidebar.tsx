@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { SHAPE_TEMPLATES } from '../../data/shapeDefinitions';
 import { DiagramType, UserRole, AppTheme, getNodeChildDiagrams } from '../../types/diagram';
 import {
@@ -98,6 +98,66 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   onAddImageFile,
   onAddExistingImage,
 }) => {
+  const SIDEBAR_WIDTH_STORAGE_KEY = 'omnimind_left_sidebar_width_v1';
+  const DEFAULT_SIDEBAR_WIDTH = 256;
+  const MIN_SIDEBAR_WIDTH = 190;
+  const MAX_SIDEBAR_WIDTH = 520;
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+      if (saved) {
+        const parsed = Number(saved);
+        if (!Number.isNaN(parsed)) {
+          return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const delta = e.clientX - dragStartRef.current.startX;
+      const maxAllowed = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, Math.floor(window.innerWidth * 0.55))
+      );
+      const nextWidth = Math.min(
+        maxAllowed,
+        Math.max(MIN_SIDEBAR_WIDTH, dragStartRef.current.startWidth + delta)
+      );
+      setSidebarWidth(nextWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      dragStartRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+    } catch {
+      // ignore
+    }
+  }, [sidebarWidth]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isDiagramsListExpanded, setIsDiagramsListExpanded] = useState(false);
   const [collapsedDiagramNodes, setCollapsedDiagramNodes] = useState<Set<string>>(new Set());
@@ -205,7 +265,10 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   const themeDef = THEMES[theme || 'dark'] || THEMES.dark;
 
   return (
-    <div className={`w-64 h-full border-r flex flex-col shrink-0 select-none transition-colors duration-150 ${themeDef.sidebarClass}`}>
+    <div
+      className={`relative h-full border-r flex flex-col shrink-0 select-none transition-colors duration-150 ${themeDef.sidebarClass}`}
+      style={{ width: `${sidebarWidth}px` }}
+    >
       {/* Sidebar Header with Workspace Dropdown & Shape Library */}
       <div className={`p-3 border-b space-y-2.5 ${themeDef.borderClass}`}>
         {/* Workspace Dropdown directly above Shape Library */}
@@ -338,7 +401,7 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
                       : 'hover:bg-slate-200 text-slate-700'
                   }`}
                   style={{
-                    paddingLeft: `${item.depth * 14 + 6}px`,
+                    paddingLeft: `${item.depth * 7 + 3}px`,
                     paddingRight: '6px',
                     paddingTop: '4px',
                     paddingBottom: '4px',
@@ -405,7 +468,7 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
 
                 {/* Sub-diagrams / Child Branches */}
                 {hasChildren && !isCollapsed && (
-                  <div className="space-y-0.5 border-l border-purple-500/25 ml-2 pl-0.5">
+                  <div className="space-y-0.5 border-l border-purple-500/25 ml-1 pl-0">
                     {item.children.map(child => renderNode(child))}
                   </div>
                 )}
@@ -745,6 +808,31 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
           <FolderOpen className="w-3 h-3 text-sky-400 shrink-0" />
           <span className="truncate">Browse images/ folder</span>
         </button>
+      </div>
+
+      {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {/* Right-edge resize handle to slide left menu wider or narrower */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize left sidebar"
+        onMouseDown={e => {
+          e.preventDefault();
+          dragStartRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+          setIsResizing(true);
+        }}
+        onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
+        title="Drag to resize sidebar (double-click to reset)"
+        className="absolute top-0 bottom-0 -right-1 w-2 cursor-col-resize z-30 group/resize flex justify-center"
+      >
+        <div
+          className={`w-0.5 h-full transition-colors ${
+            isResizing
+              ? 'bg-blue-500'
+              : 'bg-transparent group-hover/resize:bg-blue-500/70'
+          }`}
+        />
       </div>
     </div>
   );
