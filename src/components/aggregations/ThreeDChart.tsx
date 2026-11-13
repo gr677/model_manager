@@ -26,18 +26,42 @@ interface ThreeDChartProps {
   backgroundColor?: string;
 }
 
-const PALETTE = [
-  '#3b82f6', // blue
+export const CHART_PALETTE = [
+  '#3b82f6', // cobalt blue
   '#10b981', // emerald
-  '#f59e0b', // amber
-  '#ec4899', // pink
-  '#8b5cf6', // purple
+  '#f59e0b', // amber gold
+  '#ec4899', // rose pink
+  '#8b5cf6', // violet
   '#06b6d4', // cyan
-  '#f97316', // orange
+  '#f97316', // coral orange
   '#14b8a6', // teal
   '#6366f1', // indigo
-  '#e11d48', // rose
+  '#84cc16', // lime
 ];
+
+const PALETTE = CHART_PALETTE;
+
+function lightenHex(hex: string, amount = 0.2): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return hex;
+  const num = parseInt(clean, 16);
+  if (Number.isNaN(num)) return hex;
+  const r = Math.min(255, Math.round(((num >> 16) & 0xff) + (255 - ((num >> 16) & 0xff)) * amount));
+  const g = Math.min(255, Math.round(((num >> 8) & 0xff) + (255 - ((num >> 8) & 0xff)) * amount));
+  const b = Math.min(255, Math.round((num & 0xff) + (255 - (num & 0xff)) * amount));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
+
+function darkenHex(hex: string, amount = 0.16): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return hex;
+  const num = parseInt(clean, 16);
+  if (Number.isNaN(num)) return hex;
+  const r = Math.max(0, Math.round(((num >> 16) & 0xff) * (1 - amount)));
+  const g = Math.max(0, Math.round(((num >> 8) & 0xff) * (1 - amount)));
+  const b = Math.max(0, Math.round((num & 0xff) * (1 - amount)));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+}
 
 /**
  * Robust 2D SVG Chart Fallback
@@ -169,18 +193,19 @@ const SvgFallbackChart: React.FC<{
     );
   }
 
-  // 2. Normal Circular Pie Chart SVG
-  const size = 210;
+  // 2. Refined Circular Pie Chart SVG (starts at 12 o'clock, subtle slice gradients & percentage labels)
+  const size = 220;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 78;
+  const r = 84;
 
-  let accAngle = 0;
+  let accAngle = -Math.PI / 2;
   const slices = validData.map((item, idx) => {
     const fraction = item.value / effectiveTotal;
     const angle = fraction * Math.PI * 2;
     const startAngle = accAngle;
     const endAngle = accAngle + angle;
+    const midAngle = startAngle + angle / 2;
     accAngle = endAngle;
 
     const x1 = cx + r * Math.cos(startAngle);
@@ -188,42 +213,126 @@ const SvgFallbackChart: React.FC<{
     const x2 = cx + r * Math.cos(endAngle);
     const y2 = cy + r * Math.sin(endAngle);
     const largeArc = angle > Math.PI ? 1 : 0;
-    const path =
-      fraction >= 0.999
-        ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
-        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    const isFullCircle = fraction >= 0.999;
+    const path = isFullCircle
+      ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 0 ${cx} ${cy + r} A ${r} ${r} 0 1 0 ${cx} ${cy - r} Z`
+      : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
     const color = item.color || PALETTE[idx % PALETTE.length];
     const percent = Math.round(fraction * 100);
-    return { item, path, color, percent };
+    const labelRadius = isFullCircle ? 0 : r * 0.62;
+    const labelX = cx + labelRadius * Math.cos(midAngle);
+    const labelY = cy + labelRadius * Math.sin(midAngle);
+
+    return {
+      item,
+      path,
+      color,
+      lightColor: lightenHex(color, 0.24),
+      darkColor: darkenHex(color, 0.14),
+      percent,
+      angle,
+      midAngle,
+      labelX,
+      labelY,
+      gradId: `pie-grad-${idx}`,
+    };
   });
 
   return (
-    <div className="w-full h-56 flex items-center justify-center select-none" style={{ backgroundColor: effectiveBgColor }}>
-      <svg viewBox={`0 0 ${size} ${size}`} className="w-48 h-48 drop-shadow-md">
-        {slices.map((slice, idx) => {
-          const isHovered = hoveredItem?.label === slice.item.label;
-          return (
-            <path
-              key={slice.item.id || idx}
-              d={slice.path}
-              fill={slice.color}
-              stroke={effectiveBgColor}
-              strokeWidth="1.5"
-              opacity={hoveredItem ? (isHovered ? 1 : 0.5) : 0.95}
-              className="cursor-pointer transition-all duration-150 hover:scale-102 origin-center"
-              onMouseEnter={() =>
-                onHoverItem({
-                  label: slice.item.label,
-                  value: slice.item.value,
-                  percent: slice.percent,
-                  color: slice.color,
-                })
-              }
-              onMouseLeave={() => onHoverItem(null)}
+    <div
+      className="w-full h-56 flex items-center justify-center select-none relative overflow-hidden"
+      style={{ backgroundColor: effectiveBgColor }}
+    >
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-48 h-48 overflow-visible">
+        <defs>
+          <filter id="pie-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow
+              dx="0"
+              dy="4"
+              stdDeviation="6"
+              floodColor={isDark ? '#000000' : '#0f172a'}
+              floodOpacity={isDark ? '0.45' : '0.18'}
             />
-          );
-        })}
+          </filter>
+          <radialGradient id="pie-gloss-overlay" cx="35%" cy="28%" r="68%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.24" />
+            <stop offset="55%" stopColor="#ffffff" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+          </radialGradient>
+          {slices.map(slice => (
+            <linearGradient key={slice.gradId} id={slice.gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={slice.lightColor} />
+              <stop offset="55%" stopColor={slice.color} />
+              <stop offset="100%" stopColor={slice.darkColor} />
+            </linearGradient>
+          ))}
+        </defs>
+
+        {/* Subtle outer ambient framing ring */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r + 5}
+          fill="none"
+          stroke={isDark ? 'rgba(148, 163, 184, 0.16)' : 'rgba(15, 23, 42, 0.09)'}
+          strokeWidth="1.25"
+        />
+
+        <g filter="url(#pie-soft-shadow)">
+          {slices.map((slice, idx) => {
+            const isHovered = hoveredItem?.label === slice.item.label;
+            const popOffset = isHovered && slices.length > 1 ? 5.5 : 0;
+            const tx = Math.cos(slice.midAngle) * popOffset;
+            const ty = Math.sin(slice.midAngle) * popOffset;
+
+            return (
+              <g
+                key={slice.item.id || idx}
+                transform={`translate(${tx}, ${ty})`}
+                className="cursor-pointer transition-transform duration-200 ease-out"
+                onMouseEnter={() =>
+                  onHoverItem({
+                    label: slice.item.label,
+                    value: slice.item.value,
+                    percent: slice.percent,
+                    color: slice.color,
+                  })
+                }
+                onMouseLeave={() => onHoverItem(null)}
+              >
+                <path
+                  d={slice.path}
+                  fill={`url(#${slice.gradId})`}
+                  stroke={effectiveBgColor}
+                  strokeWidth={slices.length > 1 ? '2.2' : '0'}
+                  strokeLinejoin="round"
+                  opacity={hoveredItem ? (isHovered ? 1 : 0.52) : 0.98}
+                  className="transition-opacity duration-150"
+                />
+                {slice.angle >= 0.34 && (
+                  <text
+                    x={slice.labelX}
+                    y={slice.labelY}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize="10"
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                    fontWeight="700"
+                    fill="#ffffff"
+                    className="pointer-events-none"
+                    style={{ textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}
+                  >
+                    {slice.percent}%
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </g>
+
+        {/* Subtle circular gloss highlight */}
+        <circle cx={cx} cy={cy} r={r} fill="url(#pie-gloss-overlay)" className="pointer-events-none" />
       </svg>
     </div>
   );
@@ -250,7 +359,19 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
   const animFrameRef = useRef<number | null>(null);
-  const meshesRef = useRef<Array<{ mesh: THREE.Mesh; datum: ChartDatum; percent: number; initialPos: THREE.Vector3 }>>([]);
+  const meshesRef = useRef<
+    Array<{
+      mesh: THREE.Mesh;
+      datum: ChartDatum;
+      percent: number;
+      initialPos: THREE.Vector3;
+      midAngle?: number;
+    }>
+  >([]);
+  const chartTypeRef = useRef(chartType);
+  chartTypeRef.current = chartType;
+  const isRotatingRef = useRef(isRotating);
+  isRotatingRef.current = isRotating;
   const isPointerDownRef = useRef(false);
   const prevPointerPosRef = useRef({ x: 0, y: 0 });
 
@@ -312,16 +433,23 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
     container.replaceChildren(renderer.domElement);
 
     // Studio Lighting Rig
-    const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.9 : 1.15);
+    const hemiLight = new THREE.HemisphereLight(0xffffff, isDark ? 0x0f172a : 0x94a3b8, 0.8);
+    scene.add(hemiLight);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, isDark ? 0.55 : 0.75);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, isDark ? 1.3 : 1.5);
-    dirLight.position.set(4, 8, 6);
+    const dirLight = new THREE.DirectionalLight(0xffffff, isDark ? 1.4 : 1.55);
+    dirLight.position.set(3.5, 6, 7);
     scene.add(dirLight);
 
-    const fillLight = new THREE.DirectionalLight(0x60a5fa, isDark ? 0.6 : 0.4);
-    fillLight.position.set(-5, -2, -4);
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, isDark ? 0.55 : 0.35);
+    fillLight.position.set(-5, -3, 3);
     scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xe0f2fe, 0.45);
+    rimLight.position.set(0, 4, -5);
+    scene.add(rimLight);
 
     const chartGroup = new THREE.Group();
     scene.add(chartGroup);
@@ -342,7 +470,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         const deltaX = e.clientX - prevPointerPosRef.current.x;
         const deltaY = e.clientY - prevPointerPosRef.current.y;
         chartGroup.rotation.y += deltaX * 0.01;
-        if (chartType === 'pie') {
+        if (chartTypeRef.current === 'pie') {
           chartGroup.rotation.x += deltaY * 0.01;
         }
         prevPointerPosRef.current = { x: e.clientX, y: e.clientY };
@@ -365,13 +493,35 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
           });
 
           meshesRef.current.forEach(m => {
-            m.mesh.scale.set(m.mesh === hitMesh ? 1.05 : 1, m.mesh === hitMesh ? 1.05 : 1, m.mesh === hitMesh ? 1.05 : 1);
+            const mat = m.mesh.material as THREE.MeshStandardMaterial;
+            if (m.mesh === hitMesh) {
+              if (chartTypeRef.current === 'pie' && m.midAngle !== undefined) {
+                m.mesh.position.set(
+                  m.initialPos.x + Math.cos(m.midAngle) * 0.09,
+                  m.initialPos.y + Math.sin(m.midAngle) * 0.09,
+                  m.initialPos.z + 0.09
+                );
+                m.mesh.scale.set(1.03, 1.03, 1.03);
+              } else {
+                m.mesh.scale.set(1.05, 1.05, 1.05);
+              }
+              mat.emissive.setHex(0xffffff);
+              mat.emissiveIntensity = 0.14;
+            } else {
+              m.mesh.position.copy(m.initialPos);
+              m.mesh.scale.set(1, 1, 1);
+              mat.emissiveIntensity = 0;
+            }
           });
           return;
         }
       }
 
-      meshesRef.current.forEach(m => m.mesh.scale.set(1, 1, 1));
+      meshesRef.current.forEach(m => {
+        m.mesh.position.copy(m.initialPos);
+        m.mesh.scale.set(1, 1, 1);
+        (m.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+      });
       setHoveredItem(null);
     };
 
@@ -404,7 +554,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
       const delta = clock.getDelta();
-      if (isRotating && !isPointerDownRef.current && chartGroup) {
+      if (isRotatingRef.current && !isPointerDownRef.current && chartGroup) {
         chartGroup.rotation.y += delta * 0.45;
       }
       renderer.render(scene, camera);
@@ -446,9 +596,9 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
       camera.lookAt(0, 1.1, 0);
       chartGroup.rotation.set(0, 0, 0);
     } else {
-      camera.position.set(0, 0.25, 5.4);
+      camera.position.set(0, 0.15, 5.25);
       camera.lookAt(0, 0, 0);
-      chartGroup.rotation.set(0.15, 0, 0);
+      chartGroup.rotation.set(-0.34, 0.06, 0);
     }
 
     // Clear previous meshes
@@ -531,10 +681,36 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         });
       });
     } else {
-      // 2. NORMAL CIRCULAR PIE CHART
-      let currentAngle = 0;
-      const pieHeight = 0.28;
-      const pieRadius = 1.95;
+      // 2. POLISHED CIRCULAR 3D PIE CHART (starts at 12 o'clock, silky smooth arc, glossy clearcoat)
+      let currentAngle = Math.PI / 2;
+      const pieHeight = 0.32;
+      const pieRadius = 1.92;
+      const zCenter = -pieHeight / 2;
+      const singleSlice = validData.length === 1;
+
+      // Subtle outer framing halo ring behind the circular pie
+      const haloGeo = new THREE.RingGeometry(pieRadius + 0.12, pieRadius + 0.16, 72);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: isDark ? 0x94a3b8 : 0x475569,
+        transparent: true,
+        opacity: isDark ? 0.22 : 0.14,
+        side: THREE.DoubleSide,
+      });
+      const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+      haloMesh.position.set(0, 0, zCenter - 0.06);
+      chartGroup.add(haloMesh);
+
+      // Subtle dark backing disc to give depth between separated slices
+      const backingGeo = new THREE.CircleGeometry(pieRadius + 0.04, 72);
+      const backingMat = new THREE.MeshBasicMaterial({
+        color: isDark ? 0x020617 : 0xcbd5e1,
+        transparent: true,
+        opacity: isDark ? 0.55 : 0.35,
+        side: THREE.DoubleSide,
+      });
+      const backingMesh = new THREE.Mesh(backingGeo, backingMat);
+      backingMesh.position.set(0, 0, zCenter - 0.05);
+      chartGroup.add(backingMesh);
 
       validData.forEach((item, idx) => {
         const colorHex = item.color || PALETTE[idx % PALETTE.length];
@@ -544,34 +720,41 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
         if (sliceAngle < 0.005) return;
 
         const shape = new THREE.Shape();
-        shape.moveTo(0, 0);
-        shape.arc(0, 0, pieRadius, currentAngle, currentAngle + sliceAngle, false);
-        shape.lineTo(0, 0);
+        if (singleSlice || fraction >= 0.999) {
+          shape.absarc(0, 0, pieRadius, 0, Math.PI * 2, false);
+        } else {
+          shape.moveTo(0, 0);
+          shape.arc(0, 0, pieRadius, currentAngle, currentAngle - sliceAngle, true);
+          shape.lineTo(0, 0);
+        }
 
         const extrudeSettings: THREE.ExtrudeGeometryOptions = {
           depth: pieHeight,
           bevelEnabled: true,
-          bevelSegments: 2,
+          bevelSegments: 4,
           steps: 1,
-          bevelSize: 0.02,
-          bevelThickness: 0.02,
+          bevelSize: 0.025,
+          bevelThickness: 0.025,
+          curveSegments: 56,
         };
 
         const sliceGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        const sliceMat = new THREE.MeshStandardMaterial({
+        const sliceMat = new THREE.MeshPhysicalMaterial({
           color: new THREE.Color(colorHex),
-          roughness: 0.3,
-          metalness: 0.05,
+          roughness: 0.24,
+          metalness: 0.06,
+          clearcoat: 0.45,
+          clearcoatRoughness: 0.18,
         });
 
         const mesh = new THREE.Mesh(sliceGeo, sliceMat);
 
-        const midAngle = currentAngle + sliceAngle / 2;
-        const explodeDist = 0.04;
+        const midAngle = currentAngle - sliceAngle / 2;
+        const explodeDist = singleSlice || fraction >= 0.999 ? 0 : 0.055;
         const exX = Math.cos(midAngle) * explodeDist;
         const exY = Math.sin(midAngle) * explodeDist;
 
-        mesh.position.set(exX, exY, 0);
+        mesh.position.set(exX, exY, zCenter);
         chartGroup.add(mesh);
 
         const percent = Math.round(fraction * 100);
@@ -579,10 +762,11 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
           mesh,
           datum: item,
           percent,
-          initialPos: new THREE.Vector3(exX, exY, 0),
+          initialPos: new THREE.Vector3(exX, exY, zCenter),
+          midAngle,
         });
 
-        currentAngle += sliceAngle;
+        currentAngle -= sliceAngle;
       });
     }
   }, [data, chartType, viewMode, webGlAvailable, effectiveBgColor, totalSum, isDark]);
@@ -598,7 +782,7 @@ export const ThreeDChart: React.FC<ThreeDChartProps> = ({
       if (chartType === 'bar') {
         groupRef.current.rotation.set(0, 0, 0);
       } else {
-        groupRef.current.rotation.set(0.15, 0, 0);
+        groupRef.current.rotation.set(-0.34, 0.06, 0);
       }
     }
   };

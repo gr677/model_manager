@@ -23,7 +23,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { AggregationGroup, AggregatedItem, AggregationDataType } from '../../utils/descriptionAggregation';
-import { ThreeDChart, ChartDatum } from './ThreeDChart';
+import { ThreeDChart, ChartDatum, CHART_PALETTE } from './ThreeDChart';
 import { AppTheme } from '../../types/diagram';
 import { THEMES } from '../../utils/themeConfig';
 import { ErrorBoundary } from '../common/ErrorBoundary';
@@ -112,17 +112,27 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
     return effectiveTotal / activeTickedItems.length;
   }, [activeTickedItems, effectiveTotal]);
 
+  // Map each item ID in the active group to a consistent chart color
+  const itemColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    (activeGroup?.items || []).forEach((item, idx) => {
+      map.set(item.id, CHART_PALETTE[idx % CHART_PALETTE.length]);
+    });
+    return map;
+  }, [activeGroup]);
+
   // Prepare chart data for numbers
   const chartData: ChartDatum[] = useMemo(() => {
     if (!activeGroup || activeGroup.type !== 'number') return [];
-    return activeTickedItems.map(item => ({
+    return activeTickedItems.map((item, idx) => ({
       id: item.id,
       label: item.nodeLabel,
       value: item.numericValue ?? 0,
       nodeId: item.nodeId,
       pageTitle: item.pageTitle,
+      color: itemColorMap.get(item.id) || CHART_PALETTE[idx % CHART_PALETTE.length],
     }));
-  }, [activeGroup, activeTickedItems]);
+  }, [activeGroup, activeTickedItems, itemColorMap]);
 
   const handleToggleItem = (itemId: string) => {
     setSelectedItemIds(prev => {
@@ -356,6 +366,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                       const isTicked = selectedItemIds.has(item.id);
                       const total = effectiveTotal || 1;
                       const percent = isTicked ? Math.round(((item.numericValue ?? 0) / total) * 100) : 0;
+                      const itemColor = itemColorMap.get(item.id) || CHART_PALETTE[idx % CHART_PALETTE.length];
 
                       return (
                         <div
@@ -392,10 +403,16 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                             className="flex-1 min-w-0 cursor-pointer"
                             title={`Click to focus node "${item.nodeLabel}" on canvas`}
                           >
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-100 truncate max-w-[170px]">
-                                {item.nodeLabel}
-                              </span>
+                            <div className="flex items-center justify-between text-xs gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className="w-2 h-2 rounded-full shrink-0"
+                                  style={{ backgroundColor: itemColor }}
+                                />
+                                <span className={`font-semibold truncate max-w-[155px] ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                                  {item.nodeLabel}
+                                </span>
+                              </div>
                               <span className="font-mono font-bold text-emerald-400 shrink-0 ml-1">
                                 {(item.numericValue ?? 0).toLocaleString()}
                               </span>
@@ -405,15 +422,6 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                               <div className="text-[9.5px] font-mono text-emerald-400/90 truncate flex items-center gap-1 mt-0.5">
                                 <TrendingUp className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
                                 <span className="truncate">{item.value}</span>
-                              </div>
-                            )}
-                            {/* Percentage progress bar */}
-                            {isTicked && (
-                              <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mt-1">
-                                <div
-                                  className="bg-emerald-500 h-full rounded-full transition-all"
-                                  style={{ width: `${percent}%` }}
-                                />
                               </div>
                             )}
                             <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono mt-0.5">
