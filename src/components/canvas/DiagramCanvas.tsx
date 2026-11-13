@@ -27,6 +27,7 @@ import {
   Database,
   Upload,
   Sparkles,
+  Workflow,
 } from 'lucide-react';
 
 import { ContextMenu, ContextMenuPosition } from './ContextMenu';
@@ -73,6 +74,7 @@ interface DiagramCanvasProps {
   onNavigateChildDiagram?: (filename: string) => void;
   onOpenImportSqlModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
+  onOpenGenerateFlowchartModal?: () => void;
   onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
 }
 
@@ -108,6 +110,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onNavigateChildDiagram,
   onOpenImportSqlModal,
   onOpenGenerateMindmapModal,
+  onOpenGenerateFlowchartModal,
   onOpenImageLightbox,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1811,6 +1814,31 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                   Or drag a shape from the left toolbox to build manually
                 </div>
               </>
+            ) : diagramType === 'flowchart' ? (
+              <>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/25">
+                  <Workflow className="w-7 h-7 text-white" />
+                </div>
+                <h3 className="text-lg font-bold mb-1.5">
+                  Empty Flowchart
+                </h3>
+                <p className="text-xs text-slate-400 mb-5 leading-relaxed">
+                  Let Gemini suggest all steps for a process and automatically render them with Terminators, Decisions, Processes, I/O, Documents, Databases, and branching arrows.
+                </p>
+                {onOpenGenerateFlowchartModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenGenerateFlowchartModal}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-md shadow-emerald-600/30 hover:shadow-lg active:scale-[0.98]"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-200" />
+                    <span>Generate Flowchart with Gemini AI</span>
+                  </button>
+                )}
+                <div className="mt-3 text-[11px] text-slate-500">
+                  Or drag ANSI/ISO flowchart shapes from the left toolbox
+                </div>
+              </>
             ) : diagramType === 'erd' && onOpenImportSqlModal ? (
               <>
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-sky-500/25">
@@ -1899,6 +1927,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             onOpenChildDiagramModal={onOpenChildDiagramModal}
             onOpenImportSqlModal={onOpenImportSqlModal}
             onOpenGenerateMindmapModal={onOpenGenerateMindmapModal}
+            onOpenGenerateFlowchartModal={onOpenGenerateFlowchartModal}
             isReadOnly={isReadOnly}
           />
         );

@@ -41,6 +41,7 @@ import {
   FileText,
   CheckSquare,
   Square,
+  Workflow,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -64,6 +65,7 @@ interface AppHeaderProps {
   onOpenSettingsModal: () => void;
   onOpenImportSqlModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
+  onOpenGenerateFlowchartModal?: () => void;
   onManualSave: () => void;
   onSelectPage: (pageId: string) => void;
   onOpenNewPageModal: () => void;
@@ -100,6 +102,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenSettingsModal,
   onOpenImportSqlModal,
   onOpenGenerateMindmapModal,
+  onOpenGenerateFlowchartModal,
   onManualSave,
   onSelectPage,
   onOpenNewPageModal,
@@ -265,6 +268,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-200" />
             <span>AI Mind Map</span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
+          </button>
+        )}
+
+        {/* Dedicated Flowchart Gemini AI Generator Button */}
+        {currentPage.diagramType === 'flowchart' && onOpenGenerateFlowchartModal && (
+          <button
+            onClick={onOpenGenerateFlowchartModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md shadow-emerald-600/30 shrink-0 animate-in fade-in"
+            title="Generate or expand a Flowchart with Gemini AI using ANSI/ISO symbols"
+          >
+            <Workflow className="w-3.5 h-3.5 text-emerald-200" />
+            <span>AI Flowchart</span>
             <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
           </button>
         )}
@@ -554,6 +570,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     <span>Gemini Mind Map Generator</span>
                   </div>
                   <span className="text-[9px] font-mono px-1.5 py-0.2 bg-purple-500/15 text-purple-400 rounded">AI</span>
+                </button>
+              )}
+
+              {/* Generate Flowchart with Gemini */}
+              {onOpenGenerateFlowchartModal && (currentPage.diagramType === 'flowchart' || currentPage.diagramType === 'generic') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDropdownOpen(false);
+                    onOpenGenerateFlowchartModal();
+                  }}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Workflow className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Gemini Flowchart Generator</span>
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 bg-emerald-500/15 text-emerald-400 rounded">AI</span>
                 </button>
               )}
 

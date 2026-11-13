@@ -2265,6 +2265,814 @@ Return a JSON object conforming to the schema with:
   }
 });
 
+// 10. AI Flowchart Generator using Gemini API
+app.post('/api/ai/generate-flowchart', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  try {
+    const {
+      topic,
+      layout = 'vertical',
+      extendMode,
+      existingNodes,
+      existingEdges,
+      currentTitle,
+    } = req.body;
+
+    if (!topic || typeof topic !== 'string' || topic.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a valid process description for the flowchart.',
+      });
+    }
+
+    let apiKey = (process.env.GEMINI_API_KEY || '').trim();
+    apiKey = apiKey.replace(/^["']|["']$/g, '').trim();
+
+    if (!apiKey) {
+      try {
+        const envPath = path.join(process.cwd(), '.env');
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf-8');
+          const match = envContent.match(/GEMINI_API_KEY\s*=\s*([^\r\n]+)/);
+          if (match && match[1]) {
+            apiKey = match[1].trim().replace(/^["']|["']$/g, '').trim();
+          }
+        }
+      } catch (err) {
+        logDebug('warn', 'GEMINI_AI', 'Could not read .env fallback for flowchart', err);
+      }
+    }
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your server environment or Secrets.',
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+    const isHorizontal = layout === 'horizontal';
+
+    const FLOWCHART_SYMBOL_SPEC: Record<
+      string,
+      {
+        width: number;
+        height: number;
+        fill: string;
+        stroke: string;
+        textColor: string;
+        rounded?: number;
+      }
+    > = {
+      'flow-terminator': {
+        width: 165,
+        height: 60,
+        fill: 'rgba(16, 185, 129, 0.25)',
+        stroke: '#10b981',
+        textColor: '#ecfdf5',
+        rounded: 9999,
+      },
+      'flow-process': {
+        width: 185,
+        height: 76,
+        fill: 'rgba(30, 58, 138, 0.78)',
+        stroke: '#3b82f6',
+        textColor: '#f8fafc',
+        rounded: 8,
+      },
+      'flow-decision': {
+        width: 155,
+        height: 102,
+        fill: 'rgba(180, 83, 9, 0.78)',
+        stroke: '#f59e0b',
+        textColor: '#fef3c7',
+      },
+      'flow-data': {
+        width: 185,
+        height: 74,
+        fill: 'rgba(14, 116, 144, 0.78)',
+        stroke: '#06b6d4',
+        textColor: '#e0f2fe',
+      },
+      'flow-document': {
+        width: 170,
+        height: 82,
+        fill: 'rgba(51, 65, 85, 0.85)',
+        stroke: '#94a3b8',
+        textColor: '#f1f5f9',
+      },
+      'flow-multi-document': {
+        width: 175,
+        height: 92,
+        fill: 'rgba(51, 65, 85, 0.88)',
+        stroke: '#94a3b8',
+        textColor: '#f1f5f9',
+      },
+      'flow-preparation': {
+        width: 175,
+        height: 76,
+        fill: 'rgba(88, 28, 135, 0.78)',
+        stroke: '#c084fc',
+        textColor: '#faf5ff',
+      },
+      'flow-manual-input': {
+        width: 175,
+        height: 76,
+        fill: 'rgba(15, 118, 110, 0.78)',
+        stroke: '#2dd4bf',
+        textColor: '#f0fdfa',
+      },
+      'flow-database': {
+        width: 138,
+        height: 102,
+        fill: 'rgba(15, 23, 42, 0.92)',
+        stroke: '#38bdf8',
+        textColor: '#e0f2fe',
+      },
+      'flow-delay': {
+        width: 160,
+        height: 74,
+        fill: 'rgba(146, 64, 14, 0.78)',
+        stroke: '#fbbf24',
+        textColor: '#fef3c7',
+      },
+      'flow-merge': {
+        width: 118,
+        height: 86,
+        fill: 'rgba(49, 46, 129, 0.85)',
+        stroke: '#a78bfa',
+        textColor: '#f5f3ff',
+      },
+      'flow-connector': {
+        width: 64,
+        height: 64,
+        fill: 'rgba(15, 23, 42, 0.95)',
+        stroke: '#38bdf8',
+        textColor: '#e0f2fe',
+        rounded: 9999,
+      },
+      'flow-offpage-connector': {
+        width: 105,
+        height: 84,
+        fill: 'rgba(49, 46, 129, 0.85)',
+        stroke: '#818cf8',
+        textColor: '#eef2ff',
+      },
+    };
+
+    const VALID_SYMBOL_TYPES = Object.keys(FLOWCHART_SYMBOL_SPEC);
+
+    const buildFlowchartNode = (
+      nodeId: string,
+      step: any,
+      x: number,
+      y: number,
+      extraTag?: string
+    ): DiagramNode => {
+      const symbolType = VALID_SYMBOL_TYPES.includes(step.symbolType)
+        ? step.symbolType
+        : 'flow-process';
+      const spec = FLOWCHART_SYMBOL_SPEC[symbolType];
+
+      let fill = spec.fill;
+      let stroke = spec.stroke;
+      let textColor = spec.textColor;
+      const nodeData: Record<string, any> = {};
+
+      if (symbolType === 'flow-terminator') {
+        const isEnd =
+          step.terminalKind === 'end' ||
+          /\b(end|stop|finish|complete|terminate|done|exit|reject|cancel|fail)\b/i.test(
+            step.label || ''
+          );
+        nodeData.terminalType = isEnd ? 'end' : 'start';
+        if (isEnd) {
+          fill = 'rgba(190, 18, 60, 0.28)';
+          stroke = '#f43f5e';
+          textColor = '#ffe4e6';
+        }
+      } else if (symbolType === 'flow-data') {
+        nodeData.ioType = step.ioKind === 'output' ? 'output' : 'input';
+      } else if (symbolType === 'flow-connector') {
+        nodeData.connectorRef = (step.label || 'A').slice(0, 4);
+      } else if (symbolType === 'flow-offpage-connector') {
+        nodeData.targetPage = step.label || 'Next Page';
+      }
+
+      const validLinks = Array.isArray(step.links)
+        ? step.links
+            .filter((l: any) => l && l.url && typeof l.url === 'string')
+            .map((l: any, idx: number) => ({
+              id: `link-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+              label: (l.label || l.title || 'Reference').slice(0, 32),
+              url: l.url.trim(),
+            }))
+        : undefined;
+
+      return {
+        id: nodeId,
+        type: symbolType,
+        label: String(step.label || 'Step').trim().slice(0, 64),
+        x: Math.round(x),
+        y: Math.round(y),
+        width: spec.width,
+        height: spec.height,
+        style: {
+          fill,
+          stroke,
+          strokeWidth: 2,
+          textColor,
+          ...(spec.rounded !== undefined ? { rounded: spec.rounded } : {}),
+        },
+        data: nodeData,
+        documentation: {
+          description: String(step.description || step.label || '').trim(),
+          status: 'approved',
+          tags: extraTag ? ['Flowchart', 'GeminiAI', extraTag] : ['Flowchart', 'GeminiAI'],
+        },
+        links: validLinks && validLinks.length > 0 ? validLinks : undefined,
+      };
+    };
+
+    const formatLinksInstruction = `Symbol selection rules (choose the exact ANSI/ISO symbolType that best fits each step's role):
+- "flow-terminator": Process Start or End/Stop/Complete/Reject states (terminalKind: "start" or "end").
+- "flow-preparation": Initialization, setup, authentication check setup, or configuration steps.
+- "flow-manual-input": Steps where a human/user manually types, selects, or submits form/order data.
+- "flow-data": System Input / Output data payloads, API requests/responses, messages, or file I/O (ioKind: "input" or "output").
+- "flow-process": Automated processing, calculation, validation logic, API calls, or transformation actions.
+- "flow-decision": Conditional branching point (Yes/No, True/False, Valid/Invalid, Approved/Rejected). Outgoing edges from decisions MUST have short labels like "Yes" and "No" (or "Valid" / "Invalid").
+- "flow-database": Reading from or writing/persisting records into a database, store, or ledger.
+- "flow-document": Generating or printing a single document, invoice, receipt, PDF, or report.
+- "flow-multi-document": Generating multiple documents, batch reports, or multi-file outputs.
+- "flow-delay": Waiting period, cooldown, timer, scheduled delay, or async queue wait.
+- "flow-merge": Junction where two or more parallel or conditional branches rejoin into one flow.
+- "flow-offpage-connector": Continuation to/from another page or external workflow.
+- "flow-connector": On-page jump connector (use short label like "A" or "B").`;
+
+    const flowchartResponseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        description: { type: Type.STRING },
+        steps: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              symbolType: {
+                type: Type.STRING,
+                enum: VALID_SYMBOL_TYPES,
+              },
+              label: { type: Type.STRING },
+              description: { type: Type.STRING },
+              terminalKind: { type: Type.STRING, enum: ['start', 'end'] },
+              ioKind: { type: Type.STRING, enum: ['input', 'output'] },
+              links: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    label: { type: Type.STRING },
+                    url: { type: Type.STRING },
+                  },
+                  required: ['label', 'url'],
+                },
+              },
+            },
+            required: ['id', 'symbolType', 'label', 'description'],
+          },
+        },
+        connections: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              fromStepId: { type: Type.STRING },
+              toStepId: { type: Type.STRING },
+              label: { type: Type.STRING },
+            },
+            required: ['fromStepId', 'toStepId'],
+          },
+        },
+      },
+      required: ['title', 'description', 'steps', 'connections'],
+    };
+
+    const isExtending =
+      extendMode === true && Array.isArray(existingNodes) && existingNodes.length > 0;
+
+    let promptText = '';
+    if (isExtending) {
+      const existingSummary = existingNodes.slice(0, 50).map((n: any) => ({
+        id: String(n.id),
+        type: String(n.type || 'flow-process'),
+        label: String(n.label || 'Untitled'),
+        x: Math.round(n.x || 0),
+        y: Math.round(n.y || 0),
+      }));
+
+      promptText = `You are a process architect extending an existing ANSI/ISO flowchart.
+Existing nodes already on the canvas:
+${JSON.stringify(existingSummary, null, 2)}
+
+User request to extend this flowchart:
+"${topic.trim()}"
+
+${formatLinksInstruction}
+
+INSTRUCTIONS FOR EXTENDING:
+1. Suggest 2 to 8 new process steps that expand or continue the existing flowchart according to the user's request.
+2. Give each new step a unique short id like "new_1", "new_2", etc. (do not reuse existing node IDs).
+3. In "connections", connect at least one existing node ID (from the list above) to your new steps, and connect new steps to each other (and back to existing nodes if rejoining/looping).
+4. Include clear labels ("Yes", "No", etc.) on edges coming out of any "flow-decision" node.
+5. Keep step labels concise (2-6 words) and provide informative descriptions (2-4 sentences per step, or matching any requested depth).`;
+    } else {
+      promptText = `You are an expert business analyst and systems architect designing an ANSI/ISO 5807 standard process flowchart.
+Design a complete, realistic, well-structured end-to-end flowchart for the following process:
+"${topic.trim()}"
+
+${formatLinksInstruction}
+
+INSTRUCTIONS:
+1. Suggest 7 to 14 clear, logical steps covering the full process from Start ("flow-terminator", terminalKind: "start") through inputs/setup, decisions with branching paths, data/database/document operations, delays/merges where relevant, and End ("flow-terminator", terminalKind: "end").
+2. Use a diverse, accurate mix of flowchart symbols matching what each step genuinely represents—avoid making everything a plain rectangle when a decision diamond, manual input, data I/O, database cylinder, document, preparation hexagon, delay, or merge junction is appropriate.
+3. Give every step a short unique id ("s1", "s2", ...), a crisp label (2-6 words; short question for decisions), and a helpful technical/operational description (2-4 sentences per step, or matching any length requested by the user).
+4. In "connections", define all directed flow arrows between step IDs so the graph is fully connected from start to end(s), with branch labels ("Yes", "No", etc.) on every decision branch.`;
+    }
+
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        logDebug('info', 'GEMINI_AI', `Attempting model ${modelName} to generate flowchart...`);
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            systemInstruction:
+              'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
+            responseMimeType: 'application/json',
+            responseSchema: flowchartResponseSchema,
+          },
+        });
+        if (response && response.text) {
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        logDebug('warn', 'GEMINI_AI', `Model ${modelName} failed during flowchart generation: ${err?.message || err}`);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error('No response from Gemini API models for flowchart generation.');
+    }
+
+    const parsed = JSON.parse(response.text.trim());
+    const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
+    const rawConnections = Array.isArray(parsed.connections) ? parsed.connections : [];
+
+    if (rawSteps.length === 0) {
+      throw new Error('Gemini returned no flowchart steps. Please try rephrasing your process prompt.');
+    }
+
+    const stamp = Date.now();
+
+    if (isExtending) {
+      const existingIdSet = new Set(existingNodes.map((n: any) => String(n.id)));
+      const stepIdToNodeId = new Map<string, string>();
+      rawSteps.forEach((s: any, idx: number) => {
+        const sid = String(s.id || `new_${idx}`);
+        stepIdToNodeId.set(sid, `fc-ext-${stamp}-${idx}`);
+      });
+
+      // Anchor new steps cleanly below or right of the existing bounding box / connected parent
+      const maxX = Math.max(...existingNodes.map((n: any) => (n.x || 0) + (n.width || 180)));
+      const maxY = Math.max(...existingNodes.map((n: any) => (n.y || 0) + (n.height || 80)));
+      const avgX = existingNodes.reduce((sum: number, n: any) => sum + (n.x || 0), 0) / existingNodes.length;
+      const avgY = existingNodes.reduce((sum: number, n: any) => sum + (n.y || 0), 0) / existingNodes.length;
+
+      // Compute rank among new steps from existing anchor connections
+      const rankMap = new Map<string, number>();
+      const newIds: string[] = rawSteps.map((s: any, idx: number) => String(s.id || `new_${idx}`));
+      const newIdSet = new Set<string>(newIds);
+      const childrenOf = new Map<string, string[]>();
+      const anchorParents = new Map<string, string[]>();
+
+      rawConnections.forEach((c: any) => {
+        const fromId = String(c.fromStepId || '');
+        const toId = String(c.toStepId || '');
+        if (existingIdSet.has(fromId) && newIdSet.has(toId)) {
+          const list = anchorParents.get(toId) || [];
+          list.push(fromId);
+          anchorParents.set(toId, list);
+          rankMap.set(toId, 0);
+        } else if (newIdSet.has(fromId) && newIdSet.has(toId) && fromId !== toId) {
+          const list = childrenOf.get(fromId) || [];
+          list.push(toId);
+          childrenOf.set(fromId, list);
+        }
+      });
+
+      const queue: string[] = Array.from(rankMap.keys());
+      if (queue.length === 0 && newIds.length > 0) {
+        rankMap.set(newIds[0], 0);
+        queue.push(newIds[0]);
+      }
+      const visitedExt = new Set<string>();
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        if (visitedExt.has(cur)) continue;
+        visitedExt.add(cur);
+        const r = rankMap.get(cur) ?? 0;
+        for (const nxt of childrenOf.get(cur) || []) {
+          if (!rankMap.has(nxt) || (rankMap.get(nxt)! < r + 1 && !visitedExt.has(nxt))) {
+            rankMap.set(nxt, r + 1);
+            queue.push(nxt);
+          }
+        }
+      }
+      newIds.forEach((id: string, i: number) => {
+        if (!rankMap.has(id)) rankMap.set(id, i);
+      });
+
+      const layers = new Map<number, any[]>();
+      rawSteps.forEach((s: any, idx: number) => {
+        const sid = String(s.id || `new_${idx}`);
+        const r = rankMap.get(sid) ?? 0;
+        const arr = layers.get(r) || [];
+        arr.push({ ...s, _sid: sid });
+        layers.set(r, arr);
+      });
+
+      const occupied = existingNodes.map((n: any) => ({
+        x: n.x || 0,
+        y: n.y || 0,
+        w: n.width || 180,
+        h: n.height || 80,
+      }));
+
+      const overlaps = (x: number, y: number, w: number, h: number) =>
+        occupied.some(
+          o =>
+            x < o.x + o.w + 30 &&
+            x + w + 30 > o.x &&
+            y < o.y + o.h + 30 &&
+            y + h + 30 > o.y
+        );
+
+      const addedNodes: DiagramNode[] = [];
+      const sortedRanks = Array.from(layers.keys()).sort((a, b) => a - b);
+
+      sortedRanks.forEach(r => {
+        const group = layers.get(r) || [];
+        group.forEach((step, idxInLayer) => {
+          const sid = step._sid;
+          const symbolType = VALID_SYMBOL_TYPES.includes(step.symbolType)
+            ? step.symbolType
+            : 'flow-process';
+          const spec = FLOWCHART_SYMBOL_SPEC[symbolType];
+
+          let posX = isHorizontal
+            ? maxX + 90 + r * 250
+            : avgX + (idxInLayer - (group.length - 1) / 2) * 240;
+          let posY = isHorizontal
+            ? avgY + (idxInLayer - (group.length - 1) / 2) * 140
+            : maxY + 90 + r * 150;
+
+          let guard = 0;
+          while (overlaps(posX, posY, spec.width, spec.height) && guard < 15) {
+            if (isHorizontal) posY += 130;
+            else posX += 220;
+            guard++;
+          }
+
+          occupied.push({ x: posX, y: posY, w: spec.width, h: spec.height });
+          const nodeId = stepIdToNodeId.get(sid)!;
+          addedNodes.push(buildFlowchartNode(nodeId, step, posX, posY, 'Extended'));
+        });
+      });
+
+      const nodeLookup = new Map<string, any>();
+      existingNodes.forEach((n: any) => nodeLookup.set(String(n.id), n));
+      addedNodes.forEach(n => nodeLookup.set(n.id, n));
+
+      const addedEdges: DiagramEdge[] = [];
+      rawConnections.forEach((conn: any, idx: number) => {
+        const rawFrom = String(conn.fromStepId || '');
+        const rawTo = String(conn.toStepId || '');
+        const sourceId = existingIdSet.has(rawFrom) ? rawFrom : stepIdToNodeId.get(rawFrom);
+        const targetId = existingIdSet.has(rawTo) ? rawTo : stepIdToNodeId.get(rawTo);
+        if (!sourceId || !targetId || sourceId === targetId) return;
+
+        const srcNode = nodeLookup.get(sourceId);
+        const tgtNode = nodeLookup.get(targetId);
+        let sourceAnchor: any = isHorizontal ? 'right' : 'bottom';
+        let targetAnchor: any = isHorizontal ? 'left' : 'top';
+        if (srcNode && tgtNode) {
+          const dx = tgtNode.x - srcNode.x;
+          const dy = tgtNode.y - srcNode.y;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            sourceAnchor = dx >= 0 ? 'right' : 'left';
+            targetAnchor = dx >= 0 ? 'left' : 'right';
+          } else {
+            sourceAnchor = dy >= 0 ? 'bottom' : 'top';
+            targetAnchor = dy >= 0 ? 'top' : 'bottom';
+          }
+        }
+
+        addedEdges.push({
+          id: `fc-ext-e-${stamp}-${idx}`,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          sourceAnchor,
+          targetAnchor,
+          type: 'orthogonal',
+          lineStyle: 'solid',
+          markerStart: 'none',
+          markerEnd: 'arrow',
+          label: conn.label ? String(conn.label).trim().slice(0, 28) : undefined,
+        });
+      });
+
+      const durationMs = Date.now() - startTime;
+      logDebug(
+        'success',
+        'GEMINI_AI',
+        `Extended flowchart with ${addedNodes.length} steps and ${addedEdges.length} edges in ${durationMs}ms`
+      );
+
+      return res.json({
+        success: true,
+        extended: true,
+        title: currentTitle || parsed.title || 'Extended Flowchart',
+        description: parsed.description || topic.trim(),
+        nodes: [...existingNodes, ...addedNodes],
+        edges: [...(existingEdges || []), ...addedEdges],
+        addedNodeIds: addedNodes.map(n => n.id),
+        durationMs,
+      });
+    }
+
+    // =========================================================================
+    // FRESH FLOWCHART: LAYERED DAG AUTO-LAYOUT
+    // =========================================================================
+    const stepMap = new Map<string, any>();
+    const stepOrder: string[] = [];
+    rawSteps.forEach((s: any, idx: number) => {
+      const sid = String(s.id || `s${idx + 1}`).trim();
+      if (!stepMap.has(sid)) {
+        stepMap.set(sid, { ...s, id: sid });
+        stepOrder.push(sid);
+      }
+    });
+
+    const outConns = new Map<string, Array<{ to: string; label?: string }>>();
+    const inDegree = new Map<string, number>();
+    stepOrder.forEach(id => {
+      outConns.set(id, []);
+      inDegree.set(id, 0);
+    });
+
+    const validConnections: Array<{ fromStepId: string; toStepId: string; label?: string }> = [];
+    rawConnections.forEach((c: any) => {
+      const fromId = String(c.fromStepId || '').trim();
+      const toId = String(c.toStepId || '').trim();
+      if (!stepMap.has(fromId) || !stepMap.has(toId) || fromId === toId) return;
+      const edgeLabel = c.label ? String(c.label).trim().slice(0, 28) : undefined;
+      outConns.get(fromId)!.push({ to: toId, label: edgeLabel });
+      inDegree.set(toId, (inDegree.get(toId) || 0) + 1);
+      validConnections.push({ fromStepId: fromId, toStepId: toId, label: edgeLabel });
+    });
+
+    // Identify start step
+    const startId =
+      stepOrder.find(id => {
+        const s = stepMap.get(id);
+        return s.symbolType === 'flow-terminator' && s.terminalKind !== 'end' && (inDegree.get(id) || 0) === 0;
+      }) ||
+      stepOrder.find(id => (inDegree.get(id) || 0) === 0) ||
+      stepOrder[0];
+
+    // BFS spanning tree + DAG rank calculation (back-edges ignored during rank push to handle retry loops)
+    const rank = new Map<string, number>();
+    const dfsState = new Map<string, number>(); // 0=unvisited, 1=visiting, 2=visited
+    const dagOut = new Map<string, string[]>();
+    stepOrder.forEach(id => dagOut.set(id, []));
+
+    const markDagEdges = (u: string) => {
+      dfsState.set(u, 1);
+      for (const edge of outConns.get(u) || []) {
+        const state = dfsState.get(edge.to) || 0;
+        if (state === 0) {
+          dagOut.get(u)!.push(edge.to);
+          markDagEdges(edge.to);
+        } else if (state === 2) {
+          dagOut.get(u)!.push(edge.to);
+        }
+        // state === 1 is a cycle back-edge -> skip in DAG ranking
+      }
+      dfsState.set(u, 2);
+    };
+
+    markDagEdges(startId);
+    stepOrder.forEach(id => {
+      if ((dfsState.get(id) || 0) === 0) {
+        markDagEdges(id);
+      }
+    });
+
+    // Longest path rank on DAG
+    const dagInDeg = new Map<string, number>();
+    stepOrder.forEach(id => dagInDeg.set(id, 0));
+    dagOut.forEach(targets => {
+      targets.forEach(t => dagInDeg.set(t, (dagInDeg.get(t) || 0) + 1));
+    });
+
+    const topoQueue: string[] = stepOrder.filter(id => (dagInDeg.get(id) || 0) === 0);
+    topoQueue.forEach(id => rank.set(id, 0));
+    while (topoQueue.length > 0) {
+      const u = topoQueue.shift()!;
+      const rU = rank.get(u) ?? 0;
+      for (const v of dagOut.get(u) || []) {
+        rank.set(v, Math.max(rank.get(v) ?? 0, rU + 1));
+        const rem = (dagInDeg.get(v) || 1) - 1;
+        dagInDeg.set(v, rem);
+        if (rem === 0) topoQueue.push(v);
+      }
+    }
+    stepOrder.forEach((id, idx) => {
+      if (!rank.has(id)) rank.set(id, idx);
+    });
+
+    // Group steps by rank and order within each rank
+    const layersMap = new Map<number, string[]>();
+    stepOrder.forEach(id => {
+      const r = rank.get(id) ?? 0;
+      const list = layersMap.get(r) || [];
+      list.push(id);
+      layersMap.set(r, list);
+    });
+
+    const maxRank = Math.max(...Array.from(layersMap.keys()), 0);
+    const orderedColIndex = new Map<string, number>();
+
+    // Simple barycenter ordering pass
+    const dagParents = new Map<string, string[]>();
+    stepOrder.forEach(id => dagParents.set(id, []));
+    dagOut.forEach((targets, u) => {
+      targets.forEach(v => dagParents.get(v)!.push(u));
+    });
+
+    for (let r = 0; r <= maxRank; r++) {
+      const layer = layersMap.get(r) || [];
+      if (r > 0) {
+        layer.sort((a, b) => {
+          const pa = dagParents.get(a) || [];
+          const pb = dagParents.get(b) || [];
+          const avgA =
+            pa.length > 0
+              ? pa.reduce((s, p) => s + (orderedColIndex.get(p) ?? 0), 0) / pa.length
+              : 0;
+          const avgB =
+            pb.length > 0
+              ? pb.reduce((s, p) => s + (orderedColIndex.get(p) ?? 0), 0) / pb.length
+              : 0;
+          return avgA - avgB;
+        });
+      }
+      layer.forEach((id, idx) => orderedColIndex.set(id, idx));
+    }
+
+    const generatedNodes: DiagramNode[] = [];
+    const stepIdToNodeId = new Map<string, string>();
+    const nodeByStepId = new Map<string, DiagramNode>();
+
+    const centerAxis = isHorizontal ? 340 : 620;
+    const rankStep = isHorizontal ? 255 : 155;
+    const laneStep = isHorizontal ? 145 : 245;
+    const startAxis = isHorizontal ? 80 : 70;
+
+    for (let r = 0; r <= maxRank; r++) {
+      const layer = layersMap.get(r) || [];
+      const count = layer.length;
+      layer.forEach((sid, idx) => {
+        const step = stepMap.get(sid);
+        const symbolType = VALID_SYMBOL_TYPES.includes(step.symbolType)
+          ? step.symbolType
+          : 'flow-process';
+        const spec = FLOWCHART_SYMBOL_SPEC[symbolType];
+
+        const laneOffset = (idx - (count - 1) / 2) * laneStep;
+        const centerX = isHorizontal
+          ? startAxis + r * rankStep + spec.width / 2
+          : centerAxis + laneOffset;
+        const centerY = isHorizontal
+          ? centerAxis + laneOffset
+          : startAxis + r * rankStep + spec.height / 2;
+
+        const x = centerX - spec.width / 2;
+        const y = centerY - spec.height / 2;
+
+        const nodeId = `fc-ai-${stamp}-${generatedNodes.length}`;
+        const node = buildFlowchartNode(nodeId, step, x, y);
+        stepIdToNodeId.set(sid, nodeId);
+        nodeByStepId.set(sid, node);
+        generatedNodes.push(node);
+      });
+    }
+
+    const generatedEdges: DiagramEdge[] = validConnections.map((conn, idx) => {
+      const srcNode = nodeByStepId.get(conn.fromStepId)!;
+      const tgtNode = nodeByStepId.get(conn.toStepId)!;
+      const srcRank = rank.get(conn.fromStepId) ?? 0;
+      const tgtRank = rank.get(conn.toStepId) ?? 0;
+
+      const isLoopBack = tgtRank <= srcRank;
+      let sourceAnchor: any;
+      let targetAnchor: any;
+
+      if (isLoopBack) {
+        if (isHorizontal) {
+          sourceAnchor = 'top';
+          targetAnchor = 'top';
+        } else {
+          sourceAnchor = 'left';
+          targetAnchor = 'left';
+        }
+      } else if (isHorizontal) {
+        const dy = tgtNode.y + tgtNode.height / 2 - (srcNode.y + srcNode.height / 2);
+        if (Math.abs(dy) > 90 && srcNode.type === 'flow-decision') {
+          sourceAnchor = dy > 0 ? 'bottom' : 'top';
+        } else {
+          sourceAnchor = 'right';
+        }
+        targetAnchor = 'left';
+      } else {
+        const dx = tgtNode.x + tgtNode.width / 2 - (srcNode.x + srcNode.width / 2);
+        if (Math.abs(dx) > 100 && srcNode.type === 'flow-decision') {
+          sourceAnchor = dx > 0 ? 'right' : 'left';
+        } else {
+          sourceAnchor = 'bottom';
+        }
+        targetAnchor = 'top';
+      }
+
+      return {
+        id: `fc-ai-edge-${stamp}-${idx}`,
+        sourceNodeId: srcNode.id,
+        targetNodeId: tgtNode.id,
+        sourceAnchor,
+        targetAnchor,
+        type: 'orthogonal',
+        lineStyle: isLoopBack ? 'dashed' : 'solid',
+        markerStart: 'none',
+        markerEnd: 'arrow',
+        label: conn.label,
+        color: isLoopBack ? '#f59e0b' : undefined,
+      };
+    });
+
+    const title = String(parsed.title || 'AI Process Flowchart').trim();
+    const description = String(parsed.description || topic.trim()).trim();
+    const durationMs = Date.now() - startTime;
+
+    logDebug(
+      'success',
+      'GEMINI_AI',
+      `Generated flowchart "${title}" with ${generatedNodes.length} steps and ${generatedEdges.length} edges in ${durationMs}ms`
+    );
+
+    res.json({
+      success: true,
+      title,
+      description,
+      nodes: generatedNodes,
+      edges: generatedEdges,
+      durationMs,
+    });
+  } catch (err: any) {
+    logDebug('error', 'GEMINI_AI', `Failed to generate flowchart: ${err.message}`, err.stack);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to generate flowchart with Gemini AI',
+      details: String(err?.stack || err),
+    });
+  }
+});
+
 // Dev vs Production Vite Setup
 async function startServer() {
   await initStorageOnDisk();

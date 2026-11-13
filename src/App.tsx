@@ -39,6 +39,7 @@ import { CreateChildDiagramModal } from './components/modals/CreateChildDiagramM
 import { SaveSuccessModal } from './components/modals/SaveSuccessModal';
 import { ImportSqlModal } from './components/modals/ImportSqlModal';
 import { GenerateMindmapModal } from './components/modals/GenerateMindmapModal';
+import { GenerateFlowchartModal } from './components/modals/GenerateFlowchartModal';
 import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
 import { NodeImageAttachment } from './types/diagram';
@@ -115,6 +116,7 @@ export default function App() {
   const [isSaveSuccessModalOpen, setIsSaveSuccessModalOpen] = useState(false);
   const [isImportSqlModalOpen, setIsImportSqlModalOpen] = useState(false);
   const [isGenerateMindmapModalOpen, setIsGenerateMindmapModalOpen] = useState(false);
+  const [isGenerateFlowchartModalOpen, setIsGenerateFlowchartModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
   // Aggregations Down Right Side State (Change 2)
@@ -1518,6 +1520,7 @@ export default function App() {
         onOpenOfflineModal={() => setIsOfflineModalOpen(true)}
         onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
         onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
+        onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
         onChangeRole={setUserRole}
         onToggleTheme={handleToggleTheme}
         onSwitchDiagram={handleSwitchDiagram}
@@ -1619,6 +1622,7 @@ export default function App() {
           onNavigateChildDiagram={handleNavigateToChildDiagram}
           onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
           onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
+          onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
           onOpenImageLightbox={handleOpenImageLightbox}
           onUpdateNodeLabel={(nodeId, label) => {
             const targetNode = currentPage.nodes.find(n => n.id === nodeId);
@@ -1840,6 +1844,54 @@ export default function App() {
             setImageNotice({
               type: 'success',
               message: `Generated new mind map with ${genNodes.length} nodes!`,
+            });
+          }
+        }}
+      />
+
+      <GenerateFlowchartModal
+        isOpen={isGenerateFlowchartModalOpen}
+        onClose={() => setIsGenerateFlowchartModalOpen(false)}
+        currentPageName={currentPage.title}
+        theme={settings.theme}
+        existingNodes={currentPage.nodes}
+        existingEdges={currentPage.edges}
+        onFlowchartGenerated={(title: string, _description: string, genNodes: DiagramNode[], genEdges: DiagramEdge[], isExtended?: boolean, addedNodeIds?: string[]) => {
+          const updatedPages = document.pages.map(page => {
+            if (page.id !== activePageId) return page;
+            const isDefaultTitle =
+              page.title === 'Flowchart' ||
+              page.title === 'Business Process Flowchart' ||
+              page.title.startsWith('Page ') ||
+              page.title === 'Untitled Diagram';
+            return {
+              ...page,
+              title: !isExtended && isDefaultTitle ? title : page.title,
+              nodes: genNodes,
+              edges: genEdges,
+            };
+          });
+
+          const updatedDoc: DiagramDocument = {
+            ...document,
+            pages: updatedPages,
+            updatedAt: new Date().toISOString(),
+          };
+
+          persistDocument(updatedDoc);
+          setSaveStatus('unsaved');
+
+          if (isExtended && addedNodeIds && addedNodeIds.length > 0) {
+            setSelectedNodeIds(addedNodeIds);
+            setImageNotice({
+              type: 'success',
+              message: `Added ${addedNodeIds.length} new flowchart step(s) with Gemini AI!`,
+            });
+          } else {
+            setSelectedNodeIds(genNodes.map(n => n.id));
+            setImageNotice({
+              type: 'success',
+              message: `Generated flowchart with ${genNodes.length} symbol steps and ${genEdges.length} connectors!`,
             });
           }
         }}

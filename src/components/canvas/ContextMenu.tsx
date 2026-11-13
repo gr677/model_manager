@@ -33,6 +33,7 @@ import {
   FolderTree,
   Database,
   Sparkles,
+  Workflow,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram } from '../../utils/diagramConnectorConfig';
@@ -77,6 +78,7 @@ interface ContextMenuProps {
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onOpenImportSqlModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
+  onOpenGenerateFlowchartModal?: () => void;
   isReadOnly?: boolean;
 }
 
@@ -113,6 +115,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onOpenChildDiagramModal,
   onOpenImportSqlModal,
   onOpenGenerateMindmapModal,
+  onOpenGenerateFlowchartModal,
   isReadOnly,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -989,6 +992,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Generate Mind Map with Gemini AI...</span>
+            </button>
+          )}
+
+          {onOpenGenerateFlowchartModal && (diagramType === 'flowchart' || diagramType === 'generic') && (
+            <button
+              onClick={() => {
+                onOpenGenerateFlowchartModal();
+                onClose();
+              }}
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer font-semibold ${
+                isDark
+                  ? 'hover:bg-slate-800 hover:text-white text-emerald-400'
+                  : 'hover:bg-emerald-50 text-emerald-600'
+              }`}
+            >
+              <Workflow className="w-3.5 h-3.5" />
+              <span>Generate Flowchart with Gemini AI...</span>
             </button>
           )}
         </div>
