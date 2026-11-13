@@ -838,6 +838,42 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </button>
           )}
 
+          {/* Line Width Quick Selector */}
+          {selectedEdge && onUpdateEdge && !isReadOnly && (
+            <div className="px-2.5 py-1.5 space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>Line Width</span>
+                <span className="font-mono text-[10px] text-sky-400">
+                  {selectedEdge.strokeWidth ?? 1.75}px
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[1, 2, 3, 5, 8].map(w => {
+                  const isActive = (selectedEdge.strokeWidth ?? 1.75) === w;
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => {
+                        onUpdateEdge({ ...selectedEdge, strokeWidth: w });
+                        onClose();
+                      }}
+                      className={`py-1 rounded border text-[10px] font-mono transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600/30 border-blue-500 text-blue-300 font-bold'
+                          : isDark
+                          ? 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {w}px
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Delete Connector */}
           {!isReadOnly && (
             <>

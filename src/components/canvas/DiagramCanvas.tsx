@@ -1293,6 +1293,54 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             </button>
           )}
 
+          {/* Quick Line Width Stepper */}
+          {(() => {
+            const currentWidth = selectedEdge.strokeWidth ?? 2;
+            const handleDecrease = () => {
+              const next = currentWidth <= 1 ? 0.5 : currentWidth <= 2 ? 1 : Math.round((currentWidth - 1) * 2) / 2;
+              onUpdateEdge?.({ ...selectedEdge, strokeWidth: Math.max(0.5, next) });
+            };
+            const handleIncrease = () => {
+              const next = currentWidth < 1 ? 1 : currentWidth < 2 ? 2 : Math.round((currentWidth + 1) * 2) / 2;
+              onUpdateEdge?.({ ...selectedEdge, strokeWidth: Math.min(12, next) });
+            };
+            return (
+              <div className="flex items-center gap-1 pl-1.5 border-l border-slate-700/50">
+                <span className={`text-[10px] font-mono font-semibold uppercase ${themeDef.textMutedClass}`}>
+                  Width:
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDecrease}
+                  disabled={currentWidth <= 0.5}
+                  className={`p-1 rounded transition-colors cursor-pointer disabled:opacity-40 ${
+                    themeDef.isDark ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                  title="Decrease connector line width"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span
+                  className="text-[11px] font-mono font-bold text-sky-400 min-w-[32px] text-center"
+                  title="Connector line width in pixels"
+                >
+                  {selectedEdge.strokeWidth ?? 1.75}px
+                </span>
+                <button
+                  type="button"
+                  onClick={handleIncrease}
+                  disabled={currentWidth >= 12}
+                  className={`p-1 rounded transition-colors cursor-pointer disabled:opacity-40 ${
+                    themeDef.isDark ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                  title="Increase connector line width"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Quick ERD Relationship Presets (Change 2) */}
           <div className="flex items-center gap-1 pl-1.5 border-l border-slate-700/50">
             <span className={`text-[10px] font-mono font-semibold uppercase ${themeDef.textMutedClass}`}>
@@ -1425,8 +1473,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
-            markerWidth="6"
-            markerHeight="6"
+            markerUnits="userSpaceOnUse"
+            markerWidth="13"
+            markerHeight="13"
             orient="auto-start-reverse"
           >
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#94a3b8" />
@@ -1438,8 +1487,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 24 16"
             refX="22"
             refY="8"
-            markerWidth="13"
-            markerHeight="13"
+            markerUnits="userSpaceOnUse"
+            markerWidth="24"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <line x1="0" y1="8" x2="9" y2="8" stroke="#38bdf8" strokeWidth="2" />
@@ -1453,8 +1503,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 24 16"
             refX="22"
             refY="8"
-            markerWidth="13"
-            markerHeight="13"
+            markerUnits="userSpaceOnUse"
+            markerWidth="24"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <line x1="0" y1="8" x2="9" y2="8" stroke="#38bdf8" strokeWidth="2" />
@@ -1468,8 +1519,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 20 16"
             refX="18"
             refY="8"
-            markerWidth="12"
-            markerHeight="12"
+            markerUnits="userSpaceOnUse"
+            markerWidth="20"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <line x1="0" y1="8" x2="16" y2="8" stroke="#34d399" strokeWidth="2" />
@@ -1483,8 +1535,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 22 16"
             refX="19"
             refY="8"
-            markerWidth="12"
-            markerHeight="12"
+            markerUnits="userSpaceOnUse"
+            markerWidth="22"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <line x1="0" y1="8" x2="16" y2="8" stroke="#38bdf8" strokeWidth="2" />
@@ -1498,8 +1551,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 18 16"
             refX="16"
             refY="8"
-            markerWidth="11"
-            markerHeight="11"
+            markerUnits="userSpaceOnUse"
+            markerWidth="18"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <path d="M 2 8 L 16 2 M 2 8 L 16 8 M 2 8 L 16 14" stroke="#38bdf8" strokeWidth="2" fill="none" strokeLinecap="round" />
@@ -1511,8 +1565,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 18 16"
             refX="16"
             refY="8"
-            markerWidth="11"
-            markerHeight="11"
+            markerUnits="userSpaceOnUse"
+            markerWidth="18"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <line x1="2" y1="8" x2="14" y2="8" stroke="#34d399" strokeWidth="2" />
@@ -1525,8 +1580,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 16 16"
             refX="14"
             refY="8"
-            markerWidth="10"
-            markerHeight="10"
+            markerUnits="userSpaceOnUse"
+            markerWidth="16"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <polygon points="1,8 8,2 15,8 8,14" fill="#0f172a" stroke="#06b6d4" strokeWidth="2" />
@@ -1538,8 +1594,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 16 16"
             refX="14"
             refY="8"
-            markerWidth="10"
-            markerHeight="10"
+            markerUnits="userSpaceOnUse"
+            markerWidth="16"
+            markerHeight="16"
             orient="auto-start-reverse"
           >
             <polygon points="1,8 8,2 15,8 8,14" fill="#06b6d4" stroke="#06b6d4" strokeWidth="1" />
@@ -1551,8 +1608,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             viewBox="0 0 12 12"
             refX="10"
             refY="6"
-            markerWidth="8"
-            markerHeight="8"
+            markerUnits="userSpaceOnUse"
+            markerWidth="12"
+            markerHeight="12"
             orient="auto-start-reverse"
           >
             <circle cx="6" cy="6" r="4" fill="#38bdf8" stroke="#0f172a" strokeWidth="1" />

@@ -162,7 +162,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         d={pathD}
         fill="none"
         stroke="transparent"
-        strokeWidth={20}
+        strokeWidth={Math.max(20, (edge.strokeWidth || 2) + 14)}
         className="pointer-events-auto"
       />
 
@@ -175,6 +175,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
           strokeWidth={(edge.strokeWidth || 2) + 6}
           strokeOpacity={0.25}
           strokeLinecap="round"
+          strokeLinejoin="round"
           className="pointer-events-none animate-pulse"
         />
       )}
@@ -184,8 +185,9 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         d={pathD}
         fill="none"
         stroke={strokeColor}
-        strokeWidth={edge.strokeWidth || (isSelected ? 2.5 : 1.75)}
+        strokeWidth={edge.strokeWidth ?? (isSelected ? 2.5 : 1.75)}
         strokeDasharray={strokeDash}
+        strokeLinejoin="round"
         markerStart={markerStartId ? `url(#${markerStartId})` : undefined}
         markerEnd={markerEndId ? `url(#${markerEndId})` : undefined}
         className="transition-colors group-hover:stroke-sky-400"

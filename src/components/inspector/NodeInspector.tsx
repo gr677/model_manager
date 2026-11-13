@@ -325,6 +325,71 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             </div>
           </div>
 
+          {/* Line Width (Thickness) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className={`text-[10px] uppercase font-mono font-bold ${themeDef.textMutedClass}`}>
+                Line Width
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono font-bold text-sky-400">
+                  {selectedEdge.strokeWidth !== undefined ? `${selectedEdge.strokeWidth}px` : '1.75px (Default)'}
+                </span>
+                {selectedEdge.strokeWidth !== undefined && !isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateEdge?.({ ...selectedEdge, strokeWidth: undefined })}
+                    className="text-[9px] font-mono text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                    title="Reset line width to default"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-6 gap-1 mb-2">
+              {[1, 2, 3, 4, 6, 8].map(w => {
+                const isActive = (selectedEdge.strokeWidth ?? 1.75) === w;
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    disabled={isReadOnly}
+                    onClick={() => onUpdateEdge?.({ ...selectedEdge, strokeWidth: w })}
+                    className={`py-1.5 rounded-lg border text-[10px] font-mono flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-blue-600 text-white font-bold border-blue-500'
+                        : themeDef.isDark
+                        ? 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                    title={`Set line width to ${w}px`}
+                  >
+                    <span
+                      className="w-5 rounded-full"
+                      style={{
+                        height: `${Math.min(w, 6)}px`,
+                        backgroundColor: isActive ? '#ffffff' : (selectedEdge.color || '#94a3b8'),
+                      }}
+                    />
+                    <span>{w}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="range"
+              min={0.5}
+              max={12}
+              step={0.5}
+              disabled={isReadOnly}
+              value={selectedEdge.strokeWidth ?? 1.75}
+              onChange={e => onUpdateEdge?.({ ...selectedEdge, strokeWidth: parseFloat(e.target.value) })}
+              className="w-full h-1.5 rounded-lg appearance-none cursor-pointer accent-blue-500 bg-slate-800"
+              aria-label="Connector line width"
+            />
+          </div>
+
           {/* ERD Cardinality Quick Presets (Change 2) */}
           <div>
             <label className={`text-[10px] uppercase font-mono font-bold block mb-1.5 ${themeDef.textMutedClass}`}>
