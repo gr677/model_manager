@@ -98,10 +98,14 @@ export const GenerateFlowchartModal: React.FC<GenerateFlowchartModalProps> = ({
 
     const isExtending = mode === 'extend' && existingNodes.length > 0;
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 75000);
+
     try {
       const res = await fetch('/api/ai/generate-flowchart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           topic: cleanTopic,
           layout: layoutDirection,
@@ -112,9 +116,21 @@ export const GenerateFlowchartModal: React.FC<GenerateFlowchartModalProps> = ({
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate flowchart from Gemini AI.');
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data?.success) {
+        throw new Error(
+          data?.error ||
+            (res.ok
+              ? 'Received an invalid response from the server.'
+              : `Server returned HTTP ${res.status}${rawText && rawText.length < 180 ? `: ${rawText}` : ''}`)
+        );
       }
 
       onFlowchartGenerated(
@@ -128,8 +144,17 @@ export const GenerateFlowchartModal: React.FC<GenerateFlowchartModalProps> = ({
       setTopic('');
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected error occurred while communicating with Gemini AI.');
+      if (err?.name === 'AbortError') {
+        setErrorMessage('Flowchart generation timed out. Please try a shorter process description or try again.');
+      } else if (/failed to fetch|fetch failed|networkerror|load failed/i.test(String(err?.message || ''))) {
+        setErrorMessage(
+          `${err.message} — Could not complete the request to the backend server or Gemini API. Please check your connection and try again.`
+        );
+      } else {
+        setErrorMessage(err?.message || 'An unexpected error occurred while communicating with Gemini AI.');
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setIsLoading(false);
     }
   };

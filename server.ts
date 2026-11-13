@@ -15,7 +15,7 @@ import os from 'os';
 import { initialDiagramDocument } from './src/data/seedDiagrams';
 import { getExampleDiagramForType } from './src/data/diagramExamples';
 import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge, DiagramType } from './src/types/diagram';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -2314,13 +2314,17 @@ app.post('/api/ai/generate-flowchart', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
+        timeout: 60000,
         headers: {
           'User-Agent': 'aistudio-build',
         },
       },
     });
 
-    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+    const modelsToTry: Array<{ name: string; useLowThinking: boolean }> = [
+      { name: 'gemini-4-hydrogen', useLowThinking: true },
+      { name: 'gemini-3.1-flash-lite', useLowThinking: false },
+    ];
     const isHorizontal = layout === 'horizontal';
 
     const FLOWCHART_SYMBOL_SPEC: Record<
@@ -2611,33 +2615,86 @@ INSTRUCTIONS:
 4. In "connections", define all directed flow arrows between step IDs so the graph is fully connected from start to end(s), with branch labels ("Yes", "No", etc.) on every decision branch.`;
     }
 
+    const describeGeminiError = (err: any): string => {
+      const msg = String(err?.message || err || 'Unknown Gemini error');
+      const causeCode = err?.cause?.code ? String(err.cause.code) : '';
+      const causeMsg = err?.cause?.message ? String(err.cause.message) : '';
+      if (/fetch failed/i.test(msg)) {
+        const causeDetail = [causeCode, causeMsg].filter(Boolean).join(': ');
+        return causeDetail
+          ? `Network request to Gemini API failed (${causeDetail}). Please check internet/proxy connectivity or try again.`
+          : 'Network request to Gemini API failed (connection reset or timed out). Please try again.';
+      }
+      return causeMsg && !msg.includes(causeMsg) ? `${msg} (${causeMsg})` : msg;
+    };
+
+    const isRetryableError = (err: any): boolean => {
+      const status = Number(err?.status || err?.code || 0);
+      if (status === 429 || status >= 500) return true;
+      const msg = String(err?.message || '').toLowerCase();
+      const causeCode = String(err?.cause?.code || '').toUpperCase();
+      return (
+        msg.includes('fetch failed') ||
+        msg.includes('timeout') ||
+        msg.includes('econnreset') ||
+        msg.includes('etimedout') ||
+        ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(causeCode)
+      );
+    };
+
     let response: any = null;
     let lastError: any = null;
 
-    for (const modelName of modelsToTry) {
-      try {
-        logDebug('info', 'GEMINI_AI', `Attempting model ${modelName} to generate flowchart...`);
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: promptText,
-          config: {
-            systemInstruction:
-              'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
-            responseMimeType: 'application/json',
-            responseSchema: flowchartResponseSchema,
-          },
-        });
-        if (response && response.text) {
+    for (const modelSpec of modelsToTry) {
+      const maxAttempts = 2;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          logDebug(
+            'info',
+            'GEMINI_AI',
+            `Attempting model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) to generate flowchart...`
+          );
+          response = await ai.models.generateContent({
+            model: modelSpec.name,
+            contents: promptText,
+            config: {
+              systemInstruction:
+                'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
+              responseMimeType: 'application/json',
+              responseSchema: flowchartResponseSchema,
+              ...(modelSpec.useLowThinking
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                : {}),
+            },
+          });
+          if (response && response.text) {
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const detail = describeGeminiError(err);
+          logDebug(
+            'warn',
+            'GEMINI_AI',
+            `Model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) failed during flowchart generation: ${detail}`
+          );
+          if (attempt < maxAttempts && isRetryableError(err)) {
+            await new Promise(resolve => setTimeout(resolve, 800 * attempt));
+            continue;
+          }
           break;
         }
-      } catch (err: any) {
-        lastError = err;
-        logDebug('warn', 'GEMINI_AI', `Model ${modelName} failed during flowchart generation: ${err?.message || err}`);
+      }
+      if (response && response.text) {
+        break;
       }
     }
 
     if (!response || !response.text) {
-      throw lastError || new Error('No response from Gemini API models for flowchart generation.');
+      if (lastError) {
+        throw new Error(describeGeminiError(lastError));
+      }
+      throw new Error('No response from Gemini API models for flowchart generation.');
     }
 
     const parsed = JSON.parse(response.text.trim());
@@ -3064,10 +3121,16 @@ INSTRUCTIONS:
       durationMs,
     });
   } catch (err: any) {
-    logDebug('error', 'GEMINI_AI', `Failed to generate flowchart: ${err.message}`, err.stack);
+    const rawMsg = String(err?.message || 'Failed to generate flowchart with Gemini AI');
+    const causeCode = err?.cause?.code ? String(err.cause.code) : '';
+    const causeMsg = err?.cause?.message ? String(err.cause.message) : '';
+    const friendlyError = /fetch failed/i.test(rawMsg)
+      ? `Network request to Gemini API failed${causeCode || causeMsg ? ` (${[causeCode, causeMsg].filter(Boolean).join(': ')})` : ''}. Please verify server connectivity and try again.`
+      : rawMsg;
+    logDebug('error', 'GEMINI_AI', `Failed to generate flowchart: ${friendlyError}`, err?.stack);
     res.status(500).json({
       success: false,
-      error: err.message || 'Failed to generate flowchart with Gemini AI',
+      error: friendlyError,
       details: String(err?.stack || err),
     });
   }
