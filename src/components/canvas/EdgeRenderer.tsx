@@ -251,7 +251,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
                 fill="#0284c7"
                 stroke="#ffffff"
                 strokeWidth={1.5}
-                className="shadow-md transition-transform group-hover/segment:scale-125"
+                className="shadow-md transition-transform [transform-box:fill-box] origin-center group-hover/segment:scale-125"
               />
               {/* Grip lines */}
               <line x1={0} y1={-6} x2={0} y2={6} stroke="#ffffff" strokeWidth={1.5} />
@@ -283,7 +283,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
                 fill="#0284c7"
                 stroke="#ffffff"
                 strokeWidth={1.5}
-                className="shadow-md transition-transform group-hover/segment:scale-125"
+                className="shadow-md transition-transform [transform-box:fill-box] origin-center group-hover/segment:scale-125"
               />
               {/* Grip lines */}
               <line x1={-6} y1={0} x2={6} y2={0} stroke="#ffffff" strokeWidth={1.5} />
@@ -319,7 +319,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               fill="rgba(56, 189, 248, 0.25)"
               stroke="#38bdf8"
               strokeWidth={1.5}
-              className="animate-ping origin-center pointer-events-none"
+              className="animate-ping [transform-box:fill-box] origin-center pointer-events-none"
             />
             {/* Outer handle ring */}
             <circle
@@ -327,7 +327,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               fill="#0284c7"
               stroke="#ffffff"
               strokeWidth={2.5}
-              className="shadow-lg transition-transform group-hover/handle:scale-130 pointer-events-none"
+              className="shadow-lg transition-transform [transform-box:fill-box] origin-center group-hover/handle:scale-130 pointer-events-none"
             />
             {/* Inner dot */}
             <circle r={3} fill="#ffffff" className="pointer-events-none" />
@@ -355,7 +355,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               fill="rgba(52, 211, 153, 0.25)"
               stroke="#34d399"
               strokeWidth={1.5}
-              className="animate-ping origin-center pointer-events-none"
+              className="animate-ping [transform-box:fill-box] origin-center pointer-events-none"
             />
             {/* Outer handle ring */}
             <circle
@@ -363,7 +363,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               fill="#10b981"
               stroke="#ffffff"
               strokeWidth={2.5}
-              className="shadow-lg transition-transform group-hover/handle:scale-130 pointer-events-none"
+              className="shadow-lg transition-transform [transform-box:fill-box] origin-center group-hover/handle:scale-130 pointer-events-none"
             />
             {/* Inner dot */}
             <circle r={3} fill="#ffffff" className="pointer-events-none" />
