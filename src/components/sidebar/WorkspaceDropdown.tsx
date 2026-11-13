@@ -38,24 +38,24 @@ const AVAILABLE_DIAGRAM_TYPES: Array<{
   category: string;
   description: string;
 }> = [
-  { id: 'generic', label: 'Universal Freeform (All Shapes)', category: 'General', description: 'Zero notation rules - mix all shapes freely' },
-  { id: 'erd', label: 'Entity Relationship (ERD)', category: 'Software & Data', description: 'Database tables, columns, PK/FK, Crow\'s foot' },
+  { id: 'generic', label: '★ Universal Freeform (All Shapes)', category: 'General', description: 'Zero notation rules - mix all shapes freely' },
   { id: 'bpmn', label: 'BPMN 2.0 Business Process', category: 'Workflows', description: 'Tasks, gateways, events, sub-processes' },
-  { id: 'flowchart', label: 'Standard Flowchart', category: 'Workflows', description: 'Process steps, decisions, inputs, terminals' },
-  { id: 'uml', label: 'UML Class Diagram', category: 'Software & Data', description: 'Classes, interfaces, inheritance, associations' },
-  { id: 'uml-sequence', label: 'UML Sequence Diagram', category: 'Software & Data', description: 'Lifelines, sync/async messages, activations' },
-  { id: 'uml-usecase', label: 'UML Use Case', category: 'Software & Data', description: 'Actors, system boundaries, use case bubbles' },
-  { id: 'uml-state', label: 'UML State Machine', category: 'Software & Data', description: 'States, transitions, entry/exit actions' },
-  { id: 'dfd', label: 'Data Flow Diagram (DFD)', category: 'Software & Data', description: 'Processes, data stores, external entities' },
-  { id: 'idef0', label: 'IDEF0 Functional Model', category: 'Engineering', description: 'Inputs, Controls, Outputs, Mechanisms (ICOM)' },
+  { id: 'c4', label: 'C4 Architecture Model', category: 'Software & Data', description: 'Context, Container, Component layers' },
   { id: 'ceqa', label: 'CEQA Environmental Flow', category: 'Regulatory', description: 'Notice of Intent, EIR phases, compliance review' },
-  { id: 'mindmap', label: 'Mind Map', category: 'Ideation', description: 'Central topic, branches, associative concepts' },
+  { id: 'dfd', label: 'Data Flow Diagram (DFD)', category: 'Software & Data', description: 'Processes, data stores, external entities' },
+  { id: 'erd', label: 'Entity Relationship (ERD)', category: 'Software & Data', description: 'Database tables, columns, PK/FK, Crow\'s foot' },
+  { id: 'fishbone', label: 'Fishbone (Ishikawa)', category: 'Quality', description: 'Root cause analysis categories & ribs' },
+  { id: 'flowchart', label: 'Flowchart (Standard ANSI/ISO)', category: 'Workflows', description: 'Terminators, processes, decisions, I/O, documents, connectors, database' },
   { id: 'gantt', label: 'Gantt Project Timelines', category: 'Project Mgmt', description: 'Phases, milestones, task bars, dependencies' },
+  { id: 'idef0', label: 'IDEF0 Functional Model', category: 'Engineering', description: 'Inputs, Controls, Outputs, Mechanisms (ICOM)' },
+  { id: 'mindmap', label: 'Mind Map', category: 'Ideation', description: 'Central topic, branches, associative concepts' },
   { id: 'pert', label: 'PERT / CPM Network', category: 'Project Mgmt', description: 'Activity nodes, critical paths, float analysis' },
   { id: 'sipoc', label: 'SIPOC Matrix', category: 'Quality', description: 'Suppliers, Inputs, Process, Outputs, Customers' },
-  { id: 'c4', label: 'C4 Architecture Model', category: 'Software & Data', description: 'Context, Container, Component layers' },
+  { id: 'uml', label: 'UML Class Diagram', category: 'Software & Data', description: 'Classes, interfaces, inheritance, associations' },
+  { id: 'uml-sequence', label: 'UML Sequence Diagram', category: 'Software & Data', description: 'Lifelines, sync/async messages, activations' },
+  { id: 'uml-state', label: 'UML State Machine', category: 'Software & Data', description: 'States, transitions, entry/exit actions' },
+  { id: 'uml-usecase', label: 'UML Use Case', category: 'Software & Data', description: 'Actors, system boundaries, use case bubbles' },
   { id: 'vsm', label: 'Value Stream Mapping (VSM)', category: 'Engineering', description: 'Cycle times, changeover, Kaizen bursts' },
-  { id: 'fishbone', label: 'Fishbone (Ishikawa)', category: 'Quality', description: 'Root cause analysis categories & ribs' },
 ];
 
 export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({

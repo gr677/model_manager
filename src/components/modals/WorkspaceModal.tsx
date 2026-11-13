@@ -316,24 +316,24 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                         : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   >
-                    <option value="generic">Universal Freeform (All Shapes)</option>
+                    <option value="generic">★ Universal Freeform (All Shapes)</option>
                     <option value="bpmn">BPMN 2.0 Business Process</option>
+                    <option value="c4">C4 Architecture</option>
+                    <option value="ceqa">CEQA Environmental</option>
+                    <option value="dfd">Data Flow Diagram (DFD)</option>
                     <option value="erd">Entity Relationship (ERD)</option>
-                    <option value="flowchart">Standard Flowchart</option>
+                    <option value="fishbone">Fishbone Ishikawa</option>
+                    <option value="flowchart">Flowchart (Standard ANSI/ISO)</option>
+                    <option value="gantt">Gantt Timelines</option>
+                    <option value="idef0">IDEF0 Functional Model</option>
+                    <option value="mindmap">Mind Map</option>
+                    <option value="pert">PERT Network</option>
+                    <option value="sipoc">SIPOC Matrix</option>
                     <option value="uml">UML Class Diagram</option>
                     <option value="uml-sequence">UML Sequence Diagram</option>
-                    <option value="uml-usecase">UML Use Case</option>
                     <option value="uml-state">UML State Machine</option>
-                    <option value="dfd">Data Flow Diagram (DFD)</option>
-                    <option value="idef0">IDEF0 Functional Model</option>
-                    <option value="ceqa">CEQA Environmental</option>
-                    <option value="mindmap">Mind Map</option>
-                    <option value="gantt">Gantt Timelines</option>
-                    <option value="pert">PERT Network</option>
-                    <option value="c4">C4 Architecture</option>
+                    <option value="uml-usecase">UML Use Case</option>
                     <option value="vsm">Value Stream Map (VSM)</option>
-                    <option value="sipoc">SIPOC Matrix</option>
-                    <option value="fishbone">Fishbone Ishikawa</option>
                   </select>
                 </div>
 

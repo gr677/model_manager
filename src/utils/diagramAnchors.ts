@@ -141,6 +141,7 @@ export function getNodeAnchorRelativeCoords(node: DiagramNode, anchor?: string):
     node.type === 'uml-usecase' ||
     node.type === 'bpmn-event' ||
     node.type === 'dfd-process' ||
+    node.type === 'flow-connector' ||
     node.data?.shape === 'oval';
 
   if (isOval) {
@@ -180,6 +181,69 @@ export function getNodeAnchorRelativeCoords(node: DiagramNode, anchor?: string):
         return { x: cx - rx * 0.5, y: cy - ry * 0.866025 };
       default:
         return { x: cx, y: cy };
+    }
+  }
+
+  // 1b. Inverted Triangle (Flowchart Merge / Summing Junction)
+  if (node.type === 'flow-merge') {
+    switch (anchorId) {
+      case 'top-left':
+        return { x: w * 0.25, y: 0 };
+      case 'top':
+        return { x: w * 0.5, y: 0 };
+      case 'top-right':
+        return { x: w * 0.75, y: 0 };
+      case 'right-top':
+        return { x: w * 0.875, y: h * 0.25 };
+      case 'right':
+        return { x: w * 0.75, y: h * 0.5 };
+      case 'right-bottom':
+        return { x: w * 0.625, y: h * 0.75 };
+      case 'bottom-right':
+      case 'bottom':
+      case 'bottom-left':
+        return { x: w * 0.5, y: h };
+      case 'left-bottom':
+        return { x: w * 0.375, y: h * 0.75 };
+      case 'left':
+        return { x: w * 0.25, y: h * 0.5 };
+      case 'left-top':
+        return { x: w * 0.125, y: h * 0.25 };
+      default:
+        return { x: w * 0.5, y: h * 0.5 };
+    }
+  }
+
+  // 1c. Hexagon (Flowchart Preparation)
+  if (node.type === 'flow-preparation') {
+    const inset = Math.min(w * 0.16, 26);
+    switch (anchorId) {
+      case 'top-left':
+        return { x: inset + (w - 2 * inset) * 0.25, y: 0 };
+      case 'top':
+        return { x: w * 0.5, y: 0 };
+      case 'top-right':
+        return { x: inset + (w - 2 * inset) * 0.75, y: 0 };
+      case 'right-top':
+        return { x: w - inset * 0.5, y: h * 0.25 };
+      case 'right':
+        return { x: w, y: h * 0.5 };
+      case 'right-bottom':
+        return { x: w - inset * 0.5, y: h * 0.75 };
+      case 'bottom-right':
+        return { x: inset + (w - 2 * inset) * 0.75, y: h };
+      case 'bottom':
+        return { x: w * 0.5, y: h };
+      case 'bottom-left':
+        return { x: inset + (w - 2 * inset) * 0.25, y: h };
+      case 'left-bottom':
+        return { x: inset * 0.5, y: h * 0.75 };
+      case 'left':
+        return { x: 0, y: h * 0.5 };
+      case 'left-top':
+        return { x: inset * 0.5, y: h * 0.25 };
+      default:
+        return { x: w * 0.5, y: h * 0.5 };
     }
   }
 

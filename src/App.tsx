@@ -95,7 +95,7 @@ export default function App() {
   // Modals state
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('generic');
   const [lastPageByType, setLastPageByType] = useState<Record<string, string>>({});
   const [isVersionsModalOpen, setIsVersionsModalOpen] = useState(false);
   const [isRestApiModalOpen, setIsRestApiModalOpen] = useState(false);

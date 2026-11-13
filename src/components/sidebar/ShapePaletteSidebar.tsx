@@ -35,12 +35,33 @@ import {
   Archive,
   Lock,
   Circle,
+  ArrowLeft,
+  ArrowRight,
+  FolderTree,
+  FileCode,
+  Check,
+  Upload,
+  ImageIcon,
+  FolderOpen,
+  X,
+  Square,
+  Diamond,
+  FileText,
+  Files,
+  Hexagon,
+  Clock,
+  GitMerge,
+  CornerRightDown,
+  Keyboard,
+  CircleStop,
+  HelpCircle,
+  Columns3,
+  UserCheck,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { WorkspaceDropdown } from './WorkspaceDropdown';
 import { DiagramDocument } from '../../types/diagram';
 import { workspaceService } from '../../services/workspaceService';
-import { ArrowLeft, FolderTree, FileCode, Check, Upload, ImageIcon, FolderOpen, X } from 'lucide-react';
 
 interface ShapePaletteSidebarProps {
   currentDiagramType: DiagramType;
@@ -97,28 +118,27 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   };
 
   const categories = [
-    { id: 'all', label: 'All Diagram Shapes' },
     { id: 'generic', label: '★ Universal Freeform (No Rules - All Shapes)' },
     { id: 'bpmn', label: 'BPMN 2.0 Process' },
+    { id: 'c4', label: 'C4 Architecture' },
+    { id: 'ceqa', label: 'CEQA Environmental' },
+    { id: 'containers', label: 'Containers & Groups' },
+    { id: 'dfd', label: 'DFD & Yourdon' },
     { id: 'erd', label: 'ERD Database' },
+    { id: 'fishbone', label: 'Fishbone (Ishikawa)' },
+    { id: 'flowchart', label: 'Flowchart (Standard ANSI/ISO)' },
+    { id: 'gantt', label: 'Gantt Timelines' },
+    { id: 'idef0', label: 'IDEF0 (ICOM)' },
+    { id: 'mindmap', label: 'Mind Mapping' },
+    { id: 'pert', label: 'PERT Network' },
+    { id: 'sipoc', label: 'SIPOC Matrix' },
+    { id: 'notes', label: 'Sticky Notes' },
     { id: 'swimlane', label: 'Swimlanes & Pools' },
     { id: 'uml', label: 'UML Class Diagrams' },
     { id: 'uml-sequence', label: 'UML Sequence' },
-    { id: 'uml-usecase', label: 'UML Use Case' },
     { id: 'uml-state', label: 'UML State Machine' },
-    { id: 'dfd', label: 'DFD & Yourdon' },
-    { id: 'idef0', label: 'IDEF0 (ICOM)' },
-    { id: 'ceqa', label: 'CEQA Environmental' },
-    { id: 'sipoc', label: 'SIPOC Matrix' },
-    { id: 'pert', label: 'PERT Network' },
-    { id: 'gantt', label: 'Gantt Timelines' },
-    { id: 'flowchart', label: 'Standard Flowcharts' },
-    { id: 'c4', label: 'C4 Architecture' },
-    { id: 'mindmap', label: 'Mind Mapping' },
+    { id: 'uml-usecase', label: 'UML Use Case' },
     { id: 'vsm', label: 'Value Stream (VSM)' },
-    { id: 'fishbone', label: 'Fishbone (Ishikawa)' },
-    { id: 'notes', label: 'Sticky Notes' },
-    { id: 'containers', label: 'Containers & Groups' },
   ];
 
   const filteredTemplates = SHAPE_TEMPLATES.filter(item => {
@@ -144,10 +164,23 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
       case 'CirclePlay':
       case 'SquareCheck':
       case 'GitFork': return <Cpu className="w-4 h-4 text-blue-400" />;
+      case 'CircleStop': return <CircleStop className="w-4 h-4 text-rose-400" />;
+      case 'Square': return <Square className="w-4 h-4 text-blue-400" />;
+      case 'Diamond': return <Diamond className="w-4 h-4 text-amber-400" />;
+      case 'HelpCircle': return <HelpCircle className="w-4 h-4 text-amber-400" />;
+      case 'ArrowRight': return <ArrowRight className="w-4 h-4 text-sky-400" />;
+      case 'FileText': return <FileText className="w-4 h-4 text-slate-300" />;
+      case 'Files': return <Files className="w-4 h-4 text-slate-300" />;
+      case 'CornerRightDown': return <CornerRightDown className="w-4 h-4 text-indigo-400" />;
+      case 'Hexagon': return <Hexagon className="w-4 h-4 text-purple-400" />;
+      case 'Keyboard': return <Keyboard className="w-4 h-4 text-teal-400" />;
+      case 'Clock': return <Clock className="w-4 h-4 text-amber-400" />;
+      case 'GitMerge': return <GitMerge className="w-4 h-4 text-violet-400" />;
       case 'Layers': return <Layers className="w-4 h-4 text-purple-400" />;
       case 'Component': return <Component className="w-4 h-4 text-cyan-400" />;
       case 'ArrowDownUp': return <ArrowDownUp className="w-4 h-4 text-teal-400" />;
       case 'Users': return <Users className="w-4 h-4 text-blue-400" />;
+      case 'UserCheck': return <UserCheck className="w-4 h-4 text-slate-300" />;
       case 'CircleDot': return <CircleDot className="w-4 h-4 text-violet-400" />;
       case 'Database': return <Database className="w-4 h-4 text-amber-400" />;
       case 'SquareStack': return <SquareStack className="w-4 h-4 text-blue-400" />;
@@ -156,8 +189,9 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
       case 'Network': return <Network className="w-4 h-4 text-rose-400" />;
       case 'CalendarCheck': return <CalendarCheck className="w-4 h-4 text-emerald-400" />;
       case 'StickyNote': return <StickyNote className="w-4 h-4 text-amber-300" />;
-      case 'BoxSelect':
-      case 'Columns3': return <BoxSelect className="w-4 h-4 text-indigo-400" />;
+      case 'Image': return <ImageIcon className="w-4 h-4 text-sky-400" />;
+      case 'BoxSelect': return <BoxSelect className="w-4 h-4 text-indigo-400" />;
+      case 'Columns3': return <Columns3 className="w-4 h-4 text-indigo-400" />;
       case 'TrendingUp': return <TrendingUp className="w-4 h-4 text-amber-400" />;
       case 'GitBranch': return <GitBranch className="w-4 h-4 text-rose-400" />;
       case 'Sparkles': return <Sparkles className="w-4 h-4 text-purple-400" />;
@@ -533,9 +567,9 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
 
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-slate-400">
           <span>{filteredTemplates.length} SHAPES AVAILABLE</span>
-          {selectedCategory !== 'all' && (
+          {selectedCategory !== 'generic' && (
             <button
-              onClick={() => onSelectCategory('all')}
+              onClick={() => onSelectCategory('generic')}
               className="text-blue-400 hover:underline cursor-pointer"
             >
               Show All

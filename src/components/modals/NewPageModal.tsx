@@ -49,25 +49,26 @@ export const NewPageModal: React.FC<NewPageModalProps> = ({
   };
 
   const types: { id: DiagramType; label: string; category: string }[] = [
+    { id: 'generic', label: '★ Universal Freeform (No Rules - All Shapes)', category: 'General' },
     { id: 'bpmn', label: 'BPMN 2.0 Business Process', category: 'Business Process' },
+    { id: 'c4', label: 'C4 Software Architecture Model', category: 'Software & Data' },
+    { id: 'fishbone', label: 'Cause & Effect (Fishbone / Ishikawa)', category: 'Regulatory & Quality' },
+    { id: 'ceqa', label: 'CEQA Environmental Clearance Flow', category: 'Regulatory & Quality' },
+    { id: 'dfd', label: 'Data Flow Diagram (DFD - Gane & Sarson)', category: 'Software & Data' },
     { id: 'erd', label: 'Entity Relationship Diagram (ERD)', category: 'Software & Data' },
+    { id: 'flowchart', label: 'Flowchart (Standard ANSI/ISO)', category: 'Business Process' },
+    { id: 'gantt', label: 'Gantt Timeline Schedule', category: 'Project Management' },
+    { id: 'idef0', label: 'IDEF0 Function Architecture (ICOM)', category: 'Industrial & Engineering' },
+    { id: 'mindmap', label: 'Mind Map & Concept Map', category: 'Business Process' },
+    { id: 'pert', label: 'PERT Network (Critical Path)', category: 'Project Management' },
+    { id: 'sipoc', label: 'SIPOC High-Level Value Matrix', category: 'Regulatory & Quality' },
     { id: 'swimlane', label: 'Swimlanes & Cross-Functional', category: 'Business Process' },
     { id: 'uml', label: 'UML Class Diagram & Interfaces', category: 'Software & Data' },
     { id: 'uml-sequence', label: 'UML Sequence Diagram', category: 'Software & Data' },
-    { id: 'uml-usecase', label: 'UML Use Case Diagram', category: 'Software & Data' },
     { id: 'uml-state', label: 'UML State Machine Diagram', category: 'Software & Data' },
-    { id: 'dfd', label: 'Data Flow Diagram (DFD - Gane & Sarson)', category: 'Software & Data' },
-    { id: 'yourdon', label: 'Yourdon / DeMarco Structured Flow', category: 'Software & Data' },
-    { id: 'idef0', label: 'IDEF0 Function Architecture (ICOM)', category: 'Industrial & Engineering' },
-    { id: 'ceqa', label: 'CEQA Environmental Clearance Flow', category: 'Regulatory & Quality' },
-    { id: 'sipoc', label: 'SIPOC High-Level Value Matrix', category: 'Regulatory & Quality' },
-    { id: 'pert', label: 'PERT Network (Critical Path)', category: 'Project Management' },
-    { id: 'gantt', label: 'Gantt Timeline Schedule', category: 'Project Management' },
-    { id: 'flowchart', label: 'Standard ANSI/ISO Flowchart', category: 'Business Process' },
-    { id: 'c4', label: 'C4 Software Architecture Model', category: 'Software & Data' },
-    { id: 'mindmap', label: 'Mind Map & Concept Map', category: 'Business Process' },
+    { id: 'uml-usecase', label: 'UML Use Case Diagram', category: 'Software & Data' },
     { id: 'vsm', label: 'Value Stream Mapping (VSM)', category: 'Industrial & Engineering' },
-    { id: 'fishbone', label: 'Cause & Effect (Fishbone / Ishikawa)', category: 'Regulatory & Quality' },
+    { id: 'yourdon', label: 'Yourdon / DeMarco Structured Flow', category: 'Software & Data' },
   ];
 
   return (

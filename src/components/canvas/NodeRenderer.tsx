@@ -1320,6 +1320,317 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         );
       }
 
+      // 22b. Flowchart Flowline (Arrow)
+      case 'flow-arrow': {
+        const fill = node.style?.fill || '#38bdf8';
+        const stroke = node.style?.stroke || '#0ea5e9';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#ffffff';
+        const w = node.width;
+        const h = node.height;
+        const cy = h / 2;
+        const headW = Math.min(24, w * 0.28);
+        const shaftHalfH = Math.max(3, Math.min(7, h * 0.14));
+        const headHalfH = Math.max(10, Math.min(18, h * 0.42));
+        const pad = 4;
+        const bodyEnd = Math.max(pad + 10, w - headW - pad);
+        const points = [
+          `${pad},${cy - shaftHalfH}`,
+          `${bodyEnd},${cy - shaftHalfH}`,
+          `${bodyEnd},${cy - headHalfH}`,
+          `${w - pad},${cy}`,
+          `${bodyEnd},${cy + headHalfH}`,
+          `${bodyEnd},${cy + shaftHalfH}`,
+          `${pad},${cy + shaftHalfH}`,
+        ].join(' ');
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <polygon
+                points={points}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+            {node.label && (
+              <div className="relative z-10 -translate-y-4 px-2 py-0.5 rounded bg-slate-950/75 text-[10px] font-semibold whitespace-nowrap pointer-events-none select-none" style={{ color: textColor }}>
+                {node.label}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // 22c. Flowchart Multiple Documents (Stacked Wavy-Bottom Sheets)
+      case 'flow-multi-document': {
+        const fill = node.style?.fill || 'rgba(30, 41, 59, 0.94)';
+        const stroke = node.style?.stroke || '#94a3b8';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#f1f5f9';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const offset = 6;
+        const docW = w - offset * 2 - pad * 2;
+        const docH = h - offset * 2 - pad * 2;
+        const waveH = Math.min(13, docH * 0.18);
+
+        const makeDocPath = (ox: number, oy: number) =>
+          `M ${ox} ${oy} L ${ox + docW} ${oy} L ${ox + docW} ${oy + docH - waveH} C ${ox + docW * 0.72} ${oy + docH + waveH * 0.45}, ${ox + docW * 0.38} ${oy + docH - waveH * 1.45}, ${ox} ${oy + docH - waveH} Z`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path d={makeDocPath(pad + offset * 2, pad)} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" opacity={0.7} />
+              <path d={makeDocPath(pad + offset, pad + offset)} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" opacity={0.85} />
+              <path d={makeDocPath(pad, pad + offset * 2)} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />
+            </svg>
+            <div className="relative z-10 text-center px-4 pt-2 pb-2 max-w-[82%] flex flex-col items-center justify-center pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22d. Flowchart On-Page Connector (Circle)
+      case 'flow-connector': {
+        const fill = node.style?.fill || 'rgba(15, 23, 42, 0.95)';
+        const stroke = node.style?.stroke || '#38bdf8';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#e0f2fe';
+        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, 'rgba(15, 23, 42, 0.95)');
+
+        return (
+          <div
+            className="flex items-center justify-center w-full h-full rounded-full shadow-lg border-2 text-center select-none"
+            style={{
+              ...bgStyle,
+              borderColor: stroke,
+              borderWidth: `${strokeWidth}px`,
+              color: textColor,
+            }}
+          >
+            <span className="text-xs font-bold leading-tight truncate max-w-[80%]">
+              {node.label}
+            </span>
+          </div>
+        );
+      }
+
+      // 22e. Flowchart Off-Page Connector (Downward Home-Plate Pentagon)
+      case 'flow-offpage-connector': {
+        const fill = node.style?.fill || 'rgba(49, 46, 129, 0.9)';
+        const stroke = node.style?.stroke || '#818cf8';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#eef2ff';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const shoulderY = h * 0.65;
+        const points = `${pad},${pad} ${w - pad},${pad} ${w - pad},${shoulderY} ${w / 2},${h - pad} ${pad},${shoulderY}`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <polygon
+                points={points}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="relative z-10 text-center px-2 pb-3 max-w-[85%] pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22f. Flowchart Preparation (Hexagon)
+      case 'flow-preparation': {
+        const fill = node.style?.fill || 'rgba(88, 28, 135, 0.85)';
+        const stroke = node.style?.stroke || '#c084fc';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#faf5ff';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const inset = Math.min(w * 0.16, 26);
+        const points = `${inset},${pad} ${w - inset},${pad} ${w - pad},${h / 2} ${w - inset},${h - pad} ${inset},${h - pad} ${pad},${h / 2}`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <polygon
+                points={points}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="relative z-10 text-center px-5 max-w-[80%] pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22g. Flowchart Manual Input (Slanted-Top Trapezoid)
+      case 'flow-manual-input': {
+        const fill = node.style?.fill || 'rgba(15, 118, 110, 0.85)';
+        const stroke = node.style?.stroke || '#2dd4bf';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#f0fdfa';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const topLeftY = Math.min(h * 0.34, 24);
+        const points = `${pad},${topLeftY} ${w - pad},${pad} ${w - pad},${h - pad} ${pad},${h - pad}`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <polygon
+                points={points}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="relative z-10 text-center px-3 pt-2 max-w-[88%] pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22h. Flowchart Database (3D Cylinder)
+      case 'flow-database': {
+        const fill = node.style?.fill || 'rgba(15, 23, 42, 0.95)';
+        const stroke = node.style?.stroke || '#38bdf8';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#e0f2fe';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const rx = (w - pad * 2) / 2;
+        const ry = Math.min(14, h * 0.16);
+        const cx = w / 2;
+        const topY = pad + ry;
+        const botY = h - pad - ry;
+        const bodyPath = `M ${pad} ${topY} L ${pad} ${botY} A ${rx} ${ry} 0 0 0 ${w - pad} ${botY} L ${w - pad} ${topY} Z`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path d={bodyPath} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />
+              <ellipse cx={cx} cy={topY} rx={rx} ry={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+            </svg>
+            <div className="relative z-10 text-center px-3 pt-4 max-w-[88%] pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22i. Flowchart Delay (Flat Left, Curved Right "D" Shape)
+      case 'flow-delay': {
+        const fill = node.style?.fill || 'rgba(146, 64, 14, 0.85)';
+        const stroke = node.style?.stroke || '#fbbf24';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#fef3c7';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const r = (h - pad * 2) / 2;
+        const arcStartX = Math.max(pad + 20, w - pad - r);
+        const d = `M ${pad} ${pad} L ${arcStartX} ${pad} A ${r} ${r} 0 0 1 ${arcStartX} ${h - pad} L ${pad} ${h - pad} Z`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path d={d} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />
+            </svg>
+            <div className="relative z-10 text-center px-4 pr-6 max-w-[85%] pointer-events-none select-none">
+              <span className="font-semibold text-xs leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 22j. Flowchart Merge / Summing Junction (Inverted Triangle)
+      case 'flow-merge': {
+        const fill = node.style?.fill || 'rgba(30, 41, 59, 0.95)';
+        const stroke = node.style?.stroke || '#a78bfa';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#f5f3ff';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const points = `${pad},${pad} ${w - pad},${pad} ${w / 2},${h - pad}`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <polygon
+                points={points}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="relative z-10 text-center px-3 pb-4 max-w-[80%] pointer-events-none select-none">
+              <span className="font-semibold text-[11px] leading-tight line-clamp-2" style={{ color: textColor }}>
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
       // 23. C4 Architecture Person
       case 'c4-person': {
         const fill = node.style?.fill || '#08427b';
