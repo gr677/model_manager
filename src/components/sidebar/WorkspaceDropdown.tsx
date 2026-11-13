@@ -28,7 +28,7 @@ import { THEMES } from '../../utils/themeConfig';
 import { initialDiagramDocument } from '../../data/seedDiagrams';
 
 interface WorkspaceDropdownProps {
-  onLoadDiagram: (doc: DiagramDocument) => void;
+  onLoadDiagram: (doc: DiagramDocument, filename?: string, workspaceId?: string) => void;
   theme?: AppTheme;
 }
 
@@ -116,13 +116,13 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
     const ws = workspaceService.setActiveWorkspace(wsId);
     setActiveWs(ws);
 
-    // Explicitly open data\root.json for this workspace
+    // Explicitly open data\root.json for this workspace and update activeDiagramFilename
     try {
-      const serverDoc = await workspaceService.fetchDiagramFromServer(wsId, 'root.json');
-      onLoadDiagram(serverDoc);
+      const doc = await workspaceService.loadAndSetActiveDiagram('root.json', wsId);
+      onLoadDiagram(doc, 'root.json', wsId);
     } catch {
       const rootDoc = workspaceService.setActiveDiagram('root.json');
-      onLoadDiagram(rootDoc);
+      onLoadDiagram(rootDoc, 'root.json', wsId);
     }
 
     setIsOpen(false);
@@ -147,8 +147,14 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
     setConfirmDeleteWsId(null);
     const newActive = workspaceService.getActiveWorkspace();
     setActiveWs(newActive);
-    const diag = workspaceService.getActiveDiagram();
-    onLoadDiagram(diag.document);
+    const targetFilename = newActive.activeDiagramFilename || 'root.json';
+    try {
+      const doc = await workspaceService.loadAndSetActiveDiagram(targetFilename, newActive.id);
+      onLoadDiagram(doc, targetFilename, newActive.id);
+    } catch {
+      const diag = workspaceService.getActiveDiagram();
+      onLoadDiagram(diag.document, diag.filename, newActive.id);
+    }
     setStore({ ...workspaceService.getStore() });
   };
 
@@ -160,7 +166,7 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
     const createdWs = await workspaceService.createWorkspace(newWsName.trim(), selectedDiagramType);
     setActiveWs(createdWs);
     const rootDoc = createdWs.diagrams['root.json']?.document || workspaceService.getActiveDiagram().document;
-    onLoadDiagram(rootDoc);
+    onLoadDiagram(rootDoc, 'root.json', createdWs.id);
     setStore({ ...workspaceService.getStore() });
 
     // Reset state & close

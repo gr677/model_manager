@@ -76,7 +76,7 @@ interface ShapePaletteSidebarProps {
   onSelectTemplate: (templateId: string) => void;
   onOpenGallery: () => void;
   onOpenImportSqlModal?: () => void;
-  onLoadDiagram?: (doc: DiagramDocument) => void;
+  onLoadDiagram?: (doc: DiagramDocument, filename?: string, workspaceId?: string) => void;
   onAddImageFile?: (file: File) => void;
   onAddExistingImage?: (img: { filename: string; url: string; size: number }) => void;
 }

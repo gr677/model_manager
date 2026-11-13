@@ -599,53 +599,90 @@ class WorkspaceService {
     return true;
   }
 
-  public setActiveDiagram(filename: string): DiagramDocument {
-    const ws = this.getActiveWorkspace();
-    if (ws.diagrams[filename] && ws.diagrams[filename].document) {
-      ws.activeDiagramFilename = filename;
-      this.saveStore();
-      return ws.diagrams[filename].document;
-    }
-    ws.activeDiagramFilename = filename;
-    this.saveStore();
-    return this.getActiveDiagram().document;
+  public normalizeFilename(filename: string): string {
+    let safe = (filename || '').trim().toLowerCase();
+    if (!safe.toLowerCase().endsWith('.json')) safe += '.json';
+    safe = safe.replace(/[^a-z0-9._-]/g, '_');
+    return safe || 'diagram.json';
   }
 
-  public async loadAndSetActiveDiagram(filename: string): Promise<DiagramDocument> {
-    const ws = this.getActiveWorkspace();
-    let safeFilename = filename.trim().toLowerCase();
-    if (!safeFilename.endsWith('.json')) safeFilename += '.json';
+  public filenameExists(filename: string, workspaceId?: string): boolean {
+    const ws = workspaceId ? this.store.workspaces[workspaceId] : this.getActiveWorkspace();
+    if (!ws) return false;
+    const normalized = this.normalizeFilename(filename);
+    const lower = normalized.toLowerCase();
+    return Object.keys(ws.diagrams).some(k => k.toLowerCase() === lower);
+  }
 
-    ws.activeDiagramFilename = safeFilename;
+  public getUniqueFilename(baseFilename: string, workspaceId?: string): string {
+    const ws = workspaceId ? this.store.workspaces[workspaceId] : this.getActiveWorkspace();
+    const normalized = this.normalizeFilename(baseFilename);
+    if (!ws) return normalized;
+    const existingLower = new Set(Object.keys(ws.diagrams).map(k => k.toLowerCase()));
+    if (!existingLower.has(normalized.toLowerCase())) return normalized;
+    const stem = normalized.replace(/\.json$/i, '');
+    let idx = 2;
+    while (existingLower.has(`${stem}_${idx}.json`.toLowerCase())) {
+      idx++;
+    }
+    return `${stem}_${idx}.json`;
+  }
+
+  public setActiveDiagram(filename: string): DiagramDocument {
+    const ws = this.getActiveWorkspace();
+    const matchedKey =
+      Object.keys(ws.diagrams).find(k => k === filename) ||
+      Object.keys(ws.diagrams).find(k => k.toLowerCase() === filename.toLowerCase()) ||
+      filename;
+
+    if (ws.diagrams[matchedKey] && ws.diagrams[matchedKey].document) {
+      ws.activeDiagramFilename = matchedKey;
+      this.saveStore();
+      return JSON.parse(JSON.stringify(ws.diagrams[matchedKey].document));
+    }
+    return JSON.parse(JSON.stringify(this.getActiveDiagram().document));
+  }
+
+  public async loadAndSetActiveDiagram(filename: string, workspaceId?: string): Promise<DiagramDocument> {
+    const ws = workspaceId ? (this.store.workspaces[workspaceId] || this.getActiveWorkspace()) : this.getActiveWorkspace();
+    const rawTrimmed = filename.trim();
+    const candidate = rawTrimmed.toLowerCase().endsWith('.json') ? rawTrimmed : `${rawTrimmed}.json`;
+    const matchedKey =
+      Object.keys(ws.diagrams).find(k => k === candidate) ||
+      Object.keys(ws.diagrams).find(k => k.toLowerCase() === candidate.toLowerCase()) ||
+      candidate.toLowerCase().replace(/[^a-z0-9._-]/g, '_');
 
     // Try fetching latest document from server first to ensure fresh data
     try {
-      const doc = await this.fetchDiagramFromServer(ws.id, safeFilename);
+      const doc = await this.fetchDiagramFromServer(ws.id, matchedKey);
       const cloned = JSON.parse(JSON.stringify(doc));
-      ws.diagrams[safeFilename] = {
-        filename: safeFilename,
-        name: doc.name || safeFilename.replace('.json', ''),
+      ws.activeDiagramFilename = matchedKey;
+      ws.diagrams[matchedKey] = {
+        filename: matchedKey,
+        name: doc.name || matchedKey.replace(/\.json$/i, ''),
         lastModified: new Date().toISOString(),
         document: cloned,
       };
       this.saveStore();
       return JSON.parse(JSON.stringify(cloned));
     } catch (err) {
-      console.warn(`[WorkspaceService] Server fetch failed for ${safeFilename}, checking local cache:`, err);
+      console.warn(`[WorkspaceService] Server fetch failed for ${matchedKey}, checking local cache:`, err);
     }
 
-    // Fallback to local memory cache if available
-    if (ws.diagrams[safeFilename]?.document) {
+    // Fallback to local memory cache if available for THIS exact diagram
+    if (ws.diagrams[matchedKey]?.document) {
+      ws.activeDiagramFilename = matchedKey;
       this.saveStore();
-      return JSON.parse(JSON.stringify(ws.diagrams[safeFilename].document));
+      return JSON.parse(JSON.stringify(ws.diagrams[matchedKey].document));
     }
 
-    this.saveStore();
-    return JSON.parse(JSON.stringify(this.getActiveDiagram().document));
+    throw new Error(`Diagram "${matchedKey}" could not be loaded from server or local cache.`);
   }
 
-  public saveCurrentDiagram(doc: DiagramDocument, customFilename?: unknown): void {
-    const ws = this.getActiveWorkspace();
+  public saveCurrentDiagram(doc: DiagramDocument, customFilename?: unknown, customWorkspaceId?: string): void {
+    const ws = customWorkspaceId
+      ? (this.store.workspaces[customWorkspaceId] || this.getActiveWorkspace())
+      : this.getActiveWorkspace();
     const explicitFilename =
       typeof customFilename === 'string' &&
       customFilename.trim() &&
@@ -658,13 +695,15 @@ class WorkspaceService {
       filename,
       name: doc.name || filename.replace('.json', ''),
       lastModified: new Date().toISOString(),
-      document: doc,
+      document: JSON.parse(JSON.stringify(doc)),
     };
     this.saveStore();
   }
 
-  public updateLocalDiagramCache(filename: unknown, doc: DiagramDocument): void {
-    const ws = this.getActiveWorkspace();
+  public updateLocalDiagramCache(filename: unknown, doc: DiagramDocument, customWorkspaceId?: string): void {
+    const ws = customWorkspaceId
+      ? (this.store.workspaces[customWorkspaceId] || this.getActiveWorkspace())
+      : this.getActiveWorkspace();
     const explicitFilename =
       typeof filename === 'string' &&
       filename.trim() &&
@@ -677,7 +716,7 @@ class WorkspaceService {
       filename: safeFilename,
       name: doc.name || safeFilename.replace('.json', ''),
       lastModified: new Date().toISOString(),
-      document: doc,
+      document: JSON.parse(JSON.stringify(doc)),
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
@@ -688,9 +727,12 @@ class WorkspaceService {
 
   public async saveCurrentDiagramToServer(
     doc: DiagramDocument,
-    customFilename?: unknown
+    customFilename?: unknown,
+    customWorkspaceId?: string
   ): Promise<ServerSaveResult> {
-    const ws = this.getActiveWorkspace();
+    const ws = customWorkspaceId
+      ? (this.store.workspaces[customWorkspaceId] || this.getActiveWorkspace())
+      : this.getActiveWorkspace();
     const explicitFilename =
       typeof customFilename === 'string' &&
       customFilename.trim() &&
@@ -767,7 +809,7 @@ class WorkspaceService {
         filename,
         name: data.name || filename.replace('.json', ''),
         lastModified: new Date().toISOString(),
-        document: data,
+        document: JSON.parse(JSON.stringify(data)),
       };
       this.saveStore();
     }
@@ -788,7 +830,7 @@ class WorkspaceService {
 
     let newDoc: DiagramDocument;
     if (doc) {
-      newDoc = doc;
+      newDoc = JSON.parse(JSON.stringify(doc));
     } else if (initialType && isEmpty) {
       const cleanPage: DiagramPage = {
         id: `page-${initialType}-${Date.now()}`,
@@ -832,8 +874,9 @@ class WorkspaceService {
         pages: [starterPage],
       };
     } else {
+      const clonedInitial = JSON.parse(JSON.stringify(initialDiagramDocument));
       newDoc = {
-        ...initialDiagramDocument,
+        ...clonedInitial,
         id: `doc-${ws.id}-${Date.now()}`,
         name: name || safeFilename.replace('.json', ''),
       };
@@ -843,11 +886,11 @@ class WorkspaceService {
       filename: safeFilename,
       name: name || safeFilename.replace('.json', ''),
       lastModified: new Date().toISOString(),
-      document: newDoc,
+      document: JSON.parse(JSON.stringify(newDoc)),
     };
     this.saveStore();
 
-    return newDoc;
+    return JSON.parse(JSON.stringify(newDoc));
   }
 
   public renameDiagram(oldFilename: string, newFilename: string, newName?: string): void {
@@ -941,13 +984,15 @@ class WorkspaceService {
     downloadAnchor.remove();
   }
 
-  public importDiagramJson(filename: string, jsonContent: string): DiagramDocument {
+  public importDiagramJson(filename: string, jsonContent: string): { filename: string; document: DiagramDocument } {
     const parsed = JSON.parse(jsonContent);
     if (!parsed || !parsed.pages) {
       throw new Error('Invalid diagram JSON format. Missing pages array.');
     }
-    this.createDiagram(filename, parsed.name || filename.replace('.json', ''), parsed);
-    return parsed;
+    const uniqueFilename = this.getUniqueFilename(filename);
+    const created = this.createDiagram(uniqueFilename, parsed.name || uniqueFilename.replace('.json', ''), parsed);
+    this.saveCurrentDiagramToServer(created, uniqueFilename).catch(() => {});
+    return { filename: uniqueFilename, document: created };
   }
 
   public importWorkspaceBundle(jsonContent: string): Workspace {

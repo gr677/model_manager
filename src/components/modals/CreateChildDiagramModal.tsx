@@ -53,15 +53,16 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
 
   const existingChildren = parentNode ? getNodeChildDiagrams(parentNode) : [];
 
-  // Prepopulate title and filename when modal opens or parentNode changes
+  // Prepopulate title and workspace-unique filename when modal opens or parentNode changes
   React.useEffect(() => {
-    if (parentNode) {
+    if (parentNode && isOpen) {
       const sanitizedName = parentNode.label.toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 20);
       const currentChildren = getNodeChildDiagrams(parentNode);
       const suffix = currentChildren.length > 0 ? `_${currentChildren.length + 1}` : '';
-      const defaultFilename = `child_${sanitizedName || 'sub'}${suffix}.json`;
+      const baseFilename = `child_${sanitizedName || 'sub'}${suffix}.json`;
+      const uniqueFilename = workspaceService.getUniqueFilename(baseFilename);
       setTitle(`${parentNode.label} ${currentChildren.length > 0 ? `Sub-Diagram ${currentChildren.length + 1}` : 'Breakdown'}`);
-      setFilename(defaultFilename);
+      setFilename(uniqueFilename);
       // Pick a distinct default child type if possible (e.g. if parent is erd, default to flowchart or mindmap)
       if (parentDiagramType === 'erd') {
         setSelectedType('mindmap');
@@ -77,14 +78,15 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
 
   const activeWs = workspaceService.getActiveWorkspace();
   const existingDiagrams = Object.values(activeWs.diagrams);
+  const normalizedFilename = filename.trim() ? workspaceService.normalizeFilename(filename) : '';
+  const filenameConflict =
+    mode === 'create' && Boolean(normalizedFilename) && workspaceService.filenameExists(normalizedFilename, activeWs.id);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !filename.trim()) return;
+    if (!title.trim() || !filename.trim() || filenameConflict) return;
 
-    let safeFilename = filename.trim().toLowerCase();
-    if (!safeFilename.endsWith('.json')) safeFilename += '.json';
-    safeFilename = safeFilename.replace(/[^a-z0-9._-]/g, '_');
+    const safeFilename = workspaceService.normalizeFilename(filename);
 
     if (onCreateAndNavigateChildDiagram) {
       await onCreateAndNavigateChildDiagram(parentNode.id, safeFilename, title.trim(), selectedType);
@@ -295,8 +297,13 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
                 />
               </div>
               <p className={`text-[10px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
-                Stored in workspace as <code className="font-mono text-purple-400">{activeWs.name}/{filename || 'sub.json'}</code>
+                Stored in workspace as <code className="font-mono text-purple-400">{activeWs.name}/{normalizedFilename || 'sub.json'}</code>
               </p>
+              {filenameConflict && (
+                <p className="text-[11px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2.5 py-1.5 mt-1.5">
+                  A diagram file named &ldquo;{normalizedFilename}&rdquo; already exists in this workspace. Choose a unique filename or use &ldquo;Link Existing Diagram&rdquo;.
+                </p>
+              )}
             </div>
 
             {/* Diagram Type Grid */}
@@ -347,7 +354,8 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-lg shadow-purple-600/30"
+                disabled={filenameConflict || !title.trim() || !filename.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-lg shadow-purple-600/30"
               >
                 <span>Create &amp; Navigate to Child Diagram</span>
                 <ArrowRight className="w-3.5 h-3.5" />

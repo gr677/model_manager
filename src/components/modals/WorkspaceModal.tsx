@@ -26,7 +26,7 @@ import { THEMES } from '../../utils/themeConfig';
 interface WorkspaceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLoadDiagram: (doc: DiagramDocument) => void;
+  onLoadDiagram: (doc: DiagramDocument, filename?: string, workspaceId?: string) => void;
   theme?: AppTheme;
 }
 
@@ -48,6 +48,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
   const [editingBasePath, setEditingBasePath] = useState(false);
   const [customBasePath, setCustomBasePath] = useState(activeWs.basePath);
   const [importError, setImportError] = useState<string | null>(null);
+  const [createDiagramError, setCreateDiagramError] = useState<string | null>(null);
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -79,11 +80,16 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
     setTimeout(() => setCopiedPath(false), 2000);
   };
 
-  const handleSwitchWorkspace = (wsId: string) => {
+  const handleSwitchWorkspace = async (wsId: string) => {
     const switched = workspaceService.setActiveWorkspace(wsId);
     setActiveWs(switched);
-    const diag = workspaceService.getActiveDiagram();
-    onLoadDiagram(diag.document);
+    try {
+      const doc = await workspaceService.loadAndSetActiveDiagram('root.json', wsId);
+      onLoadDiagram(doc, 'root.json', wsId);
+    } catch {
+      const rootDoc = workspaceService.setActiveDiagram('root.json');
+      onLoadDiagram(rootDoc, 'root.json', wsId);
+    }
   };
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
@@ -93,25 +99,41 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
     setActiveWs(ws);
     setNewWsName('');
     setIsCreatingWs(false);
-    const diag = workspaceService.getActiveDiagram();
-    onLoadDiagram(diag.document);
+    const rootDoc = ws.diagrams['root.json']?.document || workspaceService.getActiveDiagram().document;
+    onLoadDiagram(rootDoc, 'root.json', ws.id);
   };
 
-  const handleSwitchDiagram = (filename: string) => {
-    const doc = workspaceService.setActiveDiagram(filename);
-    onLoadDiagram(doc);
-    onClose();
+  const handleSwitchDiagram = async (filename: string) => {
+    try {
+      const doc = await workspaceService.loadAndSetActiveDiagram(filename, activeWs.id);
+      const resolvedFilename = workspaceService.getActiveWorkspace().activeDiagramFilename || filename;
+      onLoadDiagram(doc, resolvedFilename, activeWs.id);
+      onClose();
+    } catch (err: any) {
+      setImportError(err?.message || `Failed to load diagram "${filename}"`);
+    }
   };
 
-  const handleCreateDiagram = (e: React.FormEvent) => {
+  const handleCreateDiagram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDiagramFilename.trim()) return;
-    workspaceService.createDiagram(
-      newDiagramFilename.trim(),
-      newDiagramName.trim() || newDiagramFilename.trim()
+    setCreateDiagramError(null);
+
+    const safeFilename = workspaceService.normalizeFilename(newDiagramFilename);
+    if (workspaceService.filenameExists(safeFilename, activeWs.id)) {
+      setCreateDiagramError(
+        `A diagram named "${safeFilename}" already exists in "${activeWs.name}". Choose a unique filename to avoid overwriting.`
+      );
+      return;
+    }
+
+    const newDoc = workspaceService.createDiagram(
+      safeFilename,
+      newDiagramName.trim() || safeFilename.replace('.json', '')
     );
-    const diag = workspaceService.getActiveDiagram();
-    onLoadDiagram(diag.document);
+    await workspaceService.saveCurrentDiagramToServer(newDoc, safeFilename, activeWs.id);
+    workspaceService.setActiveDiagram(safeFilename);
+    onLoadDiagram(newDoc, safeFilename, activeWs.id);
     setNewDiagramFilename('');
     setNewDiagramName('');
     setIsCreatingDiagram(false);
@@ -123,23 +145,29 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
     setImportError(null);
 
     const reader = new FileReader();
-    reader.onload = event => {
+    reader.onload = async event => {
       try {
         const content = event.target?.result as string;
         if (file.name.includes('workspace_bundle')) {
           const imported = workspaceService.importWorkspaceBundle(content);
           setActiveWs(imported);
           const diag = workspaceService.getActiveDiagram();
-          onLoadDiagram(diag.document);
+          onLoadDiagram(diag.document, diag.filename, imported.id);
         } else {
-          const doc = workspaceService.importDiagramJson(file.name, content);
-          onLoadDiagram(doc);
+          const { filename: importedFilename, document: importedDoc } = workspaceService.importDiagramJson(
+            file.name,
+            content
+          );
+          await workspaceService.saveCurrentDiagramToServer(importedDoc, importedFilename, activeWs.id);
+          workspaceService.setActiveDiagram(importedFilename);
+          onLoadDiagram(importedDoc, importedFilename, activeWs.id);
         }
       } catch (err: any) {
         setImportError(err.message || 'Failed to parse JSON file');
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleSaveBasePath = () => {
@@ -555,7 +583,10 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                       type="text"
                       placeholder="diagram2.json"
                       value={newDiagramFilename}
-                      onChange={e => setNewDiagramFilename(e.target.value)}
+                      onChange={e => {
+                        setNewDiagramFilename(e.target.value);
+                        if (createDiagramError) setCreateDiagramError(null);
+                      }}
                       autoFocus
                       className={`w-full px-2.5 py-1.5 rounded text-xs focus:outline-none focus:border-blue-400 font-mono border ${
                         isDark
@@ -585,10 +616,18 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                     />
                   </div>
                 </div>
+                {createDiagramError && (
+                  <p className="text-[11px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded px-2.5 py-1.5">
+                    {createDiagramError}
+                  </p>
+                )}
                 <div className="flex justify-end gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => setIsCreatingDiagram(false)}
+                    onClick={() => {
+                      setIsCreatingDiagram(false);
+                      setCreateDiagramError(null);
+                    }}
                     className={`px-2.5 py-1 text-xs ${
                       isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'
                     }`}
