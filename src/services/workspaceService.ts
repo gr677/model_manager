@@ -49,6 +49,7 @@ class WorkspaceService {
   private lastSaveError: { message: string; timestamp: string; details?: string } | null = null;
   private lastServerSaveResult: ServerSaveResult | null = null;
   private serverSaveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private preloadingWorkspaces = new Map<string, Promise<number>>();
 
   constructor() {
     this.store = this.loadStore();
@@ -183,6 +184,8 @@ class WorkspaceService {
         const data = await resp.json();
         if (Array.isArray(data)) {
           this.syncWithServerWorkspaces(data);
+          // Preload all diagram documents in the active workspace so child/grandchild aggregations work immediately
+          this.preloadAllDiagramsInWorkspace(this.store.activeWorkspaceId).catch(() => {});
           return data;
         }
       }
@@ -190,6 +193,134 @@ class WorkspaceService {
       console.warn('[WorkspaceService] Failed to fetch server workspaces:', err);
     }
     return [];
+  }
+
+  /**
+   * Ensures all diagram .json files in a workspace have their full `document` loaded in memory,
+   * including any child/grandchild files referenced by nodes across the workspace.
+   */
+  public async preloadAllDiagramsInWorkspace(
+    workspaceId?: string,
+    options?: { forceRefresh?: boolean; skipFilename?: string }
+  ): Promise<number> {
+    const wsId = workspaceId || this.store.activeWorkspaceId;
+    const ws = this.store.workspaces[wsId];
+    if (!ws) return 0;
+
+    if (!options?.forceRefresh && this.preloadingWorkspaces.has(wsId)) {
+      return this.preloadingWorkspaces.get(wsId)!;
+    }
+
+    const runPreload = async (): Promise<number> => {
+      let loadedCount = 0;
+      const attempted = new Set<string>();
+      const skipLower = options?.skipFilename?.toLowerCase();
+
+      const extractChildFilenames = (doc?: DiagramDocument): string[] => {
+        if (!doc || !Array.isArray(doc.pages)) return [];
+        const refs: string[] = [];
+        for (const page of doc.pages) {
+          for (const node of page.nodes || []) {
+            if (Array.isArray(node.childDiagrams)) {
+              for (const c of node.childDiagrams) {
+                if (c?.filename) refs.push(c.filename);
+              }
+            }
+            if (node.childDiagramFilename) {
+              refs.push(node.childDiagramFilename);
+            }
+            if (typeof node.data?.legacyTargetPage === 'string' && node.data.legacyTargetPage.trim()) {
+              const raw = node.data.legacyTargetPage.trim().toLowerCase();
+              refs.push(raw.endsWith('.json') ? raw : `${raw}.json`);
+            }
+          }
+        }
+        return refs;
+      };
+
+      const fetchFileIntoStore = async (rawFilename: string): Promise<string[]> => {
+        const trimmed = rawFilename.trim();
+        if (!trimmed) return [];
+        const safeFile = trimmed.toLowerCase().endsWith('.json') ? trimmed : `${trimmed}.json`;
+        const lower = safeFile.toLowerCase();
+        if (attempted.has(lower)) return [];
+        attempted.add(lower);
+
+        const existingKey = Object.keys(ws.diagrams).find(k => k.toLowerCase() === lower) || safeFile;
+        const existingEntry = ws.diagrams[existingKey];
+        const hasLoadedDoc = Boolean(existingEntry?.document && Array.isArray(existingEntry.document.pages));
+
+        if (skipLower && lower === skipLower && hasLoadedDoc) {
+          return extractChildFilenames(existingEntry.document);
+        }
+
+        if (hasLoadedDoc && !options?.forceRefresh) {
+          return extractChildFilenames(existingEntry.document);
+        }
+
+        try {
+          const resp = await fetch(`/api/workspaces/${encodeURIComponent(ws.id)}/files/${encodeURIComponent(existingKey)}`);
+          if (!resp.ok) return [];
+          const data: DiagramDocument = await resp.json();
+          if (data && Array.isArray(data.pages)) {
+            ws.diagrams[existingKey] = {
+              filename: existingKey,
+              name: data.name || existingEntry?.name || existingKey.replace(/\.json$/i, ''),
+              lastModified: existingEntry?.lastModified || new Date().toISOString(),
+              document: data,
+            };
+            loadedCount++;
+            return extractChildFilenames(data);
+          }
+        } catch {
+          // Ignore individual missing/offline files
+        }
+        return [];
+      };
+
+      // Seed queue with all registered diagram files in workspace + any child refs from already-loaded docs
+      const queue: string[] = [...Object.keys(ws.diagrams)];
+      for (const entry of Object.values(ws.diagrams)) {
+        if (entry?.document) {
+          queue.push(...extractChildFilenames(entry.document));
+        }
+      }
+
+      while (queue.length > 0) {
+        const batch: string[] = [];
+        while (queue.length > 0 && batch.length < 8) {
+          const next = queue.shift()!;
+          const normalized = next.trim().toLowerCase().endsWith('.json') ? next.trim().toLowerCase() : `${next.trim().toLowerCase()}.json`;
+          if (!attempted.has(normalized)) {
+            batch.push(next);
+          }
+        }
+        if (batch.length === 0) break;
+
+        const discoveredArrays = await Promise.all(batch.map(fn => fetchFileIntoStore(fn)));
+        for (const refs of discoveredArrays) {
+          for (const ref of refs) {
+            const norm = ref.trim().toLowerCase().endsWith('.json') ? ref.trim().toLowerCase() : `${ref.trim().toLowerCase()}.json`;
+            if (!attempted.has(norm)) {
+              queue.push(ref);
+            }
+          }
+        }
+      }
+
+      if (loadedCount > 0) {
+        this.saveStore();
+      }
+      return loadedCount;
+    };
+
+    const promise = runPreload().finally(() => {
+      this.preloadingWorkspaces.delete(wsId);
+    });
+    if (!options?.forceRefresh) {
+      this.preloadingWorkspaces.set(wsId, promise);
+    }
+    return promise;
   }
 
   private async initFromServer(): Promise<void> {
@@ -417,6 +548,7 @@ class WorkspaceService {
     if (this.store.workspaces[workspaceId]) {
       this.store.activeWorkspaceId = workspaceId;
       this.saveStore();
+      this.preloadAllDiagramsInWorkspace(workspaceId).catch(() => {});
       return this.store.workspaces[workspaceId];
     }
     return this.getActiveWorkspace();

@@ -48,7 +48,7 @@ import { workspaceService } from './services/workspaceService';
 import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
-import { collectAggregationsFromPageAndChildren } from './utils/descriptionAggregation';
+import { collectAggregationsFromPageAndChildren, AggregatedItem } from './utils/descriptionAggregation';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
@@ -289,11 +289,62 @@ export default function App() {
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const selectedNodeId = selectedNodes.length === 1 ? selectedNodes[0].id : null;
 
-  // Aggregation results from current page & all child pages (Change 2)
+  // Aggregation results from current page & entire descendant tree
   const aggregationResult = React.useMemo(() => {
     if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
     return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
   }, [currentPage, document, activeWs, scriptEvalVersion]);
+
+  // Ensure all child/grandchild diagrams in the active workspace are loaded so tree aggregations are complete
+  useEffect(() => {
+    if (!offlineSyncService.isOnline()) return;
+    const wsId = activeWs?.id;
+    if (!wsId) return;
+
+    const missingEntry = Object.values(activeWs.diagrams || {}).some(
+      entry => !entry?.document || !Array.isArray(entry.document.pages)
+    );
+    const referencedChildFiles: string[] = [];
+    for (const page of document.pages || []) {
+      for (const node of page.nodes || []) {
+        for (const ref of getNodeChildDiagrams(node)) {
+          if (ref.filename) referencedChildFiles.push(ref.filename);
+        }
+        if (typeof node.data?.legacyTargetPage === 'string' && node.data.legacyTargetPage.trim()) {
+          const raw = node.data.legacyTargetPage.trim().toLowerCase();
+          referencedChildFiles.push(raw.endsWith('.json') ? raw : `${raw}.json`);
+        }
+      }
+    }
+    const missingReferenced = referencedChildFiles.some(fn => {
+      const lower = fn.toLowerCase();
+      const match = Object.entries(activeWs.diagrams || {}).find(
+        ([key]) => key.toLowerCase() === lower
+      );
+      return !match || !match[1]?.document || !Array.isArray(match[1].document.pages);
+    });
+
+    if (missingEntry || missingReferenced) {
+      workspaceService
+        .preloadAllDiagramsInWorkspace(wsId, {
+          skipFilename: activeWs.activeDiagramFilename || 'root.json',
+        })
+        .catch(() => {});
+    }
+  }, [activeWs?.id, activeWs?.activeDiagramFilename, activeWs?.diagrams, document]);
+
+  // Refresh descendant diagrams on disk whenever the Aggregations panel opens
+  useEffect(() => {
+    if (!isAggregationsOpen || !offlineSyncService.isOnline()) return;
+    const wsId = activeWorkspaceIdRef.current || activeWs?.id;
+    if (!wsId) return;
+    workspaceService
+      .preloadAllDiagramsInWorkspace(wsId, {
+        forceRefresh: true,
+        skipFilename: activeDiagramFilenameRef.current || activeWs?.activeDiagramFilename || 'root.json',
+      })
+      .catch(() => {});
+  }, [isAggregationsOpen, activeWs?.id]);
 
   // Subscribe to offline sync & collaboration services
   useEffect(() => {
@@ -2019,16 +2070,88 @@ export default function App() {
               theme={settings.theme}
               showValuesOnCanvas={showAggregationBadges}
               onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
-              onFocusNode={nodeId => {
-                // Find if node exists on current page
-                const existsOnCurrent = currentPage.nodes.some(n => n.id === nodeId);
+              onFocusNode={(nodeId, item?: AggregatedItem) => {
+                const currentFn = (activeDiagramFilenameRef.current || activeWs.activeDiagramFilename || 'root.json').toLowerCase();
+                const targetFn = item?.diagramFilename;
+
+                if (targetFn && targetFn.toLowerCase() !== currentFn) {
+                  const targetPageId = item?.pageId;
+                  const switchAndFocus = async () => {
+                    if (isSwitchingDiagramRef.current) return;
+                    isSwitchingDiagramRef.current = true;
+                    try {
+                      const wsId = activeWorkspaceIdRef.current || workspaceService.getActiveWorkspace().id;
+                      const outgoingFn = activeDiagramFilenameRef.current || 'root.json';
+                      const outgoingDoc = JSON.parse(JSON.stringify(documentRef.current));
+
+                      if (saveStatusRef.current === 'unsaved') {
+                        workspaceService.saveCurrentDiagram(outgoingDoc, outgoingFn, wsId);
+                        workspaceService.updateLocalDiagramCache(outgoingFn, outgoingDoc, wsId);
+                        await workspaceService.saveCurrentDiagramToServer(outgoingDoc, outgoingFn, wsId);
+                      }
+
+                      const targetDoc = await workspaceService.loadAndSetActiveDiagram(targetFn, wsId);
+                      const freshTargetDoc: DiagramDocument = JSON.parse(JSON.stringify(targetDoc));
+                      const resolvedFilename = workspaceService.getActiveWorkspace().activeDiagramFilename || targetFn;
+
+                      setNavigationHistory(prev => [
+                        ...prev,
+                        {
+                          filename: outgoingFn,
+                          diagramName: outgoingDoc.name || outgoingFn,
+                          pageId: activePageId,
+                          nodeLabel: item?.nodeLabel || currentPage.title,
+                        },
+                      ]);
+
+                      const resolvedPage =
+                        (targetPageId && freshTargetDoc.pages?.find(p => p.id === targetPageId)) ||
+                        freshTargetDoc.pages?.find(p => p.nodes.some(n => n.id === nodeId)) ||
+                        freshTargetDoc.pages?.[0];
+
+                      activeWorkspaceIdRef.current = wsId;
+                      activeDiagramFilenameRef.current = resolvedFilename;
+                      documentRef.current = freshTargetDoc;
+                      saveStatusRef.current = 'idle';
+                      setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: resolvedFilename });
+                      setDocument(freshTargetDoc);
+                      offlineSyncService.cacheDocument(freshTargetDoc);
+                      setSaveStatus('idle');
+                      if (resolvedPage) {
+                        setActivePageId(resolvedPage.id);
+                        if (resolvedPage.diagramType) {
+                          setSelectedCategory(resolvedPage.diagramType);
+                        }
+                      }
+                      setSelectedNodeIds([nodeId]);
+                      setSelectedEdgeId(null);
+                      setIsInspectorOpen(true);
+                    } catch (err: any) {
+                      console.error('[App] Failed to navigate to aggregated descendant node:', err);
+                      setImageNotice({
+                        type: 'error',
+                        message: err?.message || `Could not open diagram "${targetFn}".`,
+                      });
+                    } finally {
+                      isSwitchingDiagramRef.current = false;
+                    }
+                  };
+                  requestNavigation(switchAndFocus, item?.diagramTitle || targetFn);
+                  return;
+                }
+
+                // Same diagram file: check current page first, then specific item.pageId, then any page with nodeId
+                const existsOnCurrent =
+                  (!item?.pageId || item.pageId === currentPage.id) &&
+                  currentPage.nodes.some(n => n.id === nodeId);
                 if (existsOnCurrent) {
                   setSelectedNodeIds([nodeId]);
                   setSelectedEdgeId(null);
                   setIsInspectorOpen(true);
                 } else {
-                  // Search document pages
-                  const targetPage = document.pages.find(p => p.nodes.some(n => n.id === nodeId));
+                  const targetPage =
+                    (item?.pageId && document.pages.find(p => p.id === item.pageId)) ||
+                    document.pages.find(p => p.nodes.some(n => n.id === nodeId));
                   if (targetPage) {
                     setActivePageId(targetPage.id);
                     setSelectedNodeIds([nodeId]);

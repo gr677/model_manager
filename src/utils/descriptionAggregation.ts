@@ -127,7 +127,7 @@ export function parseAggregationLines(
     }
 
     items.push({
-      id: `${meta.nodeId}-${name}-${lineIndex}`,
+      id: `${meta.diagramFilename}::${meta.pageId}::${meta.nodeId}-${name}-${lineIndex}`,
       type,
       name,
       displayName,
@@ -151,9 +151,54 @@ export function parseAggregationLines(
   return items;
 }
 
+function findWorkspaceDiagramEntry(
+  workspace: Workspace | null | undefined,
+  rawFilename?: string | null
+): { filename: string; doc: DiagramDocument; title: string } | null {
+  if (!workspace?.diagrams || !rawFilename || typeof rawFilename !== 'string') return null;
+  const trimmed = rawFilename.trim();
+  if (!trimmed) return null;
+
+  const withJson = trimmed.toLowerCase().endsWith('.json') ? trimmed : `${trimmed}.json`;
+  const normalized = withJson.toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+
+  const direct =
+    workspace.diagrams[trimmed] ||
+    workspace.diagrams[withJson] ||
+    workspace.diagrams[normalized];
+
+  if (direct?.document && Array.isArray(direct.document.pages)) {
+    return {
+      filename: direct.filename || withJson,
+      doc: direct.document,
+      title: direct.name || direct.document.name || direct.filename || withJson,
+    };
+  }
+
+  const targetLower = withJson.toLowerCase();
+  const targetNormLower = normalized.toLowerCase();
+  for (const [key, entry] of Object.entries(workspace.diagrams)) {
+    const keyLower = key.toLowerCase();
+    if (
+      (keyLower === targetLower || keyLower === targetNormLower) &&
+      entry?.document &&
+      Array.isArray(entry.document.pages)
+    ) {
+      return {
+        filename: entry.filename || key,
+        doc: entry.document,
+        title: entry.name || entry.document.name || key,
+      };
+    }
+  }
+
+  return null;
+}
+
 /**
- * Searches the current page and all child pages (drill-down sub-pages & child diagrams in the workspace)
- * and aggregates all `@type name: value` occurrences.
+ * Searches the current page as the root of a tree and recursively chases all children,
+ * grandchildren, and deeper descendants (both intra-document `parentId` / `drilldownPageId`
+ * sub-pages and cross-file `childDiagrams` `.json` files) to aggregate `@type name: value` tags.
  */
 export function collectAggregationsFromPageAndChildren(
   currentPage: DiagramPage,
@@ -168,7 +213,7 @@ export function collectAggregationsFromPageAndChildren(
   const visitedPageKeys = new Set<string>();
   const visitedDiagramFilenames = new Set<string>();
 
-  // Queue of pages to process: { page, diagramFilename, diagramTitle }
+  // Queue of pages to process: { page, diagramFilename, diagramTitle, doc }
   const queue: Array<{
     page: DiagramPage;
     diagramFilename: string;
@@ -179,7 +224,8 @@ export function collectAggregationsFromPageAndChildren(
   const currentDocTitle = activeDocument.name || 'Current Diagram';
   const currentFilename = workspace?.activeDiagramFilename || 'root.json';
 
-  // Seed with current page
+  // Seed with current page as the root of the tree; prevent circular jumps back into unrelated sibling pages of current file
+  visitedDiagramFilenames.add(currentFilename.toLowerCase());
   queue.push({
     page: currentPage,
     diagramFilename: currentFilename,
@@ -187,16 +233,37 @@ export function collectAggregationsFromPageAndChildren(
     doc: activeDocument,
   });
 
+  const enqueuePage = (
+    page: DiagramPage,
+    diagramFilename: string,
+    diagramTitle: string,
+    doc: DiagramDocument
+  ) => {
+    const pageKey = `${diagramFilename.toLowerCase()}::${page.id}`;
+    if (!visitedPageKeys.has(pageKey)) {
+      queue.push({ page, diagramFilename, diagramTitle, doc });
+    }
+  };
+
   while (queue.length > 0) {
     const { page, diagramFilename, diagramTitle, doc } = queue.shift()!;
-    const pageKey = `${diagramFilename}::${page.id}`;
+    const pageKey = `${diagramFilename.toLowerCase()}::${page.id}`;
     if (visitedPageKeys.has(pageKey)) continue;
     visitedPageKeys.add(pageKey);
 
-    // Scan all nodes in this page
+    // 1. Traverse intra-document child pages whose parentId points to this page
+    if (Array.isArray(doc.pages)) {
+      for (const candidatePage of doc.pages) {
+        if (candidatePage.parentId && candidatePage.parentId === page.id) {
+          enqueuePage(candidatePage, diagramFilename, diagramTitle, doc);
+        }
+      }
+    }
+
+    // 2. Scan all nodes in this page
     const nodes = page.nodes || [];
     for (const node of nodes) {
-      // 1. Gather all description & notes text on this node
+      // 2a. Gather all description & notes text on this node
       const descTexts: string[] = [];
       if (node.documentation?.description) descTexts.push(node.documentation.description);
       if (node.data?.description && node.data.description !== node.documentation?.description) {
@@ -223,38 +290,39 @@ export function collectAggregationsFromPageAndChildren(
         allItems.push(...parsed);
       }
 
-      // 2. Traverse child pages linked via drilldownPageId in the same document
-      if (node.drilldownPageId) {
+      // 2b. Traverse child pages linked via drilldownPageId in the same document
+      if (node.drilldownPageId && Array.isArray(doc.pages)) {
         const linkedPage = doc.pages.find(p => p.id === node.drilldownPageId);
-        if (linkedPage && !visitedPageKeys.has(`${diagramFilename}::${linkedPage.id}`)) {
-          queue.push({
-            page: linkedPage,
-            diagramFilename,
-            diagramTitle,
-            doc,
-          });
+        if (linkedPage) {
+          enqueuePage(linkedPage, diagramFilename, diagramTitle, doc);
         }
       }
 
-      // 3. Traverse linked child diagrams in the workspace
+      // 2c. Traverse linked child diagrams in the workspace (and chase their children/grandchildren)
       const childRefs = getNodeChildDiagrams(node);
-      for (const child of childRefs) {
-        const childFilename = child.filename;
-        if (childFilename && !visitedDiagramFilenames.has(childFilename) && workspace?.diagrams?.[childFilename]) {
-          visitedDiagramFilenames.add(childFilename);
-          const childDiag = workspace.diagrams[childFilename];
-          const childDoc = childDiag.document;
-          if (childDoc && Array.isArray(childDoc.pages)) {
-            for (const childPage of childDoc.pages) {
-              if (!visitedPageKeys.has(`${childFilename}::${childPage.id}`)) {
-                queue.push({
-                  page: childPage,
-                  diagramFilename: childFilename,
-                  diagramTitle: childDiag.name || childDoc.name || childFilename,
-                  doc: childDoc,
-                });
-              }
-            }
+      const candidateFilenames: string[] = childRefs.map(c => c.filename).filter(Boolean);
+      if (typeof node.data?.legacyTargetPage === 'string' && node.data.legacyTargetPage.trim()) {
+        candidateFilenames.push(node.data.legacyTargetPage.trim());
+      }
+
+      for (const rawChildFilename of candidateFilenames) {
+        const resolved = findWorkspaceDiagramEntry(workspace, rawChildFilename);
+        if (!resolved) continue;
+
+        const lowerResolved = resolved.filename.toLowerCase();
+        if (visitedDiagramFilenames.has(lowerResolved)) continue;
+        visitedDiagramFilenames.add(lowerResolved);
+
+        const childDoc = resolved.doc;
+        if (childDoc && Array.isArray(childDoc.pages) && childDoc.pages.length > 0) {
+          // Order entry/active page first, followed by remaining pages in the child diagram
+          const orderedPages = [...childDoc.pages].sort((a, b) => {
+            if (a.id === childDoc.activePageId) return -1;
+            if (b.id === childDoc.activePageId) return 1;
+            return 0;
+          });
+          for (const childPage of orderedPages) {
+            enqueuePage(childPage, resolved.filename, resolved.title, childDoc);
           }
         }
       }

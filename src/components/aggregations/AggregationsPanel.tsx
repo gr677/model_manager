@@ -38,7 +38,7 @@ interface AggregationsPanelProps {
   onSelectFieldName: (name: string) => void;
   totalSearchedPages: number;
   totalItemsFound: number;
-  onFocusNode?: (nodeId: string) => void;
+  onFocusNode?: (nodeId: string, item?: AggregatedItem) => void;
   theme?: AppTheme;
   showValuesOnCanvas?: boolean;
   onToggleShowValuesOnCanvas?: () => void;
@@ -61,6 +61,8 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isRefreshingRates, setIsRefreshingRates] = useState(false);
+  const lastGroupNameRef = React.useRef<string | null>(null);
+  const knownItemIdsRef = React.useRef<Set<string>>(new Set());
 
   const handleRefreshRates = async () => {
     setIsRefreshingRates(true);
@@ -78,12 +80,39 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   // Active group to display
   const activeGroup = groups.find(g => g.name === selectedFieldName?.toLowerCase()) || groups[0];
 
-  // Initialize selectedItemIds whenever activeGroup changes
+  // Keep selectedItemIds synced when switching fields OR when child/grandchild items load asynchronously
   useEffect(() => {
-    if (activeGroup && activeGroup.items) {
-      setSelectedItemIds(new Set(activeGroup.items.map(i => i.id)));
+    if (!activeGroup || !activeGroup.items) {
+      lastGroupNameRef.current = null;
+      knownItemIdsRef.current = new Set();
+      setSelectedItemIds(new Set());
+      return;
     }
-  }, [activeGroup?.name]);
+
+    const currentIds = activeGroup.items.map(i => i.id);
+    if (lastGroupNameRef.current !== activeGroup.name) {
+      lastGroupNameRef.current = activeGroup.name;
+      knownItemIdsRef.current = new Set(currentIds);
+      setSelectedItemIds(new Set(currentIds));
+      return;
+    }
+
+    const prevKnown = knownItemIdsRef.current;
+    const currentSet = new Set(currentIds);
+    setSelectedItemIds(prevSelected => {
+      const next = new Set<string>();
+      for (const id of prevSelected) {
+        if (currentSet.has(id)) next.add(id);
+      }
+      for (const id of currentIds) {
+        if (!prevKnown.has(id)) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+    knownItemIdsRef.current = currentSet;
+  }, [activeGroup?.name, activeGroup?.items]);
 
   // Items filtered by search and selected items
   const filteredItems = (activeGroup?.items || []).filter(item => {
@@ -196,7 +225,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 truncate">
-              Searched: current &amp; child pages ({totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'})
+              Tree from current page &amp; all descendants ({totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'})
             </p>
           </div>
         </div>
@@ -403,9 +432,9 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                           </button>
 
                           <div
-                            onClick={() => onFocusNode?.(item.nodeId)}
+                            onClick={() => onFocusNode?.(item.nodeId, item)}
                             className="flex-1 min-w-0 cursor-pointer"
-                            title={`Click to focus node "${item.nodeLabel}" on canvas`}
+                            title={`Click to navigate to "${item.nodeLabel}" (${item.diagramFilename} / ${item.pageTitle})`}
                           >
                             <div className="flex items-center justify-between text-xs gap-1.5">
                               <div className="flex items-center gap-1.5 min-w-0">
@@ -428,9 +457,11 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                                 <span className="truncate">{item.value}</span>
                               </div>
                             )}
-                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono mt-0.5">
-                              <span className="truncate max-w-[160px]">{item.pageTitle}</span>
-                              {isTicked && <span>{percent}%</span>}
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono mt-0.5 gap-1">
+                              <span className="truncate max-w-[170px]" title={`${item.diagramFilename} → ${item.pageTitle}`}>
+                                {item.diagramFilename ? `${item.diagramFilename.replace(/\.json$/i, '')} / ${item.pageTitle}` : item.pageTitle}
+                              </span>
+                              {isTicked && <span className="shrink-0">{percent}%</span>}
                             </div>
                           </div>
                         </div>
@@ -471,13 +502,13 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     return (
                       <div
                         key={item.id || idx}
-                        onClick={() => onFocusNode?.(item.nodeId)}
+                        onClick={() => onFocusNode?.(item.nodeId, item)}
                         className={`p-3 rounded-xl border transition-all cursor-pointer relative overflow-hidden group ${
                           isDark
                             ? 'bg-slate-950/80 border-slate-800 hover:border-amber-500/50 hover:bg-slate-850'
                             : 'bg-white border-slate-200 hover:border-amber-500/50 hover:bg-amber-50/20'
                         }`}
-                        title={`Click to focus node "${item.nodeLabel}" on canvas`}
+                        title={`Click to navigate to "${item.nodeLabel}" (${item.diagramFilename} / ${item.pageTitle})`}
                       >
                         {/* Timeline Accent Bar */}
                         <div className={`absolute top-0 left-0 bottom-0 w-1 ${isPast ? 'bg-slate-600' : 'bg-amber-500'}`} />
@@ -534,22 +565,24 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                   {filteredItems.map((item, idx) => (
                     <div
                       key={item.id || idx}
-                      onClick={() => onFocusNode?.(item.nodeId)}
+                      onClick={() => onFocusNode?.(item.nodeId, item)}
                       className={`p-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
                         isDark
                           ? 'bg-slate-950/80 border-slate-800 hover:border-sky-500/50 hover:bg-slate-850'
                           : 'bg-white border-slate-200 hover:border-sky-500/50 hover:bg-sky-50/20'
                       }`}
-                      title={`Click to focus node "${item.nodeLabel}" on canvas`}
+                      title={`Click to navigate to "${item.nodeLabel}" (${item.diagramFilename} / ${item.pageTitle})`}
                     >
                       <div className="text-xs font-semibold text-slate-100 leading-relaxed whitespace-pre-wrap break-words">
                         {item.value}
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
-                        <span className="font-medium text-sky-400 truncate max-w-[150px]">
+                        <span className="font-medium text-sky-400 truncate max-w-[140px]">
                           {item.nodeLabel}
                         </span>
-                        <span className="truncate max-w-[130px]">{item.pageTitle}</span>
+                        <span className="truncate max-w-[140px]" title={`${item.diagramFilename} → ${item.pageTitle}`}>
+                          {item.diagramFilename ? `${item.diagramFilename.replace(/\.json$/i, '')} / ${item.pageTitle}` : item.pageTitle}
+                        </span>
                       </div>
                     </div>
                   ))}
