@@ -5,6 +5,7 @@
 
 import { DiagramDocument, DiagramPage, DiagramType, NodeImageAttachment } from '../types/diagram';
 import { initialDiagramDocument } from '../data/seedDiagrams';
+import { convertLegacyJsonToDocument } from '../utils/legacyJsonImporter';
 
 export interface WorkspaceDiagram {
   filename: string; // e.g. "root.json", "child_payment.json"
@@ -962,11 +963,23 @@ class WorkspaceService {
 
   public importDiagramJson(filename: string, jsonContent: string): { filename: string; document: DiagramDocument } {
     const parsed = JSON.parse(jsonContent);
-    if (!parsed || !parsed.pages) {
-      throw new Error('Invalid diagram JSON format. Missing pages array.');
+    let documentToImport: DiagramDocument;
+    if (parsed && Array.isArray(parsed.pages)) {
+      documentToImport = parsed as DiagramDocument;
+    } else if (parsed && Array.isArray(parsed.nodes)) {
+      documentToImport = convertLegacyJsonToDocument(filename, jsonContent, {
+        diagramType: 'mindmap',
+        linkTargetPagesAsChildDiagrams: true,
+      });
+    } else {
+      throw new Error('Invalid diagram JSON format. Expected either "pages" or legacy "nodes" array.');
     }
     const uniqueFilename = this.getUniqueFilename(filename);
-    const created = this.createDiagram(uniqueFilename, parsed.name || uniqueFilename.replace('.json', ''), parsed);
+    const created = this.createDiagram(
+      uniqueFilename,
+      documentToImport.name || uniqueFilename.replace('.json', ''),
+      documentToImport
+    );
     this.saveCurrentDiagramToServer(created, uniqueFilename).catch(() => {});
     return { filename: uniqueFilename, document: created };
   }

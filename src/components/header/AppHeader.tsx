@@ -43,6 +43,8 @@ import {
   Square,
   Workflow,
   Trash2,
+  FileJson,
+  Upload,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -62,9 +64,11 @@ interface AppHeaderProps {
   navigationHistory?: Array<{ filename: string; diagramName: string; pageId?: string; nodeLabel?: string }>;
   onNavigateBack?: () => void;
   onSwitchDiagram?: (filename: string) => void;
+  onDeleteDiagramFile?: (filename: string) => void;
   onOpenWorkspaceModal: () => void;
   onOpenSettingsModal: () => void;
   onOpenImportSqlModal?: () => void;
+  onOpenImportLegacyJsonModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
   onOpenGenerateFlowchartModal?: () => void;
   onManualSave: () => void;
@@ -103,6 +107,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenWorkspaceModal,
   onOpenSettingsModal,
   onOpenImportSqlModal,
+  onOpenImportLegacyJsonModal,
   onOpenGenerateMindmapModal,
   onOpenGenerateFlowchartModal,
   onManualSave,
@@ -117,6 +122,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onChangeRole,
   onToggleTheme,
   onSwitchDiagram,
+  onDeleteDiagramFile,
   aggregationGroups = [],
   selectedAggregationField = null,
   isAggregationsOpen = false,
@@ -128,10 +134,27 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
   const [isDiagramDropdownOpen, setIsDiagramDropdownOpen] = useState(false);
+  const [confirmDeleteDiagramFilename, setConfirmDeleteDiagramFilename] = useState<string | null>(null);
   const [isPagesDropdownOpen, setIsPagesDropdownOpen] = useState(false);
   const [confirmDeletePageId, setConfirmDeletePageId] = useState<string | null>(null);
   const [isAggregationsDropdownOpen, setIsAggregationsDropdownOpen] = useState(false);
+  const diagramDropdownRef = useRef<HTMLDivElement>(null);
   const pagesDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isDiagramDropdownOpen) {
+      setConfirmDeleteDiagramFilename(null);
+      return;
+    }
+    const handleClickOutside = (e: MouseEvent) => {
+      if (diagramDropdownRef.current && !diagramDropdownRef.current.contains(e.target as Node)) {
+        setIsDiagramDropdownOpen(false);
+        setConfirmDeleteDiagramFilename(null);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [isDiagramDropdownOpen]);
 
   useEffect(() => {
     if (!isPagesDropdownOpen) {
@@ -179,19 +202,22 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         {navigationHistory.length > 0 && onNavigateBack && (
           <button
             onClick={onNavigateBack}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 cursor-pointer transition-all shrink-0 animate-in fade-in"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/30 cursor-pointer transition-all shrink-0 max-w-[180px] animate-in fade-in"
             title={`Return to parent diagram: ${navigationHistory[navigationHistory.length - 1].diagramName || navigationHistory[navigationHistory.length - 1].filename}`}
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to {navigationHistory[navigationHistory.length - 1].nodeLabel ? `Node "${navigationHistory[navigationHistory.length - 1].nodeLabel}"` : 'Parent'}</span>
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Back to {navigationHistory[navigationHistory.length - 1].nodeLabel ? `Node "${navigationHistory[navigationHistory.length - 1].nodeLabel}"` : 'Parent'}</span>
           </button>
         )}
 
-        {/* Diagram Files Switcher Dropdown (Click to switch between root.json and child diagrams) */}
-        <div className="relative shrink-0">
+        {/* Diagram Files Switcher Dropdown (Click to switch or delete child diagram files) */}
+        <div ref={diagramDropdownRef} className="relative shrink-0">
           <button
             type="button"
-            onClick={() => setIsDiagramDropdownOpen(v => !v)}
+            onClick={() => {
+              setIsPagesDropdownOpen(false);
+              setIsDiagramDropdownOpen(v => !v);
+            }}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer shadow-xs ${
               isDiagramDropdownOpen
                 ? 'ring-2 ring-sky-500/40 border-sky-500 bg-sky-950/40'
@@ -199,69 +225,133 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 ? 'bg-slate-900 border-slate-800 hover:border-sky-500/50 hover:bg-slate-850 text-slate-300 hover:text-white'
                 : 'bg-slate-100 border-slate-200 hover:border-sky-500/50 hover:bg-slate-200 text-slate-700 hover:text-slate-900'
             }`}
-            title={`Active Diagram: ${activeDiagramFilename || 'root.json'}. Click to navigate to other diagram files in this workspace.`}
+            title={`Active Diagram: ${activeDiagramFilename || 'root.json'}. Click to switch or delete child diagram files in this workspace.`}
           >
             <FolderTree className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-[10px] uppercase font-mono text-slate-400 hidden md:inline">Diagram:</span>
-            <span className="font-bold text-sky-400 max-w-[130px] truncate">{activeDiagramFilename || 'root.json'}</span>
+            <span className="font-bold text-sky-400 max-w-[120px] truncate">{activeDiagramFilename || 'root.json'}</span>
             <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isDiagramDropdownOpen ? 'rotate-180 text-sky-400' : ''}`} />
           </button>
 
-          {isDiagramDropdownOpen && (
-            <div
-              className={`absolute left-0 top-full mt-1.5 w-72 rounded-xl border shadow-2xl p-1.5 z-50 text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-2 ${
-                isDark
-                  ? 'bg-slate-900/95 border-slate-700 text-slate-200'
-                  : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-300/80'
-              }`}
-              onMouseLeave={() => setIsDiagramDropdownOpen(false)}
-            >
-              <div className={`px-2 py-1 text-[10px] font-mono uppercase border-b flex items-center justify-between mb-1 ${
-                isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
-              }`}>
-                <span>Diagram Files in {activeWorkspaceName || 'Workspace'}</span>
-                <span className="font-bold text-sky-400">{Object.keys(workspaceService.getActiveWorkspace().diagrams).length} files</span>
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-0.5">
-                {Object.values(workspaceService.getActiveWorkspace().diagrams).map(diag => {
-                  const isActive = diag.filename === (activeDiagramFilename || 'root.json');
-                  const firstPage = diag.document?.pages?.[0];
-                  return (
-                    <button
-                      key={diag.filename}
-                      type="button"
-                      onClick={() => {
-                        onSwitchDiagram?.(diag.filename);
-                        setIsDiagramDropdownOpen(false);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
-                        isActive
-                          ? 'bg-sky-600/20 text-sky-300 font-bold border border-sky-500/40'
-                          : isDark
-                          ? 'hover:bg-slate-800 text-slate-300 hover:text-white'
-                          : 'hover:bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      <div className="truncate min-w-0 flex-1">
-                        <div className="truncate font-semibold flex items-center gap-1.5">
-                          <span>{diag.name || diag.filename}</span>
-                          {firstPage?.diagramType && (
-                            <span className="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20 shrink-0">
-                              {firstPage.diagramType}
-                            </span>
+          {isDiagramDropdownOpen && (() => {
+            const diagramList = Object.values(workspaceService.getActiveWorkspace().diagrams);
+            return (
+              <div
+                className={`absolute left-0 top-full mt-1.5 w-80 rounded-xl border shadow-2xl p-1.5 z-50 text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-2 ${
+                  isDark
+                    ? 'bg-slate-900/95 border-slate-700 text-slate-200'
+                    : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-300/80'
+                }`}
+              >
+                <div className={`px-2 py-1 text-[10px] font-mono uppercase border-b flex items-center justify-between mb-1 ${
+                  isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+                }`}>
+                  <span className="truncate">Diagram Files in {activeWorkspaceName || 'Workspace'}</span>
+                  <span className="font-bold text-sky-400 shrink-0 ml-2">{diagramList.length} file{diagramList.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-0.5">
+                  {diagramList.map(diag => {
+                    const isActive = diag.filename === (activeDiagramFilename || 'root.json');
+                    const isRoot = diag.filename === 'root.json';
+                    const isConfirming = confirmDeleteDiagramFilename === diag.filename;
+                    const canDeleteDiagram = !isRoot && diagramList.length > 1 && userRole !== 'viewer' && Boolean(onDeleteDiagramFile);
+                    const firstPage = diag.document?.pages?.[0];
+                    return (
+                      <div
+                        key={diag.filename}
+                        onClick={() => {
+                          if (!isConfirming) {
+                            onSwitchDiagram?.(diag.filename);
+                            setIsDiagramDropdownOpen(false);
+                          }
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-sky-600/20 text-sky-300 font-bold border border-sky-500/40'
+                            : isDark
+                            ? 'hover:bg-slate-800 text-slate-300 hover:text-white border border-transparent'
+                            : 'hover:bg-slate-100 text-slate-700 border border-transparent'
+                        }`}
+                      >
+                        <div className="truncate min-w-0 flex-1">
+                          <div className="truncate font-semibold flex items-center gap-1.5">
+                            <span className="truncate">{diag.name || diag.filename}</span>
+                            {firstPage?.diagramType && (
+                              <span className="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20 shrink-0">
+                                {firstPage.diagramType}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                            data\{diag.filename}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                          {isConfirming ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[9px] text-rose-400 font-bold">Delete?</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onDeleteDiagramFile?.(diag.filename);
+                                  setConfirmDeleteDiagramFilename(null);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-bold cursor-pointer"
+                                title={`Confirm deleting diagram "${diag.filename}"`}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteDiagramFilename(null)}
+                                className={`px-1.5 py-0.5 rounded text-[9px] cursor-pointer ${
+                                  isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                                }`}
+                                title="Cancel"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              {isActive && <Check className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
+                              {!isRoot && onDeleteDiagramFile && (
+                                <button
+                                  type="button"
+                                  disabled={!canDeleteDiagram}
+                                  onClick={() => canDeleteDiagram && setConfirmDeleteDiagramFilename(diag.filename)}
+                                  className={`p-1 rounded transition-colors ${
+                                    canDeleteDiagram
+                                      ? 'hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 cursor-pointer'
+                                      : 'opacity-35 text-slate-500 cursor-not-allowed'
+                                  }`}
+                                  title={
+                                    canDeleteDiagram
+                                      ? `Delete diagram file "${diag.filename}"`
+                                      : 'Viewers cannot delete diagrams'
+                                  }
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-400 truncate">
-                          data\{diag.filename}
-                        </div>
                       </div>
-                      {isActive && <Check className="w-3.5 h-3.5 text-sky-400 shrink-0 ml-1.5" />}
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className={`mt-1 pt-1 px-2 border-t text-[10px] ${
+                  isDark ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-500'
+                }`}>
+                  {diagramList.length > 1
+                    ? 'Click the trash icon on any child diagram file to delete it (root.json is protected).'
+                    : 'Only root.json exists in this workspace.'}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Diagram Pages Switcher & Manager Dropdown (Switch, Add, Delete pages in current diagram) */}
@@ -307,17 +397,33 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               }`}>
                 <span className="truncate">Pages ({document.pages.length})</span>
                 {userRole !== 'viewer' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsPagesDropdownOpen(false);
-                      onOpenNewPageModal();
-                    }}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold normal-case text-[10px] cursor-pointer transition-colors"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>New Page</span>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {onOpenImportLegacyJsonModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPagesDropdownOpen(false);
+                          onOpenImportLegacyJsonModal();
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded bg-purple-600/90 hover:bg-purple-500 text-white font-semibold normal-case text-[10px] cursor-pointer transition-colors"
+                        title="Import a page from an earlier-version JSON file"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Import</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPagesDropdownOpen(false);
+                        onOpenNewPageModal();
+                      }}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold normal-case text-[10px] cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>New Page</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -388,12 +494,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                         ) : (
                           <>
                             {isActive && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                            {canDelete && (
+                            {onDeletePage && (
                               <button
                                 type="button"
-                                onClick={() => setConfirmDeletePageId(p.id)}
-                                className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-                                title={`Delete page "${p.title}"`}
+                                disabled={!canDelete}
+                                onClick={() => canDelete && setConfirmDeletePageId(p.id)}
+                                className={`p-1 rounded transition-colors ${
+                                  canDelete
+                                    ? 'hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 cursor-pointer'
+                                    : 'opacity-35 text-slate-500 cursor-not-allowed'
+                                }`}
+                                title={
+                                  canDelete
+                                    ? `Delete page "${p.title}"`
+                                    : userRole === 'viewer'
+                                    ? 'Viewers cannot delete pages'
+                                    : 'Cannot delete the only page in a diagram (add another page first)'
+                                }
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -404,6 +521,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     </div>
                   );
                 })}
+              </div>
+
+              <div className={`mt-1 pt-1 px-2 border-t text-[10px] ${
+                isDark ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-500'
+              }`}>
+                {document.pages.length > 1
+                  ? 'Click the trash icon on any page to delete it.'
+                  : 'At least 1 page is required. Add another page to enable page deletion.'}
               </div>
             </div>
           )}
@@ -716,6 +841,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     <span>Import SQL (ERwin/Postgres)</span>
                   </div>
                   <span className="text-[9px] font-mono px-1.5 py-0.2 bg-sky-500/15 text-sky-400 rounded">SQL</span>
+                </button>
+              )}
+
+              {/* Import Earlier Version JSON Page */}
+              {onOpenImportLegacyJsonModal && userRole !== 'viewer' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDropdownOpen(false);
+                    onOpenImportLegacyJsonModal();
+                  }}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
+                    isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FileJson className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Import Legacy JSON Page</span>
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 bg-purple-500/15 text-purple-400 rounded">JSON</span>
                 </button>
               )}
 

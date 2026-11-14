@@ -38,6 +38,7 @@ import { SettingsModal } from './components/modals/SettingsModal';
 import { CreateChildDiagramModal } from './components/modals/CreateChildDiagramModal';
 import { SaveSuccessModal } from './components/modals/SaveSuccessModal';
 import { ImportSqlModal } from './components/modals/ImportSqlModal';
+import { ImportLegacyJsonModal, LegacyImportPayload } from './components/modals/ImportLegacyJsonModal';
 import { GenerateMindmapModal } from './components/modals/GenerateMindmapModal';
 import { GenerateFlowchartModal } from './components/modals/GenerateFlowchartModal';
 import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
@@ -114,6 +115,7 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSaveSuccessModalOpen, setIsSaveSuccessModalOpen] = useState(false);
   const [isImportSqlModalOpen, setIsImportSqlModalOpen] = useState(false);
+  const [isImportLegacyJsonModalOpen, setIsImportLegacyJsonModalOpen] = useState(false);
   const [isGenerateMindmapModalOpen, setIsGenerateMindmapModalOpen] = useState(false);
   const [isGenerateFlowchartModalOpen, setIsGenerateFlowchartModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
@@ -960,6 +962,203 @@ export default function App() {
     [document, currentPage, persistDocument]
   );
 
+  // Import earlier-version JSON page ({ nodes, links }) into an equivalent page or diagram
+  const handleImportLegacyJson = useCallback(
+    async (payload: LegacyImportPayload) => {
+      const wsId = activeWorkspaceIdRef.current || workspaceService.getActiveWorkspace().id;
+      let createdChildCount = 0;
+
+      // Optionally create empty child diagram files for any targetPage references that don't exist yet
+      if (payload.createMissingChildDiagrams && payload.targetPages.length > 0) {
+        for (const tp of payload.targetPages) {
+          if (!workspaceService.filenameExists(tp.filename, wsId)) {
+            const childDoc = workspaceService.createDiagram(
+              tp.filename,
+              tp.title,
+              undefined,
+              payload.diagramType,
+              true
+            );
+            workspaceService.saveCurrentDiagramToServer(childDoc, tp.filename, wsId).catch(() => {});
+            createdChildCount++;
+          }
+        }
+      }
+
+      if (payload.mode === 'new_diagram') {
+        const requestedName = payload.newDiagramFilename || 'imported_page.json';
+        const safeFilename = workspaceService.filenameExists(requestedName, wsId)
+          ? workspaceService.getUniqueFilename(requestedName, wsId)
+          : workspaceService.normalizeFilename(requestedName);
+        const docTitle = payload.newPageTitle?.trim() || safeFilename.replace(/\.json$/i, '');
+
+        let newDoc: DiagramDocument;
+        if (payload.modernDocument) {
+          newDoc = JSON.parse(JSON.stringify(payload.modernDocument));
+          newDoc.name = docTitle;
+          workspaceService.createDiagram(safeFilename, docTitle, newDoc);
+        } else {
+          newDoc = workspaceService.createDiagram(
+            safeFilename,
+            docTitle,
+            undefined,
+            payload.diagramType,
+            true
+          );
+          const firstPage = newDoc.pages[0];
+          firstPage.title = docTitle;
+          firstPage.diagramType = payload.diagramType;
+          firstPage.nodes = payload.nodes;
+          firstPage.edges = payload.edges;
+          workspaceService.saveCurrentDiagram(newDoc, safeFilename, wsId);
+        }
+
+        await workspaceService.saveCurrentDiagramToServer(newDoc, safeFilename, wsId);
+        workspaceService.setActiveDiagram(safeFilename);
+
+        activeDiagramFilenameRef.current = safeFilename;
+        documentRef.current = newDoc;
+        saveStatusRef.current = 'idle';
+        setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: safeFilename });
+        setDocument(newDoc);
+        offlineSyncService.cacheDocument(newDoc);
+        setSaveStatus('idle');
+        if (newDoc.pages.length > 0) {
+          setActivePageId(newDoc.activePageId || newDoc.pages[0].id);
+          setSelectedCategory(newDoc.pages[0].diagramType);
+        }
+        setSelectedNodeIds(payload.nodes.map(n => n.id));
+        setSelectedEdgeId(null);
+
+        setImageNotice({
+          type: 'success',
+          message: `Imported ${payload.nodes.length} nodes into "${safeFilename}"${
+            createdChildCount > 0 ? ` and created ${createdChildCount} child diagram placeholder(s)` : ''
+          }.`,
+        });
+        collaborationService.addActivity(
+          'You',
+          '#8b5cf6',
+          `Imported legacy JSON into diagram file "${safeFilename}" (${payload.nodes.length} nodes)`
+        );
+        return;
+      }
+
+      if (payload.mode === 'new_page') {
+        const pageTitle = payload.newPageTitle?.trim() || 'Imported Legacy Page';
+        const newPage: DiagramPage = {
+          id: `page-legacy-${Date.now()}`,
+          title: pageTitle,
+          diagramType: payload.diagramType,
+          nodes: payload.nodes,
+          edges: payload.edges,
+          viewport: { x: 40, y: 40, zoom: 1 },
+        };
+        const updatedDoc: DiagramDocument = {
+          ...document,
+          pages: [...document.pages, newPage],
+          activePageId: newPage.id,
+        };
+        setActivePageId(newPage.id);
+        setSelectedCategory(payload.diagramType);
+        setSelectedNodeIds(payload.nodes.map(n => n.id));
+        setSelectedEdgeId(null);
+        persistDocument(updatedDoc);
+        if (createdChildCount > 0) {
+          setActiveWs({ ...workspaceService.getActiveWorkspace() });
+        }
+        setImageNotice({
+          type: 'success',
+          message: `Created page "${pageTitle}" with ${payload.nodes.length} nodes and ${payload.edges.length} links${
+            createdChildCount > 0 ? ` (+${createdChildCount} child diagram placeholder(s))` : ''
+          }.`,
+        });
+        collaborationService.addActivity(
+          'You',
+          '#8b5cf6',
+          `Imported legacy JSON as new page "${pageTitle}" (${payload.nodes.length} nodes)`
+        );
+        return;
+      }
+
+      if (payload.mode === 'replace') {
+        const updatedPages = document.pages.map(page =>
+          page.id === currentPage.id
+            ? {
+                ...page,
+                diagramType: payload.diagramType,
+                nodes: payload.nodes,
+                edges: payload.edges,
+              }
+            : page
+        );
+        persistDocument({ ...document, pages: updatedPages });
+        setSelectedCategory(payload.diagramType);
+        setSelectedNodeIds(payload.nodes.map(n => n.id));
+        setSelectedEdgeId(null);
+        if (createdChildCount > 0) {
+          setActiveWs({ ...workspaceService.getActiveWorkspace() });
+        }
+        setImageNotice({
+          type: 'success',
+          message: `Imported ${payload.nodes.length} nodes and ${payload.edges.length} links onto "${currentPage.title}"${
+            createdChildCount > 0 ? ` (+${createdChildCount} child diagram placeholder(s))` : ''
+          }.`,
+        });
+        collaborationService.addActivity(
+          'You',
+          '#8b5cf6',
+          `Replaced "${currentPage.title}" with legacy JSON (${payload.nodes.length} nodes)`
+        );
+        return;
+      }
+
+      if (payload.mode === 'append') {
+        let maxBottomY = 0;
+        for (const n of currentPage.nodes) {
+          if (n.y + n.height > maxBottomY) maxBottomY = n.y + n.height;
+        }
+        const minImportY = payload.nodes.reduce((m, n) => Math.min(m, n.y), Infinity);
+        const offsetY =
+          currentPage.nodes.length > 0 && Number.isFinite(minImportY)
+            ? Math.max(0, maxBottomY + 80 - minImportY)
+            : 0;
+
+        const shiftedNodes = payload.nodes.map(n => ({
+          ...n,
+          y: n.y + offsetY,
+        }));
+        const updatedPages = document.pages.map(page =>
+          page.id === currentPage.id
+            ? {
+                ...page,
+                nodes: [...page.nodes, ...shiftedNodes],
+                edges: [...page.edges, ...payload.edges],
+              }
+            : page
+        );
+        persistDocument({ ...document, pages: updatedPages });
+        setSelectedNodeIds(shiftedNodes.map(n => n.id));
+        setSelectedEdgeId(null);
+        if (createdChildCount > 0) {
+          setActiveWs({ ...workspaceService.getActiveWorkspace() });
+        }
+        setImageNotice({
+          type: 'success',
+          message: `Appended ${shiftedNodes.length} nodes and ${payload.edges.length} links to "${currentPage.title}"${
+            createdChildCount > 0 ? ` (+${createdChildCount} child diagram placeholder(s))` : ''
+          }.`,
+        });
+        collaborationService.addActivity(
+          'You',
+          '#8b5cf6',
+          `Appended ${shiftedNodes.length} nodes from legacy JSON to "${currentPage.title}"`
+        );
+      }
+    },
+    [document, currentPage, persistDocument]
+  );
+
   // Flip between diagram types: Show last one open, or generate starter example!
   const handleFlipDiagramType = useCallback(
     (type: DiagramType) => {
@@ -1431,6 +1630,97 @@ export default function App() {
     []
   );
 
+  // Delete a child/non-root diagram file from the active workspace
+  const handleDeleteDiagramFile = useCallback(
+    async (filename: string) => {
+      if (userRole === 'viewer' || filename === 'root.json' || isSwitchingDiagramRef.current) return;
+      const wsId = activeWorkspaceIdRef.current || workspaceService.getActiveWorkspace().id;
+      const currentFilename = activeDiagramFilenameRef.current || 'root.json';
+
+      const deleted = workspaceService.deleteDiagram(filename);
+      if (!deleted) return;
+
+      setNavigationHistory(prev => prev.filter(item => item.filename !== filename));
+
+      const updatedWs = workspaceService.getActiveWorkspace();
+      if (currentFilename.toLowerCase() === filename.toLowerCase()) {
+        const fallbackFilename = updatedWs.activeDiagramFilename || 'root.json';
+        isSwitchingDiagramRef.current = true;
+        try {
+          const targetDoc = await workspaceService.loadAndSetActiveDiagram(fallbackFilename, wsId);
+          const freshTargetDoc: DiagramDocument = JSON.parse(JSON.stringify(targetDoc));
+          const resolvedFilename = workspaceService.getActiveWorkspace().activeDiagramFilename || fallbackFilename;
+
+          activeWorkspaceIdRef.current = wsId;
+          activeDiagramFilenameRef.current = resolvedFilename;
+          documentRef.current = freshTargetDoc;
+          saveStatusRef.current = 'idle';
+          setActiveWs({ ...workspaceService.getActiveWorkspace(), activeDiagramFilename: resolvedFilename });
+          setDocument(freshTargetDoc);
+          offlineSyncService.cacheDocument(freshTargetDoc);
+          setSaveStatus('idle');
+          if (freshTargetDoc.pages && freshTargetDoc.pages.length > 0) {
+            setActivePageId(freshTargetDoc.activePageId || freshTargetDoc.pages[0].id);
+          }
+          if (freshTargetDoc.pages?.[0]?.diagramType) {
+            setSelectedCategory(freshTargetDoc.pages[0].diagramType);
+          }
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+        } catch (err: any) {
+          console.error('[App] Failed to switch after deleting diagram:', err);
+          setActiveWs({ ...updatedWs });
+        } finally {
+          isSwitchingDiagramRef.current = false;
+        }
+      } else {
+        setActiveWs({ ...updatedWs });
+        // Remove any lingering child diagram links pointing to the deleted file in the current document
+        const hasLink = documentRef.current.pages.some(page =>
+          page.nodes.some(
+            n =>
+              n.childDiagramFilename === filename ||
+              (n.childDiagrams || []).some(c => c.filename === filename)
+          )
+        );
+        if (hasLink) {
+          const cleanedPages = documentRef.current.pages.map(page => ({
+            ...page,
+            nodes: page.nodes.map(n => {
+              const currentChildren = getNodeChildDiagrams(n);
+              if (
+                n.childDiagramFilename !== filename &&
+                !currentChildren.some(c => c.filename === filename)
+              ) {
+                return n;
+              }
+              const remainingChildren = currentChildren.filter(c => c.filename !== filename);
+              const primary = remainingChildren[0];
+              return {
+                ...n,
+                childDiagrams: remainingChildren,
+                childDiagramFilename: primary ? primary.filename : undefined,
+                childDiagramTitle: primary ? primary.title : undefined,
+                childDiagramType: primary ? primary.diagramType : undefined,
+              };
+            }),
+          }));
+          persistDocument({
+            ...documentRef.current,
+            pages: cleanedPages,
+          });
+        }
+      }
+
+      collaborationService.addActivity(
+        'You',
+        '#f43f5e',
+        `Deleted diagram file "${filename}"`
+      );
+    },
+    [userRole, persistDocument]
+  );
+
   const handleLoadWorkspaceDiagram = useCallback(
     (doc: DiagramDocument, filename?: string, workspaceId?: string) => {
       // Flush any unsaved edits from the outgoing diagram to its own workspace/file BEFORE switching refs
@@ -1572,11 +1862,13 @@ export default function App() {
         onOpenRestApiModal={() => setIsRestApiModalOpen(true)}
         onOpenOfflineModal={() => setIsOfflineModalOpen(true)}
         onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
+        onOpenImportLegacyJsonModal={() => setIsImportLegacyJsonModalOpen(true)}
         onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
         onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
         onChangeRole={setUserRole}
         onToggleTheme={handleToggleTheme}
         onSwitchDiagram={handleSwitchDiagram}
+        onDeleteDiagramFile={handleDeleteDiagramFile}
         aggregationGroups={aggregationResult.groups}
         selectedAggregationField={selectedAggregationField}
         isAggregationsOpen={isAggregationsOpen}
@@ -1860,6 +2152,16 @@ export default function App() {
         currentPageName={currentPage.title}
         theme={settings.theme}
         onImportErd={handleImportErd}
+      />
+
+      <ImportLegacyJsonModal
+        isOpen={isImportLegacyJsonModalOpen}
+        onClose={() => setIsImportLegacyJsonModalOpen(false)}
+        currentPageName={currentPage.title}
+        currentPageNodeCount={currentPage.nodes.length}
+        activeDiagramFilename={activeWs.activeDiagramFilename || 'root.json'}
+        theme={settings.theme}
+        onImportLegacyPage={handleImportLegacyJson}
       />
 
       <GenerateMindmapModal

@@ -1,0 +1,132 @@
+{
+    "nodes": [
+        {
+            "id": "Family",
+            "label": "Family",
+            "color": "#35edd8",
+            "shape": "bar",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": null,
+            "url": null,
+            "urls": [],
+            "description": "No notes yet.",
+            "isSensitive": false,
+            "documents": [],
+            "x": 355.84948780252705,
+            "y": 174.33815117645088
+        },
+        {
+            "id": "Louise",
+            "label": "Louise",
+            "color": "#35edd8",
+            "shape": "ellipse",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": "louise_details",
+            "url": null,
+            "urls": [],
+            "description": "No notes yet.",
+            "isSensitive": false,
+            "documents": [],
+            "x": 45.26309352136783,
+            "y": 375.0702522482422
+        },
+        {
+            "id": "Bex-House",
+            "label": "Bex House",
+            "color": "#35edd8",
+            "shape": "ellipse",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": "bex_details",
+            "url": null,
+            "urls": [],
+            "description": "@number Bex House: -31000",
+            "isSensitive": false,
+            "documents": [],
+            "x": 642.3580254473677,
+            "y": 372.68363423777413
+        },
+        {
+            "id": "Gordon",
+            "label": "Gordon",
+            "color": "#35edd8",
+            "shape": "ellipse",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": "gordons_details",
+            "url": null,
+            "urls": [],
+            "description": "codici fiscali: RBBGDN61S15Z114I",
+            "isSensitive": false,
+            "documents": [],
+            "x": 227.89467493131465,
+            "y": 456.3392921039135
+        },
+        {
+            "id": "Steven",
+            "label": "Steven",
+            "color": "#35edd8",
+            "shape": "ellipse",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": "stevens_details",
+            "url": null,
+            "urls": [
+                {
+                    "label": "ft",
+                    "link": "www.ft.com"
+                }
+            ],
+            "description": "",
+            "isSensitive": false,
+            "documents": [],
+            "x": 432.2939126641521,
+            "y": 470.98440941238505
+        },
+        {
+            "id": "Car",
+            "label": "Car",
+            "color": "gray",
+            "shape": "ellipse",
+            "barWidth": 300,
+            "imageId": null,
+            "targetPage": "car_admin",
+            "url": null,
+            "urls": [],
+            "description": "No notes yet.",
+            "isSensitive": false,
+            "documents": [],
+            "x": 837.5022975081288,
+            "y": 252.00306334417164
+        }
+    ],
+    "links": [
+        {
+            "source": "Gordon",
+            "target": "Family",
+            "label": null
+        },
+        {
+            "source": "Louise",
+            "target": "Family",
+            "label": null
+        },
+        {
+            "source": "Family",
+            "target": "Bex-House",
+            "label": null
+        },
+        {
+            "source": "Steven",
+            "target": "Family",
+            "label": null
+        },
+        {
+            "source": "Bex-House",
+            "target": "Car",
+            "label": null
+        }
+    ]
+}

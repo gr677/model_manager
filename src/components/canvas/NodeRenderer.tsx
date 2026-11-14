@@ -1842,59 +1842,52 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       {/* Child Diagram / Sub-Diagram Navigation Badge (Supports Multiple Children per Node) */}
       {(() => {
         const childDiagrams = getNodeChildDiagrams(node);
-        if (childDiagrams.length === 1) {
-          const single = childDiagrams[0];
-          return (
-            <div className="absolute -bottom-3.5 right-1 z-30 flex items-center gap-1">
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  onMouseLeaveNode?.(node.id);
-                  setIsHovered(false);
-                  setMouseEntryPos(null);
-                  onNavigateChildDiagram?.(single.filename);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-bold shadow-lg shadow-purple-900/50 border border-purple-300/40 cursor-pointer transition-all hover:scale-105 pointer-events-auto group"
-                title={`Click to open child diagram: ${single.title || single.filename} (${(single.diagramType || 'diagram').toUpperCase()})`}
-              >
-                <ExternalLink className="w-2.5 h-2.5 text-purple-200" />
-                <span className="truncate max-w-[130px]">
-                  {single.title || single.filename.replace('.json', '')}
-                </span>
-                {single.diagramType && (
-                  <span className="text-[8px] opacity-80 uppercase font-mono px-1 py-0.2 rounded bg-purple-800/60">
-                    {single.diagramType}
-                  </span>
-                )}
-                <span className="text-purple-200 font-bold group-hover:translate-x-0.5 transition-transform">→</span>
-              </button>
-              {isSelected && !isReadOnly && (
+        const showAddChildButton = isSelected && !isReadOnly;
+
+        if (childDiagrams.length === 0 && !showAddChildButton) {
+          return null;
+        }
+
+        return (
+          <div className="absolute top-full mt-2.5 right-1 z-30 flex flex-col items-end gap-1 pointer-events-none">
+            {childDiagrams.length === 1 && (() => {
+              const single = childDiagrams[0];
+              return (
                 <button
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
-                    onOpenChildDiagramModal?.(node);
+                    onMouseLeaveNode?.(node.id);
+                    setIsHovered(false);
+                    setMouseEntryPos(null);
+                    onNavigateChildDiagram?.(single.filename);
                   }}
-                  className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-700 hover:bg-purple-600 text-white text-[10px] font-bold shadow border border-purple-400/50 cursor-pointer transition-all hover:scale-110 pointer-events-auto"
-                  title="Attach another child diagram to this node"
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-bold shadow-lg shadow-purple-900/50 border border-purple-300/40 cursor-pointer transition-all hover:scale-105 pointer-events-auto group"
+                  title={`Click to open child diagram: ${single.title || single.filename} (${(single.diagramType || 'diagram').toUpperCase()})`}
                 >
-                  <Plus className="w-2.5 h-2.5" />
+                  <ExternalLink className="w-2.5 h-2.5 text-purple-200" />
+                  <span className="truncate max-w-[130px]">
+                    {single.title || single.filename.replace('.json', '')}
+                  </span>
+                  {single.diagramType && (
+                    <span className="text-[8px] opacity-80 uppercase font-mono px-1 py-0.2 rounded bg-purple-800/60">
+                      {single.diagramType}
+                    </span>
+                  )}
+                  <span className="text-purple-200 font-bold group-hover:translate-x-0.5 transition-transform">→</span>
                 </button>
-              )}
-            </div>
-          );
-        } else if (childDiagrams.length > 1) {
-          return (
-            <div className="absolute -bottom-3.5 right-1 z-30 flex items-center gap-1">
-              <div className="relative">
+              );
+            })()}
+
+            {childDiagrams.length > 1 && (
+              <div className="relative pointer-events-auto">
                 <button
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
                     setShowChildQuickMenu(prev => !prev);
                   }}
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-700 hover:bg-purple-600 text-white text-[9px] font-bold shadow-lg shadow-purple-950/60 border border-purple-300/50 cursor-pointer transition-all hover:scale-105 pointer-events-auto"
+                  className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-700 hover:bg-purple-600 text-white text-[9px] font-bold shadow-lg shadow-purple-950/60 border border-purple-300/50 cursor-pointer transition-all hover:scale-105"
                   title="Click to view all child diagrams attached to this node"
                 >
                   <FolderTree className="w-2.5 h-2.5 text-purple-200" />
@@ -1957,39 +1950,28 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                   </div>
                 )}
               </div>
+            )}
 
-              {isSelected && !isReadOnly && (
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    onOpenChildDiagramModal?.(node);
-                  }}
-                  className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-700 hover:bg-purple-600 text-white text-[10px] font-bold shadow border border-purple-400/50 cursor-pointer transition-all hover:scale-110 pointer-events-auto"
-                  title="Attach another child diagram to this node"
-                >
-                  <Plus className="w-2.5 h-2.5" />
-                </button>
-              )}
-            </div>
-          );
-        } else if (isSelected && !isReadOnly) {
-          return (
-            <button
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                onOpenChildDiagramModal?.(node);
-              }}
-              className="absolute -bottom-3 right-2 z-30 flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-purple-600 text-purple-300 hover:text-white text-[9px] font-semibold shadow-md border border-purple-500/40 cursor-pointer transition-all hover:scale-105 pointer-events-auto"
-              title="Create or link a dedicated child diagram JSON for this node"
-            >
-              <Plus className="w-2.5 h-2.5" />
-              <span>+ Child Diagram</span>
-            </button>
-          );
-        }
-        return null;
+            {showAddChildButton && (
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onOpenChildDiagramModal?.(node);
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900/90 hover:bg-purple-600 text-purple-300 hover:text-white text-[9px] font-semibold shadow-md border border-purple-500/40 cursor-pointer transition-all hover:scale-105 pointer-events-auto"
+                title={
+                  childDiagrams.length > 0
+                    ? 'Create or link another child diagram JSON for this node'
+                    : 'Create or link a dedicated child diagram JSON for this node'
+                }
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>+ Child Diagram</span>
+              </button>
+            )}
+          </div>
+        );
       })()}
 
       {/* Attached Images on Node (Miniature thumbnail icon reflecting actual contents; click expands to full size) */}
