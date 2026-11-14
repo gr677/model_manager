@@ -830,6 +830,51 @@ export default function App() {
     [document, persistDocument]
   );
 
+  // Delete an existing page (at least 1 page must remain in the diagram)
+  const handleDeletePage = useCallback(
+    (pageId: string) => {
+      if (userRole === 'viewer' || document.pages.length <= 1) return;
+      const targetIndex = document.pages.findIndex(p => p.id === pageId);
+      if (targetIndex === -1) return;
+      const deletedPage = document.pages[targetIndex];
+
+      const remainingPages = document.pages
+        .filter(p => p.id !== pageId)
+        .map(p => ({
+          ...p,
+          parentId: p.parentId === pageId ? undefined : p.parentId,
+          nodes: p.nodes.map(n =>
+            n.drilldownPageId === pageId ? { ...n, drilldownPageId: undefined } : n
+          ),
+        }));
+
+      const nextActivePage =
+        activePageId === pageId
+          ? remainingPages[Math.min(targetIndex, remainingPages.length - 1)]
+          : remainingPages.find(p => p.id === activePageId) || remainingPages[0];
+
+      if (activePageId === pageId) {
+        setActivePageId(nextActivePage.id);
+        setSelectedNodeIds([]);
+        setSelectedEdgeId(null);
+        setSelectedCategory(nextActivePage.diagramType);
+      }
+
+      persistDocument({
+        ...document,
+        pages: remainingPages,
+        activePageId: nextActivePage.id,
+      });
+
+      collaborationService.addActivity(
+        'You',
+        '#f43f5e',
+        `Deleted diagram page "${deletedPage.title}"`
+      );
+    },
+    [document, activePageId, userRole, persistDocument]
+  );
+
   // Import ERD from SQL file (ERwin / PostgreSQL DDL)
   const handleImportErd = useCallback(
     (
@@ -1520,6 +1565,7 @@ export default function App() {
           }, target?.title);
         }}
         onOpenNewPageModal={() => setIsNewPageModalOpen(true)}
+        onDeletePage={handleDeletePage}
         onOpenGallery={() => setIsGalleryOpen(true)}
         onOpenGitHubModal={() => setIsGitHubModalOpen(true)}
         onOpenVersionsModal={() => setIsVersionsModalOpen(true)}
@@ -1623,6 +1669,9 @@ export default function App() {
           }}
           onDropNewShape={handleDropNewShape}
           onOpenNewPageModal={() => setIsNewPageModalOpen(true)}
+          canDeleteCurrentPage={document.pages.length > 1 && userRole !== 'viewer'}
+          currentPageTitle={currentPage.title}
+          onDeleteCurrentPage={() => handleDeletePage(currentPage.id)}
           onDeleteEdge={handleDeleteEdge}
           onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
           onOpenChildDiagramModal={handleOpenChildDiagramModal}

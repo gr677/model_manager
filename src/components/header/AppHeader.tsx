@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DiagramDocument, DiagramPage, Collaborator, UserRole, AppTheme } from '../../types/diagram';
 import {
   ChevronRight,
@@ -42,6 +42,7 @@ import {
   CheckSquare,
   Square,
   Workflow,
+  Trash2,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -69,6 +70,7 @@ interface AppHeaderProps {
   onManualSave: () => void;
   onSelectPage: (pageId: string) => void;
   onOpenNewPageModal: () => void;
+  onDeletePage?: (pageId: string) => void;
   onOpenGallery: () => void;
   onOpenGitHubModal: () => void;
   onOpenVersionsModal: () => void;
@@ -106,6 +108,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onManualSave,
   onSelectPage,
   onOpenNewPageModal,
+  onDeletePage,
   onOpenGallery,
   onOpenGitHubModal,
   onOpenVersionsModal,
@@ -125,7 +128,25 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
   const [isDiagramDropdownOpen, setIsDiagramDropdownOpen] = useState(false);
+  const [isPagesDropdownOpen, setIsPagesDropdownOpen] = useState(false);
+  const [confirmDeletePageId, setConfirmDeletePageId] = useState<string | null>(null);
   const [isAggregationsDropdownOpen, setIsAggregationsDropdownOpen] = useState(false);
+  const pagesDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isPagesDropdownOpen) {
+      setConfirmDeletePageId(null);
+      return;
+    }
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pagesDropdownRef.current && !pagesDropdownRef.current.contains(e.target as Node)) {
+        setIsPagesDropdownOpen(false);
+        setConfirmDeletePageId(null);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [isPagesDropdownOpen]);
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -236,6 +257,151 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                       </div>
                       {isActive && <Check className="w-3.5 h-3.5 text-sky-400 shrink-0 ml-1.5" />}
                     </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Diagram Pages Switcher & Manager Dropdown (Switch, Add, Delete pages in current diagram) */}
+        <div ref={pagesDropdownRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setIsDiagramDropdownOpen(false);
+              setIsPagesDropdownOpen(v => !v);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all cursor-pointer shadow-xs ${
+              isPagesDropdownOpen
+                ? 'ring-2 ring-indigo-500/40 border-indigo-500 bg-indigo-950/40'
+                : isDark
+                ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:bg-slate-850 text-slate-300 hover:text-white'
+                : 'bg-slate-100 border-slate-200 hover:border-indigo-500/50 hover:bg-slate-200 text-slate-700 hover:text-slate-900'
+            }`}
+            title={`Active Page: ${currentPage.title} (${document.pages.length} page${document.pages.length === 1 ? '' : 's'}). Click to switch, add, or delete pages.`}
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-[10px] uppercase font-mono text-slate-400 hidden md:inline">Page:</span>
+            <span className="font-bold text-indigo-400 max-w-[130px] truncate">{currentPage.title}</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full border ${
+              isDark
+                ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300'
+                : 'bg-indigo-100 border-indigo-200 text-indigo-700'
+            }`}>
+              {document.pages.length}
+            </span>
+            <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isPagesDropdownOpen ? 'rotate-180 text-indigo-400' : ''}`} />
+          </button>
+
+          {isPagesDropdownOpen && (
+            <div
+              className={`absolute left-0 top-full mt-1.5 w-80 rounded-xl border shadow-2xl p-1.5 z-50 text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-2 ${
+                isDark
+                  ? 'bg-slate-900/95 border-slate-700 text-slate-200'
+                  : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-300/80'
+              }`}
+            >
+              <div className={`px-2 py-1.5 text-[10px] font-mono uppercase border-b flex items-center justify-between mb-1 ${
+                isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+              }`}>
+                <span className="truncate">Pages ({document.pages.length})</span>
+                {userRole !== 'viewer' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPagesDropdownOpen(false);
+                      onOpenNewPageModal();
+                    }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold normal-case text-[10px] cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>New Page</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {document.pages.map((p, idx) => {
+                  const isActive = p.id === currentPage.id;
+                  const isConfirming = confirmDeletePageId === p.id;
+                  const canDelete = document.pages.length > 1 && userRole !== 'viewer' && Boolean(onDeletePage);
+
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        if (!isConfirming) {
+                          onSelectPage(p.id);
+                          setIsPagesDropdownOpen(false);
+                        }
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-2 transition-colors cursor-pointer group ${
+                        isActive
+                          ? isDark
+                            ? 'bg-indigo-600/20 text-indigo-200 font-semibold border border-indigo-500/40'
+                            : 'bg-indigo-50 text-indigo-900 font-semibold border border-indigo-300'
+                          : isDark
+                          ? 'hover:bg-slate-800 text-slate-300 hover:text-white border border-transparent'
+                          : 'hover:bg-slate-100 text-slate-700 border border-transparent'
+                      }`}
+                    >
+                      <div className="truncate min-w-0 flex-1">
+                        <div className="truncate font-semibold flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono opacity-50">{idx + 1}.</span>
+                          <span className="truncate">{p.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-mono text-slate-400">
+                          <span className="uppercase px-1 py-0.2 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 text-[9px]">
+                            {p.diagramType}
+                          </span>
+                          <span>{p.nodes.length} node{p.nodes.length === 1 ? '' : 's'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        {isConfirming ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-rose-400 font-bold">Delete?</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeletePage?.(p.id);
+                                setConfirmDeletePageId(null);
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-bold cursor-pointer"
+                              title={`Confirm deleting page "${p.title}"`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeletePageId(null)}
+                              className={`px-1.5 py-0.5 rounded text-[9px] cursor-pointer ${
+                                isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                              }`}
+                              title="Cancel"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            {isActive && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeletePageId(p.id)}
+                                className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title={`Delete page "${p.title}"`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

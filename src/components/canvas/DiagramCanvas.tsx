@@ -68,6 +68,9 @@ interface DiagramCanvasProps {
   onDropNewShape: (shapeTemplateId: string, canvasX: number, canvasY: number) => void;
   onUpdateNodeLabel?: (nodeId: string, label: string) => void;
   onOpenNewPageModal?: () => void;
+  canDeleteCurrentPage?: boolean;
+  currentPageTitle?: string;
+  onDeleteCurrentPage?: () => void;
   onDeleteEdge?: (edgeId: string) => void;
   onOpenSettingsModal?: () => void;
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
@@ -104,6 +107,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onDropNewShape,
   onUpdateNodeLabel,
   onOpenNewPageModal,
+  canDeleteCurrentPage,
+  currentPageTitle,
+  onDeleteCurrentPage,
   onDeleteEdge,
   onOpenSettingsModal,
   onOpenChildDiagramModal,
@@ -1977,6 +1983,9 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             onToggleGridSnap={() => setGridSnap(s => !s)}
             onToggleGrid={() => setShowGrid(g => !g)}
             onOpenNewPageModal={() => onOpenNewPageModal?.()}
+            canDeleteCurrentPage={canDeleteCurrentPage}
+            currentPageTitle={currentPageTitle}
+            onDeleteCurrentPage={onDeleteCurrentPage}
             onStartConnectFromNode={nodeId => {
               setConnectingFrom({ nodeId, anchor: 'right' });
             }}

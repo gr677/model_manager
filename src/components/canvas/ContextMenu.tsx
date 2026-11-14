@@ -72,6 +72,9 @@ interface ContextMenuProps {
   onToggleGridSnap: () => void;
   onToggleGrid: () => void;
   onOpenNewPageModal: () => void;
+  canDeleteCurrentPage?: boolean;
+  currentPageTitle?: string;
+  onDeleteCurrentPage?: () => void;
   onStartConnectFromNode?: (nodeId: string) => void;
   onConnectNodes?: (sourceId: string, targetId: string) => void;
   onNavigateChildDiagram?: (filename: string) => void;
@@ -109,6 +112,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onToggleGridSnap,
   onToggleGrid,
   onOpenNewPageModal,
+  canDeleteCurrentPage,
+  currentPageTitle,
+  onDeleteCurrentPage,
   onStartConnectFromNode,
   onConnectNodes,
   onNavigateChildDiagram,
@@ -122,6 +128,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   const [showConnectSubmenu, setShowConnectSubmenu] = useState(false);
   const [showEdgeStyleSubmenu, setShowEdgeStyleSubmenu] = useState(false);
   const [showChildSubmenu, setShowChildSubmenu] = useState(false);
+  const [confirmDeletePage, setConfirmDeletePage] = useState(false);
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
 
@@ -131,6 +138,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     setShowConnectSubmenu(false);
     setShowEdgeStyleSubmenu(false);
     setShowChildSubmenu(false);
+    setConfirmDeletePage(false);
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -996,6 +1004,38 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             <FilePlus className="w-3.5 h-3.5" />
             <span>Add Diagram Page...</span>
           </button>
+
+          {!isReadOnly && canDeleteCurrentPage && onDeleteCurrentPage && (
+            <button
+              onClick={() => {
+                if (!confirmDeletePage) {
+                  setConfirmDeletePage(true);
+                  return;
+                }
+                onDeleteCurrentPage();
+                onClose();
+              }}
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${
+                confirmDeletePage
+                  ? 'bg-rose-600 text-white font-semibold'
+                  : isDark
+                  ? 'hover:bg-rose-950/60 text-rose-400 hover:text-rose-300'
+                  : 'hover:bg-rose-50 text-rose-600'
+              }`}
+              title={
+                confirmDeletePage
+                  ? `Click again to permanently delete page "${currentPageTitle || 'Current Page'}"`
+                  : `Delete page "${currentPageTitle || 'Current Page'}"`
+              }
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">
+                {confirmDeletePage
+                  ? `Confirm Delete "${currentPageTitle || 'Page'}"?`
+                  : 'Delete Current Page...'}
+              </span>
+            </button>
+          )}
 
           {onOpenImportSqlModal && (diagramType === 'erd' || diagramType === 'generic') && (
             <button
