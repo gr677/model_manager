@@ -264,6 +264,16 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   const isReadOnly = userRole === 'viewer';
   const themeDef = THEMES[theme || 'dark'] || THEMES.dark;
 
+  const sidebarSpacer = (
+    <div className="py-1.5" aria-hidden="true">
+      <div
+        className={`h-px w-full bg-gradient-to-r from-transparent ${
+          themeDef.isDark ? 'via-slate-700/80' : 'via-slate-300'
+        } to-transparent`}
+      />
+    </div>
+  );
+
   return (
     <div
       className={`relative h-full border-r flex flex-col shrink-0 select-none transition-colors duration-150 ${themeDef.sidebarClass}`}
@@ -273,7 +283,10 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
       <div className={`p-3 border-b space-y-2.5 ${themeDef.borderClass}`}>
         {/* Workspace Dropdown directly above Shape Library */}
         {onLoadDiagram && (
-          <WorkspaceDropdown onLoadDiagram={onLoadDiagram} theme={theme} />
+          <>
+            <WorkspaceDropdown onLoadDiagram={onLoadDiagram} theme={theme} />
+            {sidebarSpacer}
+          </>
         )}
 
         {/* Back to Parent Diagram Button when in a Child Diagram */}
@@ -551,6 +564,8 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
             Locked
           </span>
         </div>
+
+        {sidebarSpacer}
 
         {/* Search input */}
         <div className="relative">

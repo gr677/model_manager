@@ -182,7 +182,7 @@ export const WorkspaceDropdown: React.FC<WorkspaceDropdownProps> = ({
   }
 
   return (
-    <div ref={dropdownRef} className="relative z-30 mb-2">
+    <div ref={dropdownRef} className="relative z-30">
       {/* Label above dropdown (Change 5: Increased font size and removed path location to the right) */}
       <div className="flex items-center px-1 mb-1.5">
         <span className={`flex items-center gap-1.5 uppercase font-bold text-xs tracking-wider ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
