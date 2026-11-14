@@ -329,17 +329,19 @@ function isTlsCertError(err: any): boolean {
   ].some(c => code.includes(c) || msg.includes(c));
 }
 
-function isRetryableGeminiError(err: any): boolean {
+function isFastSameModelRetryableError(err: any, elapsedMs: number): boolean {
+  if (elapsedMs >= 10000) return false;
   const status = Number(err?.status || err?.code || 0);
-  if (status === 429 || status >= 500) return true;
+  // 503 (high demand / overloaded) and 429 (rate limit) should fail over immediately to the next model
+  if (status === 429 || status === 503) return false;
+  if (status >= 500) return true;
   const msg = String(err?.message || '').toLowerCase();
   const causeCode = String(err?.cause?.code || '').toUpperCase();
+  if (msg.includes('abort') || msg.includes('timeout')) return false;
   return (
     msg.includes('fetch failed') ||
-    msg.includes('timeout') ||
     msg.includes('econnreset') ||
-    msg.includes('etimedout') ||
-    ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(causeCode)
+    ['ECONNRESET', 'EAI_AGAIN'].includes(causeCode)
   );
 }
 
@@ -351,6 +353,9 @@ function describeGeminiError(err: any): string {
     const detail = [causeCode, causeMsg].filter(Boolean).join(': ') || msg;
     return `TLS certificate verification failed (${detail}). If you are behind a corporate SSL proxy, set NODE_EXTRA_CA_CERTS to your proxy root CA .pem file and restart the server.`;
   }
+  if (/abort|timeout|etimedout/i.test(msg) || ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'ETIMEDOUT'].includes(causeCode.toUpperCase())) {
+    return 'Gemini API request timed out due to model latency. Please try again.';
+  }
   if (/fetch failed/i.test(msg)) {
     const causeDetail = [causeCode, causeMsg].filter(Boolean).join(': ');
     return causeDetail
@@ -360,47 +365,66 @@ function describeGeminiError(err: any): string {
   return causeMsg && !msg.includes(causeMsg) ? `${msg} (${causeMsg})` : msg;
 }
 
-
 async function generateWithGeminiFallback(opts: {
   apiKey: string;
-  models: Array<{ name: string; useLowThinking?: boolean }>;
+  models: Array<{ name: string; useLowThinking?: boolean; timeoutMs?: number }>;
   contents: string;
   config: Record<string, any>;
   contextLabel: string;
+  abortSignal?: AbortSignal;
 }): Promise<any> {
   initNodeSystemCertificates();
   let activeCaCerts: string[] | null = cachedOsCaCerts;
-  let forceCustomCaFetch = Boolean(
-    activeCaCerts && typeof (tls as any).setDefaultCACertificates !== 'function'
-  );
-  let ai = new GoogleGenAI({
-    apiKey: opts.apiKey,
-    httpOptions: {
-      timeout: 60000,
-      ...(forceCustomCaFetch && activeCaCerts ? { fetch: createCaAwareFetch(activeCaCerts) } : {}),
-      headers: {
-        'User-Agent': 'aistudio-build',
+  const shouldUseCustomCaFetch = () =>
+    Boolean(activeCaCerts && typeof (tls as any).setDefaultCACertificates !== 'function');
+
+  const createClient = (timeoutMs: number, forceCustomCa = false) =>
+    new GoogleGenAI({
+      apiKey: opts.apiKey,
+      httpOptions: {
+        timeout: timeoutMs,
+        ...((forceCustomCa || shouldUseCustomCaFetch()) && activeCaCerts
+          ? { fetch: createCaAwareFetch(activeCaCerts) }
+          : {}),
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
       },
-    },
-  });
+    });
 
   let lastError: any = null;
   let attemptedOsCaLoad = false;
+  let forceCustomCa = false;
 
-  for (const modelSpec of opts.models) {
+  for (let modelIdx = 0; modelIdx < opts.models.length; modelIdx++) {
+    if (opts.abortSignal?.aborted) {
+      throw new Error('Request cancelled by client.');
+    }
+
+    const modelSpec = opts.models[modelIdx];
+    const hasNextModel = modelIdx < opts.models.length - 1;
+    const modelTimeoutMs = modelSpec.timeoutMs ?? (hasNextModel ? 24000 : 45000);
+    let ai = createClient(modelTimeoutMs, forceCustomCa);
+
     const maxAttempts = 2;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (opts.abortSignal?.aborted) {
+        throw new Error('Request cancelled by client.');
+      }
+
+      const attemptStart = Date.now();
       try {
         logDebug(
           'info',
           'GEMINI_AI',
-          `Attempting model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) for ${opts.contextLabel}...`
+          `Attempting model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}, timeout ${modelTimeoutMs}ms) for ${opts.contextLabel}...`
         );
         const modelConfig = {
           ...opts.config,
           ...(modelSpec.useLowThinking
             ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
             : {}),
+          ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
         };
         const response = await ai.models.generateContent({
           model: modelSpec.name,
@@ -412,27 +436,23 @@ async function generateWithGeminiFallback(opts: {
         }
       } catch (err: any) {
         lastError = err;
+        const elapsedMs = Date.now() - attemptStart;
         logDebug(
           'warn',
           'GEMINI_AI',
-          `Model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) failed for ${opts.contextLabel}: ${describeGeminiError(err)}`
+          `Model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}, ${elapsedMs}ms) failed for ${opts.contextLabel}: ${describeGeminiError(err)}`
         );
+
+        if (opts.abortSignal?.aborted) {
+          throw new Error('Request cancelled by client.');
+        }
 
         if (isTlsCertError(err) && !attemptedOsCaLoad) {
           attemptedOsCaLoad = true;
           logDebug('info', 'TLS', 'Detected TLS issuer cert error; exporting OS root & intermediate CA certificates and retrying...');
           activeCaCerts = await loadOsRootAndIntermediateCAs();
-          ai = new GoogleGenAI({
-            apiKey: opts.apiKey,
-            httpOptions: {
-              timeout: 60000,
-              fetch: createCaAwareFetch(activeCaCerts),
-              headers: {
-                'User-Agent': 'aistudio-build',
-              },
-            },
-          });
-          // Retry immediately with the OS CA-aware client (grant an extra retry)
+          forceCustomCa = true;
+          ai = createClient(modelTimeoutMs, true);
           if (attempt === maxAttempts) {
             try {
               const retryResp = await ai.models.generateContent({
@@ -443,6 +463,7 @@ async function generateWithGeminiFallback(opts: {
                   ...(modelSpec.useLowThinking
                     ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
                     : {}),
+                  ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
                 },
               });
               if (retryResp && retryResp.text) return retryResp;
@@ -453,10 +474,11 @@ async function generateWithGeminiFallback(opts: {
           continue;
         }
 
-        if (attempt < maxAttempts && isRetryableGeminiError(err)) {
-          await new Promise(resolve => setTimeout(resolve, 800 * attempt));
+        if (attempt < maxAttempts && isFastSameModelRetryableError(err, elapsedMs)) {
+          await new Promise(resolve => setTimeout(resolve, 600 * attempt));
           continue;
         }
+        // Fail over immediately to next model on 503/429/timeout/slow failure
         break;
       }
     }
@@ -2816,9 +2838,9 @@ app.post('/api/ai/generate-flowchart', async (req: Request, res: Response) => {
       });
     }
 
-    const modelsToTry: Array<{ name: string; useLowThinking: boolean }> = [
-      { name: 'gemini-4-hydrogen', useLowThinking: true },
-      { name: 'gemini-3.1-flash-lite', useLowThinking: false },
+    const modelsToTry: Array<{ name: string; useLowThinking?: boolean; timeoutMs?: number }> = [
+      { name: 'gemini-4-hydrogen', useLowThinking: true, timeoutMs: 28000 },
+      { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 60000 },
     ];
     const isHorizontal = layout === 'horizontal';
 
@@ -3095,33 +3117,47 @@ INSTRUCTIONS FOR EXTENDING:
 2. Give each new step a unique short id like "new_1", "new_2", etc. (do not reuse existing node IDs).
 3. In "connections", connect at least one existing node ID (from the list above) to your new steps, and connect new steps to each other (and back to existing nodes if rejoining/looping).
 4. Include clear labels ("Yes", "No", etc.) on edges coming out of any "flow-decision" node.
-5. Keep step labels concise (2-6 words) and provide informative descriptions (2-4 sentences per step, or matching any requested depth).`;
+5. Keep step labels concise (2-6 words) and write thorough technical descriptions of 6 to 7 sentences per step (covering internal mechanics, data/control flow, error handling, and trade-offs, or matching any explicit length requested by the user).`;
     } else {
-      promptText = `You are an expert business analyst and systems architect designing an ANSI/ISO 5807 standard process flowchart.
-Design a complete, realistic, well-structured end-to-end flowchart for the following process:
+      promptText = `You are an expert business analyst and systems architect designing an ANSI/ISO 5807 process flowchart.
+Design a complete, realistic, well-structured end-to-end flowchart for the following process or system architecture topic:
 "${topic.trim()}"
 
 ${formatLinksInstruction}
 
 INSTRUCTIONS:
-1. Suggest 7 to 14 clear, logical steps covering the full process from Start ("flow-terminator", terminalKind: "start") through inputs/setup, decisions with branching paths, data/database/document operations, delays/merges where relevant, and End ("flow-terminator", terminalKind: "end").
+1. Suggest 7 to 13 clear, logical steps covering the full execution lifecycle or architecture flow from Start ("flow-terminator", terminalKind: "start") through inputs/setup, decisions with branching paths, processing/queues/database/document operations, delays/merges where relevant, and End ("flow-terminator", terminalKind: "end"). If the prompt asks about a technical runtime or deep-dive topic (e.g. Node.js internals), model its concrete execution pipeline (intake, event loop phases, microtask vs macrotask queues, thread pool, async I/O completion, and exit) as a crisp flowchart.
 2. Use a diverse, accurate mix of flowchart symbols matching what each step genuinely represents—avoid making everything a plain rectangle when a decision diamond, manual input, data I/O, database cylinder, document, preparation hexagon, delay, or merge junction is appropriate.
-3. Give every step a short unique id ("s1", "s2", ...), a crisp label (2-6 words; short question for decisions), and a helpful technical/operational description (2-4 sentences per step, or matching any length requested by the user).
+3. Give every step a short unique id ("s1", "s2", ...), a crisp label (2-6 words; short question for decisions), and a thorough, expert-level technical description of 6 to 7 sentences per step (explaining internal mechanics, data flow, failure modes, edge cases, and architectural trade-offs, or matching any explicit length requested by the user).
 4. In "connections", define all directed flow arrows between step IDs so the graph is fully connected from start to end(s), with branch labels ("Yes", "No", etc.) on every decision branch.`;
     }
 
-    const response = await generateWithGeminiFallback({
-      apiKey,
-      models: modelsToTry,
-      contents: promptText,
-      contextLabel: 'flowchart generation',
-      config: {
-        systemInstruction:
-          'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
-        responseMimeType: 'application/json',
-        responseSchema: flowchartResponseSchema,
-      },
-    });
+    const clientAbortController = new AbortController();
+    const onClientClose = () => {
+      if (!res.writableFinished) {
+        clientAbortController.abort();
+      }
+    };
+    res.on('close', onClientClose);
+
+    let response: any;
+    try {
+      response = await generateWithGeminiFallback({
+        apiKey,
+        models: modelsToTry,
+        contents: promptText,
+        contextLabel: 'flowchart generation',
+        abortSignal: clientAbortController.signal,
+        config: {
+          systemInstruction:
+            'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep node labels concise (2-6 words), write thorough 6-7 sentence technical descriptions for each step, and ensure all connection IDs match declared step IDs.',
+          responseMimeType: 'application/json',
+          responseSchema: flowchartResponseSchema,
+        },
+      });
+    } finally {
+      res.off('close', onClientClose);
+    }
 
     const parsed = JSON.parse(response.text.trim());
     const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : [];

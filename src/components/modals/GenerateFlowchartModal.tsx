@@ -99,7 +99,7 @@ export const GenerateFlowchartModal: React.FC<GenerateFlowchartModalProps> = ({
     const isExtending = mode === 'extend' && existingNodes.length > 0;
 
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 75000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 120000);
 
     try {
       const res = await fetch('/api/ai/generate-flowchart', {
