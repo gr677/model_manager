@@ -16,7 +16,6 @@ import tls from 'tls';
 import https from 'https';
 import http from 'http';
 import { initialDiagramDocument } from './src/data/seedDiagrams';
-import { getExampleDiagramForType } from './src/data/diagramExamples';
 import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge, DiagramType } from './src/types/diagram';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
@@ -1362,18 +1361,26 @@ app.post('/api/workspaces', async (req: Request, res: Response) => {
 
     logDebug('info', 'STORAGE WORKSPACE', `Creating workspace "${safeId}" at ${dataDir}`);
 
-    // Create data/root.json starting point with requested diagramType template (default: mindmap)
+    // Create empty data/root.json starting point with requested diagramType (default: mindmap)
     if (!fs.existsSync(rootPath)) {
       const requestedType: DiagramType = (req.body.diagramType || 'mindmap') as DiagramType;
       let templateDoc = req.body.templateDoc;
       if (!templateDoc) {
-        const starterPage = getExampleDiagramForType(requestedType);
+        const emptyStarterPage: DiagramPage = {
+          id: `page-${requestedType}-${Date.now()}`,
+          title: req.body.name || 'Main Diagram',
+          diagramType: requestedType,
+          description: '',
+          viewport: { x: 50, y: 50, zoom: 1 },
+          nodes: [],
+          edges: [],
+        };
         templateDoc = {
           id: `doc-${safeId}-root`,
           name: `${req.body.name || safeId} Architecture`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          activePageId: starterPage.id,
+          activePageId: emptyStarterPage.id,
           settings: {
             gridSnap: true,
             showGrid: true,
@@ -1381,11 +1388,11 @@ app.post('/api/workspaces', async (req: Request, res: Response) => {
             showMinimap: true,
           },
           versions: [],
-          pages: [starterPage],
+          pages: [emptyStarterPage],
         };
       }
       await fsp.writeFile(rootPath, JSON.stringify(templateDoc, null, 2), 'utf-8');
-      logDebug('success', 'STORAGE WORKSPACE', `Initialized root.json template (${requestedType}) in workspace "${safeId}"`);
+      logDebug('success', 'STORAGE WORKSPACE', `Initialized empty root.json (${requestedType}) in workspace "${safeId}"`);
     }
 
     res.status(201).json({

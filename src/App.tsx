@@ -45,7 +45,6 @@ import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
 import { NodeImageAttachment } from './types/diagram';
 import { workspaceService } from './services/workspaceService';
 import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
-import { getExampleDiagramForType } from './data/diagramExamples';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
 import { collectAggregationsFromPageAndChildren } from './utils/descriptionAggregation';
@@ -947,22 +946,30 @@ export default function App() {
           return;
         }
 
-        // 3. Otherwise, automatically instantiate a rich starter example diagram!
-        const examplePage = getExampleDiagramForType(type);
-        const updatedPages = [...document.pages, examplePage];
+        // 3. Otherwise, create a clean empty diagram page for this type
+        const emptyPage: DiagramPage = {
+          id: `page-${type}-${Date.now()}`,
+          title: `${type.toUpperCase()} Diagram`,
+          diagramType: type,
+          description: '',
+          nodes: [],
+          edges: [],
+          viewport: { x: 50, y: 50, zoom: 1 },
+        };
+        const updatedPages = [...document.pages, emptyPage];
         const updatedDoc = {
           ...document,
           pages: updatedPages,
-          activePageId: examplePage.id,
+          activePageId: emptyPage.id,
         };
         persistDocument(updatedDoc);
-        setActivePageId(examplePage.id);
+        setActivePageId(emptyPage.id);
         setSelectedCategory(type);
-        setLastPageByType(prev => ({ ...prev, [type]: examplePage.id }));
+        setLastPageByType(prev => ({ ...prev, [type]: emptyPage.id }));
         collaborationService.addActivity(
           'You',
           '#10b981',
-          `Created starter example for ${type.toUpperCase()}`
+          `Created empty ${type.toUpperCase()} diagram`
         );
       }, type.toUpperCase());
     },

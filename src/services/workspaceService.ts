@@ -5,7 +5,6 @@
 
 import { DiagramDocument, DiagramPage, DiagramType, NodeImageAttachment } from '../types/diagram';
 import { initialDiagramDocument } from '../data/seedDiagrams';
-import { getExampleDiagramForType } from '../data/diagramExamples';
 
 export interface WorkspaceDiagram {
   filename: string; // e.g. "root.json", "child_payment.json"
@@ -427,31 +426,31 @@ class WorkspaceService {
     const id = this.store.workspaces[safeId] ? `${safeId}_${Date.now().toString().slice(-4)}` : safeId;
     const cleanBasePath = (basePath || this.getActiveWorkspace()?.basePath || DEFAULT_BASE_PATH).trim();
 
-    let starterDoc: DiagramDocument;
-    if (diagramType && diagramType !== 'generic') {
-      const starterPage = getExampleDiagramForType(diagramType);
-      starterDoc = {
-        id: `doc-${id}-root`,
-        name: `${name.trim()} Architecture`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        activePageId: starterPage.id,
-        settings: {
-          gridSnap: true,
-          showGrid: true,
-          theme: 'dark',
-          showMinimap: true,
-        },
-        versions: [],
-        pages: [starterPage],
-      };
-    } else {
-      starterDoc = {
-        ...initialDiagramDocument,
-        id: `doc-${id}-root`,
-        name: `${name.trim()} Architecture`,
-      };
-    }
+    const targetType: DiagramType = diagramType || 'generic';
+    const emptyStarterPage: DiagramPage = {
+      id: `page-${targetType}-${Date.now()}`,
+      title: name.trim() || 'Main Diagram',
+      diagramType: targetType,
+      description: '',
+      viewport: { x: 50, y: 50, zoom: 1 },
+      nodes: [],
+      edges: [],
+    };
+    const starterDoc: DiagramDocument = {
+      id: `doc-${id}-root`,
+      name: `${name.trim()} Architecture`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      activePageId: emptyStarterPage.id,
+      settings: {
+        gridSnap: true,
+        showGrid: true,
+        theme: 'dark',
+        showMinimap: true,
+      },
+      versions: [],
+      pages: [emptyStarterPage],
+    };
 
     const newWorkspace: Workspace = {
       id,
@@ -821,7 +820,7 @@ class WorkspaceService {
     name: string,
     doc?: DiagramDocument,
     initialType?: DiagramType,
-    isEmpty: boolean = false
+    _isEmpty: boolean = true
   ): DiagramDocument {
     const ws = this.getActiveWorkspace();
     let safeFilename = filename.trim().toLowerCase();
@@ -831,12 +830,13 @@ class WorkspaceService {
     let newDoc: DiagramDocument;
     if (doc) {
       newDoc = JSON.parse(JSON.stringify(doc));
-    } else if (initialType && isEmpty) {
+    } else {
+      const targetType: DiagramType = initialType || 'generic';
       const cleanPage: DiagramPage = {
-        id: `page-${initialType}-${Date.now()}`,
-        title: name || `${initialType.toUpperCase()} Diagram`,
-        diagramType: initialType,
-        description: `New ${initialType.toUpperCase()} child diagram.`,
+        id: `page-${targetType}-${Date.now()}`,
+        title: name || safeFilename.replace('.json', '') || `${targetType.toUpperCase()} Diagram`,
+        diagramType: targetType,
+        description: '',
         viewport: { x: 50, y: 50, zoom: 1 },
         nodes: [],
         edges: [],
@@ -855,30 +855,6 @@ class WorkspaceService {
         },
         versions: [],
         pages: [cleanPage],
-      };
-    } else if (initialType) {
-      const starterPage = getExampleDiagramForType(initialType);
-      newDoc = {
-        id: `doc-${ws.id}-${Date.now()}`,
-        name: name || safeFilename.replace('.json', ''),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        activePageId: starterPage.id,
-        settings: {
-          gridSnap: true,
-          showGrid: true,
-          theme: 'dark',
-          showMinimap: true,
-        },
-        versions: [],
-        pages: [starterPage],
-      };
-    } else {
-      const clonedInitial = JSON.parse(JSON.stringify(initialDiagramDocument));
-      newDoc = {
-        ...clonedInitial,
-        id: `doc-${ws.id}-${Date.now()}`,
-        name: name || safeFilename.replace('.json', ''),
       };
     }
 
