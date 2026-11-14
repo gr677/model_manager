@@ -45,6 +45,7 @@ import {
   Trash2,
   FileJson,
   Upload,
+  Fish,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -71,6 +72,7 @@ interface AppHeaderProps {
   onOpenImportLegacyJsonModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
   onOpenGenerateFlowchartModal?: () => void;
+  onInsertFishboneTemplate?: () => void;
   onManualSave: () => void;
   onSelectPage: (pageId: string) => void;
   onOpenNewPageModal: () => void;
@@ -112,6 +114,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenImportLegacyJsonModal,
   onOpenGenerateMindmapModal,
   onOpenGenerateFlowchartModal,
+  onInsertFishboneTemplate,
   onManualSave,
   onSelectPage,
   onOpenNewPageModal,
@@ -598,6 +601,20 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <Workflow className="w-3.5 h-3.5 text-emerald-200" />
             <span>AI Flowchart</span>
             <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
+          </button>
+        )}
+
+        {/* Dedicated Fishbone 6M Skeleton Builder Button */}
+        {currentPage.diagramType === 'fishbone' && onInsertFishboneTemplate && userRole !== 'viewer' && (
+          <button
+            type="button"
+            onClick={onInsertFishboneTemplate}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md shadow-rose-600/30 shrink-0 animate-in fade-in"
+            title="Insert a complete 6M Ishikawa Fishbone skeleton (Tail, Spine, 6M Diagonal Ribs, Cause Twigs & Fish Head)"
+          >
+            <Fish className="w-3.5 h-3.5 text-rose-100" />
+            <span>6M Fishbone</span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Ishikawa</span>
           </button>
         )}
 

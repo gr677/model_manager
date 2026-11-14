@@ -49,6 +49,7 @@ import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
 import { collectAggregationsFromPageAndChildren, AggregatedItem, AggregationDataType } from './utils/descriptionAggregation';
+import { createFishboneTemplate } from './utils/fishboneBuilder';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
@@ -961,6 +962,29 @@ export default function App() {
     },
     [document, persistDocument]
   );
+
+  // Insert an authentic 6M Ishikawa Fishbone skeleton onto the current page
+  const handleInsertFishboneTemplate = useCallback(() => {
+    if (!currentPage || userRole === 'viewer') return;
+    const maxY = currentPage.nodes.reduce((acc, n) => Math.max(acc, n.y + n.height), 0);
+    const offsetY = currentPage.nodes.length > 0 ? maxY + 80 : 0;
+    const { nodes: fbNodes, edges: fbEdges } = createFishboneTemplate({
+      offsetY,
+      problemStatement: `EFFECT / PROBLEM:\n${currentPage.title || 'Core Issue'}`,
+    });
+    const updatedPages = document.pages.map(p =>
+      p.id === currentPage.id
+        ? {
+            ...p,
+            nodes: [...p.nodes, ...fbNodes],
+            edges: [...p.edges, ...fbEdges],
+            viewport: currentPage.nodes.length === 0 ? { x: 40, y: 40, zoom: 0.72 } : p.viewport,
+          }
+        : p
+    );
+    persistDocument({ ...document, pages: updatedPages });
+    collaborationService.addActivity('You', '#f43f5e', `Inserted 6M Fishbone template onto '${currentPage.title}'`);
+  }, [currentPage, document, persistDocument, userRole]);
 
   // Delete an existing page (at least 1 page must remain in the diagram)
   const handleDeletePage = useCallback(
@@ -1995,6 +2019,7 @@ export default function App() {
         onOpenImportLegacyJsonModal={() => setIsImportLegacyJsonModalOpen(true)}
         onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
         onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
+        onInsertFishboneTemplate={handleInsertFishboneTemplate}
         onChangeRole={setUserRole}
         onToggleTheme={handleToggleTheme}
         onSwitchDiagram={handleSwitchDiagram}

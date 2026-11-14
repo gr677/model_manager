@@ -116,9 +116,14 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
     const isSourceNode = isConnectingActive && connectingSourceNodeId === node.id;
     const isTargetCandidate = isConnectingActive && connectingSourceNodeId !== node.id;
 
+    const anchorDefs =
+      node.type === 'fishbone-junction'
+        ? NODE_ANCHOR_DEFINITIONS.filter(d => d.id === 'top' || d.id === 'right' || d.id === 'bottom' || d.id === 'left')
+        : NODE_ANCHOR_DEFINITIONS;
+
     return (
       <>
-        {NODE_ANCHOR_DEFINITIONS.map(def => {
+        {anchorDefs.map(def => {
           const relCoords = getNodeAnchorRelativeCoords(node, def.id);
           return (
             <div
@@ -1699,11 +1704,175 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         );
       }
 
-      // 25. Mindmap Node & Standard Flowchart Process Box
+      // 25. Fishbone (Ishikawa) Head (Effect / Problem Statement facing right)
+      case 'fishbone-head': {
+        const fill = node.style?.fill || 'rgba(225, 29, 72, 0.92)';
+        const stroke = node.style?.stroke || '#fb7185';
+        const strokeWidth = node.style?.strokeWidth ?? 3;
+        const textColor = node.style?.textColor || '#fff1f2';
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const gillX = pad + 14;
+        const headPath = `M ${pad} ${pad + 4} Q ${gillX} ${h / 2} ${pad} ${h - pad - 4} C ${w * 0.48} ${h - pad + 4}, ${w * 0.86} ${h * 0.78}, ${w - pad} ${h / 2} C ${w * 0.86} ${h * 0.22}, ${w * 0.48} ${pad - 4}, ${pad} ${pad + 4} Z`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-xl"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path
+                d={headPath}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+              {/* Subtle gill arc */}
+              <path
+                d={`M ${pad + 18} ${h * 0.22} Q ${pad + 28} ${h * 0.5} ${pad + 18} ${h * 0.78}`}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={1.5}
+                strokeOpacity={0.55}
+              />
+              {/* Stylized fish eye */}
+              <circle
+                cx={w * 0.81}
+                cy={h * 0.34}
+                r={Math.max(4, Math.min(6.5, h * 0.05))}
+                fill={textColor}
+                fillOpacity={0.9}
+              />
+              <circle
+                cx={w * 0.818}
+                cy={h * 0.34}
+                r={Math.max(2, Math.min(3, h * 0.025))}
+                fill="#0f172a"
+              />
+            </svg>
+            <div className="relative z-10 text-center pl-6 pr-10 pointer-events-none select-none max-w-full">
+              <span
+                className="text-xs font-bold leading-snug whitespace-pre-line line-clamp-4"
+                style={{ color: textColor }}
+              >
+                {node.label}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      // 25b. Fishbone (Ishikawa) Tail Fin (far-left spine anchor)
+      case 'fishbone-tail': {
+        const fill = node.style?.fill || 'rgba(51, 65, 85, 0.9)';
+        const stroke = node.style?.stroke || '#94a3b8';
+        const strokeWidth = node.style?.strokeWidth ?? 2.5;
+        const w = node.width;
+        const h = node.height;
+        const pad = Math.max(strokeWidth, 2);
+        const tailPath = `M ${pad} ${pad} L ${w - pad} ${h * 0.44} L ${w - pad} ${h * 0.56} L ${pad} ${h - pad} L ${w * 0.38} ${h / 2} Z`;
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-lg"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path
+                d={tailPath}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        );
+      }
+
+      // 25c. Fishbone (Ishikawa) Category Rib Header
+      case 'fishbone-category': {
+        const fill = node.style?.fill || 'rgba(159, 18, 57, 0.88)';
+        const stroke = node.style?.stroke || '#fb7185';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#ffe4e6';
+        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, 'rgba(159, 18, 57, 0.88)');
+        const isBottom = node.data?.side === 'bottom';
+
+        return (
+          <div
+            className="relative flex items-center justify-center h-full px-3 py-1.5 shadow-lg text-center transition-all border-2 overflow-hidden"
+            style={{
+              ...bgStyle,
+              borderColor: stroke,
+              borderWidth: `${strokeWidth}px`,
+              borderRadius: '6px',
+              color: textColor,
+            }}
+          >
+            <div
+              className={`absolute left-0 right-0 h-1 ${isBottom ? 'top-0' : 'bottom-0'}`}
+              style={{ backgroundColor: stroke }}
+            />
+            <span className="text-[11px] font-extrabold uppercase tracking-wider leading-tight line-clamp-2 select-none whitespace-pre-line">
+              {node.label}
+            </span>
+          </div>
+        );
+      }
+
+      // 25d. Fishbone (Ishikawa) Horizontal Cause / Sub-Cause Twig
+      case 'fishbone-cause': {
+        const stroke = node.style?.stroke || '#38bdf8';
+        const textColor = node.style?.textColor || '#f1f5f9';
+        const fill = node.style?.fill || 'rgba(15, 23, 42, 0.65)';
+
+        return (
+          <div
+            className="relative flex items-center justify-end h-full px-2.5 pb-1 text-right transition-all rounded-t-md"
+            style={{
+              backgroundColor: fill,
+              borderBottom: `2.5px solid ${stroke}`,
+              color: textColor,
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full mr-2 shrink-0"
+              style={{ backgroundColor: stroke }}
+            />
+            <span className="text-[11px] font-medium leading-tight line-clamp-2 select-none flex-1 text-left">
+              {node.label}
+            </span>
+          </div>
+        );
+      }
+
+      // 25e. Fishbone (Ishikawa) Spine / Rib Junction Joint
+      case 'fishbone-junction': {
+        const fill = node.style?.fill || '#cbd5e1';
+        const stroke = node.style?.stroke || '#0f172a';
+        const dotSize = Math.max(8, Math.min(node.width, node.height) - 4);
+        return (
+          <div className="w-full h-full flex items-center justify-center pointer-events-none">
+            <div
+              className="rounded-full shadow-md transition-transform group-hover:scale-125"
+              style={{
+                width: `${dotSize}px`,
+                height: `${dotSize}px`,
+                backgroundColor: fill,
+                border: `2px solid ${stroke}`,
+              }}
+            />
+          </div>
+        );
+      }
+
+      // 26. Mindmap Node & Standard Flowchart Process Box
       case 'mindmap-node':
       case 'flow-process':
-      case 'vsm-step':
-      case 'fishbone-category': {
+      case 'vsm-step': {
         const isMindmap = node.type === 'mindmap-node' || node.style?.rounded === 9999;
         const defaultFill = isMindmap ? 'rgba(139, 92, 246, 0.85)' : 'rgba(30, 41, 59, 0.95)';
         const defaultStroke = isMindmap ? '#c084fc' : '#3b82f6';
@@ -1791,7 +1960,9 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       }}
       className={`absolute group select-none pointer-events-auto ${
         isSelected
-          ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950 shadow-xl'
+          ? node.type === 'fishbone-junction'
+            ? 'ring-2 ring-blue-400 rounded-full shadow-lg'
+            : 'ring-2 ring-blue-400 ring-offset-2 ring-offset-slate-950 shadow-xl'
           : ''
       } ${isDragging ? 'cursor-grabbing opacity-90' : 'cursor-grab'}`}
       onMouseEnter={e => {
@@ -2187,7 +2358,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       )}
 
       {/* Interactive Resize Handles (Corner & Edge handles rendered when node is selected) */}
-      {isSelected && !isReadOnly && (
+      {isSelected && !isReadOnly && node.type !== 'fishbone-junction' && (
         <>
           {/* Corner Handles */}
           <div

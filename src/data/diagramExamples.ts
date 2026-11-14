@@ -4,6 +4,7 @@
  */
 
 import { DiagramPage, DiagramType } from '../types/diagram';
+import { createFishboneTemplate } from '../utils/fishboneBuilder';
 
 export function getExampleDiagramForType(type: DiagramType): DiagramPage {
   const timestamp = Date.now();
@@ -292,77 +293,21 @@ export function getExampleDiagramForType(type: DiagramType): DiagramPage {
       };
 
     // 5. Fishbone (Ishikawa Cause & Effect)
-    case 'fishbone':
+    case 'fishbone': {
+      const fishbone = createFishboneTemplate({
+        idPrefix: `fb-ex-${timestamp}`,
+        problemStatement: 'PROBLEM STATEMENT:\nAPI P99 Latency > 1200ms\nDuring Peak Traffic',
+      });
       return {
         id: `page-fishbone-${timestamp}`,
         title: 'Payment Gateway Latency Spike (Fishbone)',
         diagramType: 'fishbone',
-        description: 'Root cause analysis using the 6M categories: Machine, Method, Material, Measurement, Milieu, Man.',
-        viewport: { x: 50, y: 50, zoom: 0.95 },
-        nodes: [
-          {
-            id: 'fb-head',
-            type: 'flow-process',
-            label: 'PROBLEM STATEMENT:\nAPI P99 Latency > 1200ms\nDuring Black Friday Peak',
-            x: 840,
-            y: 200,
-            width: 220,
-            height: 100,
-            style: { fill: 'rgba(225, 29, 72, 0.9)', stroke: '#f43f5e', strokeWidth: 3, textColor: '#fff1f2', rounded: 8 },
-            data: { isHead: true },
-          },
-          {
-            id: 'fb-machine',
-            type: 'flow-process',
-            label: 'MACHINE (INFRA):\n• Connection pool exhaustion\n• Pod CPU throttling (k8s)',
-            x: 200,
-            y: 80,
-            width: 230,
-            height: 90,
-            style: { fill: 'rgba(30, 41, 59, 0.9)', stroke: '#fb7185', strokeWidth: 2, textColor: '#ffe4e6', rounded: 6 },
-            data: {},
-          },
-          {
-            id: 'fb-method',
-            type: 'flow-process',
-            label: 'METHOD (CODE):\n• N+1 database queries\n• Synchronous fraud API call',
-            x: 520,
-            y: 80,
-            width: 230,
-            height: 90,
-            style: { fill: 'rgba(30, 41, 59, 0.9)', stroke: '#fb7185', strokeWidth: 2, textColor: '#ffe4e6', rounded: 6 },
-            data: {},
-          },
-          {
-            id: 'fb-material',
-            type: 'flow-process',
-            label: 'MATERIAL (DATA):\n• Unindexed order history JSON\n• Payload bloat > 2MB',
-            x: 200,
-            y: 330,
-            width: 230,
-            height: 90,
-            style: { fill: 'rgba(30, 41, 59, 0.9)', stroke: '#fb7185', strokeWidth: 2, textColor: '#ffe4e6', rounded: 6 },
-            data: {},
-          },
-          {
-            id: 'fb-measure',
-            type: 'flow-process',
-            label: 'MEASUREMENT:\n• Missing Prometheus alerts\n• Delayed log aggregation',
-            x: 520,
-            y: 330,
-            width: 230,
-            height: 90,
-            style: { fill: 'rgba(30, 41, 59, 0.9)', stroke: '#fb7185', strokeWidth: 2, textColor: '#ffe4e6', rounded: 6 },
-            data: {},
-          },
-        ],
-        edges: [
-          { id: 'fb-e1', sourceNodeId: 'fb-machine', targetNodeId: 'fb-head', sourceAnchor: 'right', targetAnchor: 'left', type: 'straight', lineStyle: 'solid', markerStart: 'none', markerEnd: 'arrow', color: '#fb7185' },
-          { id: 'fb-e2', sourceNodeId: 'fb-method', targetNodeId: 'fb-head', sourceAnchor: 'right', targetAnchor: 'left', type: 'straight', lineStyle: 'solid', markerStart: 'none', markerEnd: 'arrow', color: '#fb7185' },
-          { id: 'fb-e3', sourceNodeId: 'fb-material', targetNodeId: 'fb-head', sourceAnchor: 'right', targetAnchor: 'left', type: 'straight', lineStyle: 'solid', markerStart: 'none', markerEnd: 'arrow', color: '#fb7185' },
-          { id: 'fb-e4', sourceNodeId: 'fb-measure', targetNodeId: 'fb-head', sourceAnchor: 'right', targetAnchor: 'left', type: 'straight', lineStyle: 'solid', markerStart: 'none', markerEnd: 'arrow', color: '#fb7185' },
-        ],
+        description: 'Root cause analysis using the 6M categories: Man, Machine, Method, Material, Measurement, Milieu.',
+        viewport: { x: 40, y: 40, zoom: 0.72 },
+        nodes: fishbone.nodes,
+        edges: fishbone.edges,
       };
+    }
 
     // 6. UML Sequence Diagram
     case 'uml-sequence':

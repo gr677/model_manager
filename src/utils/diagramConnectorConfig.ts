@@ -31,7 +31,7 @@ export const CONNECTOR_STYLE_OPTIONS: ConnectorStyleOption[] = [
     shortLabel: 'Curves',
     iconName: 'spline',
     description: 'Smooth organic cubic bezier curves',
-    bestFor: 'Mind Map, Fishbone / Ishikawa, Concept Maps',
+    bestFor: 'Mind Map, Concept Maps',
   },
   {
     id: 'straight',
@@ -39,7 +39,7 @@ export const CONNECTOR_STYLE_OPTIONS: ConnectorStyleOption[] = [
     shortLabel: 'Straight',
     iconName: 'minus',
     description: 'Direct straight line connecting nodes',
-    bestFor: 'PERT Network, SIPOC, UML Sequence',
+    bestFor: 'Fishbone / Ishikawa, PERT Network, SIPOC, UML Sequence',
   },
 ];
 
@@ -47,14 +47,14 @@ export const CONNECTOR_STYLE_OPTIONS: ConnectorStyleOption[] = [
  * Returns the standard industry-recommended connector style for a given diagram type.
  * e.g. ERD -> orthogonal (corners)
  *      Mind Map -> curved (curves)
- *      PERT -> straight
+ *      Fishbone / PERT -> straight
  */
 export function getDefaultConnectorStyleForDiagram(diagramType: DiagramType): ConnectorRoutingStyle {
   switch (diagramType) {
     case 'mindmap':
-    case 'fishbone':
       return 'curved';
 
+    case 'fishbone':
     case 'pert':
     case 'sipoc':
     case 'uml-sequence':
@@ -91,6 +91,6 @@ export function getDefaultConnectorDescription(diagramType: DiagramType): string
     case 'orthogonal':
       return 'Corners (standard for ERD & Flowcharts)';
     case 'straight':
-      return 'Straight (standard for PERT & Sequences)';
+      return 'Straight (standard for Fishbone, PERT & Sequences)';
   }
 }

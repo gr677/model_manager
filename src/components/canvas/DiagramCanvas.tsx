@@ -1263,7 +1263,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                   ? 'hover:bg-slate-800 text-slate-300'
                   : 'hover:bg-slate-100 text-slate-700'
               }`}
-              title="Curved (Bezier smooth curve) - Default for Mind Maps & Fishbone"
+              title="Curved (Bezier smooth curve) - Default for Mind Maps"
             >
               <Spline className="w-3.5 h-3.5" />
               <span>Curves</span>
@@ -1279,7 +1279,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                   ? 'hover:bg-slate-800 text-slate-300'
                   : 'hover:bg-slate-100 text-slate-700'
               }`}
-              title="Straight (Direct line) - Default for PERT & UML Sequence"
+              title="Straight (Direct line) - Default for Fishbone, PERT & UML Sequence"
             >
               <Minus className="w-3.5 h-3.5" />
               <span>Straight</span>
