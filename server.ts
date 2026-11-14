@@ -12,6 +12,9 @@ import { promisify } from 'util';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import os from 'os';
+import tls from 'tls';
+import https from 'https';
+import http from 'http';
 import { initialDiagramDocument } from './src/data/seedDiagrams';
 import { getExampleDiagramForType } from './src/data/diagramExamples';
 import { DiagramDocument, DiagramPage, DiagramVersion, DiagramNode, DiagramEdge, DiagramType } from './src/types/diagram';
@@ -76,6 +79,395 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// =========================================================================
+// SYSTEM CA & CORPORATE PROXY CERTIFICATE SUPPORT FOR GEMINI API
+// =========================================================================
+let systemCaInitialized = false;
+let cachedOsCaCerts: string[] | null = null;
+let pendingOsCaPromise: Promise<string[]> | null = null;
+
+function extractPemCerts(pemText: string): string[] {
+  const matches = pemText.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+  return matches ? matches.map(m => m.trim()) : [];
+}
+
+function readExtraCaFiles(): string[] {
+  const certs: string[] = [];
+  const candidatePaths = [
+    process.env.NODE_EXTRA_CA_CERTS,
+    process.env.SSL_CERT_FILE,
+    process.env.REQUESTS_CA_BUNDLE,
+    ...(process.platform === 'linux'
+      ? ['/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt', '/etc/ssl/cert.pem']
+      : []),
+  ].filter((p): p is string => Boolean(p && p.trim()));
+
+  for (const filePath of candidatePaths) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        certs.push(...extractPemCerts(content));
+      }
+    } catch {
+      // Ignore unreadable CA bundle files
+    }
+  }
+  return certs;
+}
+
+function initNodeSystemCertificates(): void {
+  if (systemCaInitialized) return;
+  systemCaInitialized = true;
+  try {
+    const tlsAny = tls as any;
+    if (typeof tlsAny.getCACertificates === 'function' && typeof tlsAny.setDefaultCACertificates === 'function') {
+      const merged = new Set<string>([
+        ...tlsAny.getCACertificates('default'),
+        ...tlsAny.getCACertificates('system'),
+        ...tlsAny.getCACertificates('extra'),
+        ...readExtraCaFiles(),
+      ]);
+      tlsAny.setDefaultCACertificates(Array.from(merged));
+      logDebug('info', 'TLS', `Initialized Node system CA store (${merged.size} certificates trusted).`);
+    }
+  } catch (err: any) {
+    logDebug('warn', 'TLS', `Could not initialize Node system CA store: ${err?.message || err}`);
+  }
+}
+
+async function loadOsRootAndIntermediateCAs(): Promise<string[]> {
+  if (cachedOsCaCerts) return cachedOsCaCerts;
+  if (pendingOsCaPromise) return pendingOsCaPromise;
+
+  pendingOsCaPromise = (async () => {
+    const certs = new Set<string>([...tls.rootCertificates, ...readExtraCaFiles()]);
+    const tlsAny = tls as any;
+    if (typeof tlsAny.getCACertificates === 'function') {
+      try {
+        for (const c of tlsAny.getCACertificates('default')) certs.add(c);
+        for (const c of tlsAny.getCACertificates('system')) certs.add(c);
+        for (const c of tlsAny.getCACertificates('extra')) certs.add(c);
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      if (process.platform === 'win32') {
+        const psScript = [
+          "$stores = @('Cert:\\LocalMachine\\Root','Cert:\\CurrentUser\\Root','Cert:\\LocalMachine\\CA','Cert:\\CurrentUser\\CA');",
+          "$ErrorActionPreference = 'SilentlyContinue';",
+          'foreach ($s in $stores) {',
+          '  Get-ChildItem -Path $s | ForEach-Object {',
+          '    if ($_.RawData) {',
+          "      $b64 = [Convert]::ToBase64String($_.RawData, 'InsertLineBreaks');",
+          '      "-----BEGIN CERTIFICATE-----`n$b64`n-----END CERTIFICATE-----"',
+          '    }',
+          '  }',
+          '}',
+        ].join(' ');
+        const { stdout } = await execFileAsync(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
+          { maxBuffer: 25 * 1024 * 1024, timeout: 12000 }
+        );
+        for (const pem of extractPemCerts(stdout)) certs.add(pem);
+      } else if (process.platform === 'darwin') {
+        const keychains = [
+          '/System/Library/Keychains/SystemRootCertificates.keychain',
+          '/Library/Keychains/System.keychain',
+        ];
+        for (const kc of keychains) {
+          try {
+            const { stdout } = await execFileAsync('/usr/bin/security', ['find-certificate', '-a', '-p', kc], {
+              maxBuffer: 25 * 1024 * 1024,
+              timeout: 12000,
+            });
+            for (const pem of extractPemCerts(stdout)) certs.add(pem);
+          } catch {
+            // ignore missing keychain
+          }
+        }
+      }
+    } catch (err: any) {
+      logDebug('warn', 'TLS', `OS CA export fallback failed: ${err?.message || err}`);
+    }
+
+    const list = Array.from(certs);
+    cachedOsCaCerts = list;
+    if (typeof tlsAny.setDefaultCACertificates === 'function') {
+      try {
+        tlsAny.setDefaultCACertificates(list);
+      } catch {
+        // ignore
+      }
+    }
+    logDebug('info', 'TLS', `Loaded ${list.length} OS root & intermediate CA certificates.`);
+    return list;
+  })();
+
+  try {
+    return await pendingOsCaPromise;
+  } finally {
+    pendingOsCaPromise = null;
+  }
+}
+
+function createCaAwareFetch(caCerts: string[]): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<globalThis.Response> => {
+    const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const url = new URL(urlStr);
+    const isHttps = url.protocol === 'https:';
+    const method = (init?.method || 'GET').toUpperCase();
+
+    const normalizedHeaders: Record<string, string> = {};
+    if (init?.headers) {
+      if (init.headers instanceof Headers) {
+        init.headers.forEach((v, k) => {
+          normalizedHeaders[k] = v;
+        });
+      } else if (Array.isArray(init.headers)) {
+        for (const [k, v] of init.headers) {
+          normalizedHeaders[k] = v;
+        }
+      } else {
+        for (const [k, v] of Object.entries(init.headers)) {
+          if (v !== undefined) normalizedHeaders[k] = String(v);
+        }
+      }
+    }
+
+    let bodyBuffer: Buffer | undefined;
+    if (init?.body !== undefined && init?.body !== null) {
+      let buf: Buffer;
+      if (typeof init.body === 'string') {
+        buf = Buffer.from(init.body, 'utf-8');
+      } else if (Buffer.isBuffer(init.body)) {
+        buf = init.body;
+      } else if (init.body instanceof ArrayBuffer) {
+        buf = Buffer.from(init.body);
+      } else if (ArrayBuffer.isView(init.body)) {
+        buf = Buffer.from(init.body.buffer, init.body.byteOffset, init.body.byteLength);
+      } else {
+        buf = Buffer.from(String(init.body), 'utf-8');
+      }
+      bodyBuffer = buf;
+      if (!normalizedHeaders['content-length'] && !normalizedHeaders['Content-Length']) {
+        normalizedHeaders['Content-Length'] = String(buf.byteLength);
+      }
+    }
+
+    return new Promise<globalThis.Response>((resolve, reject) => {
+      const transport = isHttps ? https : http;
+      const req = transport.request(
+        {
+          protocol: url.protocol,
+          hostname: url.hostname,
+          port: url.port ? Number(url.port) : isHttps ? 443 : 80,
+          path: `${url.pathname}${url.search}`,
+          method,
+          headers: normalizedHeaders,
+          ...(isHttps ? { ca: caCerts } : {}),
+        },
+        res => {
+          const chunks: Buffer[] = [];
+          res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+          res.on('end', () => {
+            const status = res.statusCode || 200;
+            const outHeaders = new Headers();
+            for (const [k, v] of Object.entries(res.headers)) {
+              if (Array.isArray(v)) {
+                v.forEach(item => outHeaders.append(k, item));
+              } else if (v !== undefined) {
+                outHeaders.set(k, v);
+              }
+            }
+            const rawBody = Buffer.concat(chunks);
+            const responseBody = status === 204 || status === 304 || method === 'HEAD' ? null : rawBody;
+            resolve(
+              new globalThis.Response(responseBody, {
+                status,
+                statusText: res.statusMessage || '',
+                headers: outHeaders,
+              })
+            );
+          });
+        }
+      );
+
+      if (init?.signal) {
+        if (init.signal.aborted) {
+          req.destroy(new DOMException('The operation was aborted', 'AbortError'));
+          return;
+        }
+        const onAbort = () => {
+          req.destroy(new DOMException('The operation was aborted', 'AbortError'));
+        };
+        init.signal.addEventListener('abort', onAbort, { once: true });
+        req.on('close', () => init.signal?.removeEventListener('abort', onAbort));
+      }
+
+      req.on('error', err => {
+        reject(new TypeError('fetch failed', { cause: err }));
+      });
+
+      if (bodyBuffer) req.write(bodyBuffer);
+      req.end();
+    });
+  };
+}
+
+function isTlsCertError(err: any): boolean {
+  const code = String(err?.cause?.code || err?.code || '').toUpperCase();
+  const msg = `${err?.message || ''} ${err?.cause?.message || ''}`.toUpperCase();
+  return [
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'CERT_UNTRUSTED',
+  ].some(c => code.includes(c) || msg.includes(c));
+}
+
+function isRetryableGeminiError(err: any): boolean {
+  const status = Number(err?.status || err?.code || 0);
+  if (status === 429 || status >= 500) return true;
+  const msg = String(err?.message || '').toLowerCase();
+  const causeCode = String(err?.cause?.code || '').toUpperCase();
+  return (
+    msg.includes('fetch failed') ||
+    msg.includes('timeout') ||
+    msg.includes('econnreset') ||
+    msg.includes('etimedout') ||
+    ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(causeCode)
+  );
+}
+
+function describeGeminiError(err: any): string {
+  const msg = String(err?.message || err || 'Unknown Gemini error');
+  const causeCode = err?.cause?.code ? String(err.cause.code) : '';
+  const causeMsg = err?.cause?.message ? String(err.cause.message) : '';
+  if (isTlsCertError(err)) {
+    const detail = [causeCode, causeMsg].filter(Boolean).join(': ') || msg;
+    return `TLS certificate verification failed (${detail}). If you are behind a corporate SSL proxy, set NODE_EXTRA_CA_CERTS to your proxy root CA .pem file and restart the server.`;
+  }
+  if (/fetch failed/i.test(msg)) {
+    const causeDetail = [causeCode, causeMsg].filter(Boolean).join(': ');
+    return causeDetail
+      ? `Network request to Gemini API failed (${causeDetail}). Please check internet/proxy connectivity or try again.`
+      : 'Network request to Gemini API failed (connection reset or timed out). Please try again.';
+  }
+  return causeMsg && !msg.includes(causeMsg) ? `${msg} (${causeMsg})` : msg;
+}
+
+
+async function generateWithGeminiFallback(opts: {
+  apiKey: string;
+  models: Array<{ name: string; useLowThinking?: boolean }>;
+  contents: string;
+  config: Record<string, any>;
+  contextLabel: string;
+}): Promise<any> {
+  initNodeSystemCertificates();
+  let activeCaCerts: string[] | null = cachedOsCaCerts;
+  let forceCustomCaFetch = Boolean(
+    activeCaCerts && typeof (tls as any).setDefaultCACertificates !== 'function'
+  );
+  let ai = new GoogleGenAI({
+    apiKey: opts.apiKey,
+    httpOptions: {
+      timeout: 60000,
+      ...(forceCustomCaFetch && activeCaCerts ? { fetch: createCaAwareFetch(activeCaCerts) } : {}),
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+
+  let lastError: any = null;
+  let attemptedOsCaLoad = false;
+
+  for (const modelSpec of opts.models) {
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        logDebug(
+          'info',
+          'GEMINI_AI',
+          `Attempting model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) for ${opts.contextLabel}...`
+        );
+        const modelConfig = {
+          ...opts.config,
+          ...(modelSpec.useLowThinking
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+            : {}),
+        };
+        const response = await ai.models.generateContent({
+          model: modelSpec.name,
+          contents: opts.contents,
+          config: modelConfig,
+        });
+        if (response && response.text) {
+          return response;
+        }
+      } catch (err: any) {
+        lastError = err;
+        logDebug(
+          'warn',
+          'GEMINI_AI',
+          `Model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) failed for ${opts.contextLabel}: ${describeGeminiError(err)}`
+        );
+
+        if (isTlsCertError(err) && !attemptedOsCaLoad) {
+          attemptedOsCaLoad = true;
+          logDebug('info', 'TLS', 'Detected TLS issuer cert error; exporting OS root & intermediate CA certificates and retrying...');
+          activeCaCerts = await loadOsRootAndIntermediateCAs();
+          ai = new GoogleGenAI({
+            apiKey: opts.apiKey,
+            httpOptions: {
+              timeout: 60000,
+              fetch: createCaAwareFetch(activeCaCerts),
+              headers: {
+                'User-Agent': 'aistudio-build',
+              },
+            },
+          });
+          // Retry immediately with the OS CA-aware client (grant an extra retry)
+          if (attempt === maxAttempts) {
+            try {
+              const retryResp = await ai.models.generateContent({
+                model: modelSpec.name,
+                contents: opts.contents,
+                config: {
+                  ...opts.config,
+                  ...(modelSpec.useLowThinking
+                    ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                    : {}),
+                },
+              });
+              if (retryResp && retryResp.text) return retryResp;
+            } catch (retryErr: any) {
+              lastError = retryErr;
+            }
+          }
+          continue;
+        }
+
+        if (attempt < maxAttempts && isRetryableGeminiError(err)) {
+          await new Promise(resolve => setTimeout(resolve, 800 * attempt));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw new Error(describeGeminiError(lastError));
+  }
+  throw new Error(`No response from Gemini API models for ${opts.contextLabel}.`);
+}
 
 // Server-side physical disk storage configurations
 const FALLBACK_STORAGE_DIR = path.join(__dirname, 'storage_data');
@@ -1632,16 +2024,10 @@ app.post('/api/ai/generate-mindmap', async (req: Request, res: Response) => {
       });
     }
 
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+    const mindmapModels: Array<{ name: string; useLowThinking?: boolean }> = [
+      { name: 'gemini-3.1-flash-lite', useLowThinking: false },
+      { name: 'gemini-4-hydrogen', useLowThinking: true },
+    ];
 
     // Helper to format NodeUrlLink objects
     const formatLinks = (linksArray?: any[]) => {
@@ -1699,84 +2085,67 @@ Return a JSON object conforming to the schema with:
     - description: In-depth technical explanation (matching requested sentence count).
     - links: Array of 1 to 2 authoritative external URL links where appropriate.`;
 
-      let extendResponse: any = null;
-      let lastExtendError: any = null;
-
-      for (const modelName of modelsToTry) {
-        try {
-          logDebug('info', 'GEMINI_AI', `Attempting model ${modelName} to extend mind map...`);
-          extendResponse = await ai.models.generateContent({
-            model: modelName,
-            contents: extendPromptText,
-            config: {
-              maxOutputTokens: 8192,
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  newBranches: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        parentNodeId: { type: Type.STRING },
-                        title: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                        color: { type: Type.STRING },
-                        links: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              label: { type: Type.STRING },
-                              url: { type: Type.STRING },
-                            },
-                            required: ['label', 'url'],
-                          },
+      const extendResponse = await generateWithGeminiFallback({
+        apiKey,
+        models: mindmapModels,
+        contents: extendPromptText,
+        contextLabel: 'mind map extension',
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              newBranches: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    parentNodeId: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    color: { type: Type.STRING },
+                    links: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          label: { type: Type.STRING },
+                          url: { type: Type.STRING },
                         },
-                        subbranches: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              title: { type: Type.STRING },
-                              description: { type: Type.STRING },
-                              links: {
-                                type: Type.ARRAY,
-                                items: {
-                                  type: Type.OBJECT,
-                                  properties: {
-                                    label: { type: Type.STRING },
-                                    url: { type: Type.STRING },
-                                  },
-                                  required: ['label', 'url'],
-                                },
-                              },
-                            },
-                            required: ['title', 'description'],
-                          },
-                        },
+                        required: ['label', 'url'],
                       },
-                      required: ['parentNodeId', 'title', 'description'],
+                    },
+                    subbranches: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          title: { type: Type.STRING },
+                          description: { type: Type.STRING },
+                          links: {
+                            type: Type.ARRAY,
+                            items: {
+                              type: Type.OBJECT,
+                              properties: {
+                                label: { type: Type.STRING },
+                                url: { type: Type.STRING },
+                              },
+                              required: ['label', 'url'],
+                            },
+                          },
+                        },
+                        required: ['title', 'description'],
+                      },
                     },
                   },
+                  required: ['parentNodeId', 'title', 'description'],
                 },
-                required: ['newBranches'],
               },
             },
-          });
-          if (extendResponse && extendResponse.text) {
-            break;
-          }
-        } catch (err: any) {
-          lastExtendError = err;
-          logDebug('warn', 'GEMINI_AI', `Model ${modelName} failed during extension: ${err?.message || err}`);
-        }
-      }
-
-      if (!extendResponse || !extendResponse.text) {
-        throw lastExtendError || new Error('No response from Gemini API models during mind map extension.');
-      }
+            required: ['newBranches'],
+          },
+        },
+      });
 
       const parsed = JSON.parse(extendResponse.text.trim());
       const newBranches = Array.isArray(parsed.newBranches) ? parsed.newBranches : [];
@@ -1974,97 +2343,80 @@ Return a JSON object conforming to the schema with:
     - description: In-depth technical explanation (expand to the requested sentence count, e.g. up to 10 sentences if requested).
     - links: Array of 1 to 2 authoritative external URL links where appropriate.`;
 
-    let response: any = null;
-    let lastError: any = null;
-
-    for (const modelName of modelsToTry) {
-      try {
-        logDebug('info', 'GEMINI_AI', `Attempting model ${modelName}...`);
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: promptText,
-          config: {
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                centralTopic: { type: Type.STRING },
-                centralDescription: { type: Type.STRING },
-                links: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      label: { type: Type.STRING },
-                      url: { type: Type.STRING },
-                    },
-                    required: ['label', 'url'],
-                  },
+    const response = await generateWithGeminiFallback({
+      apiKey,
+      models: mindmapModels,
+      contents: promptText,
+      contextLabel: 'mind map generation',
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            centralTopic: { type: Type.STRING },
+            centralDescription: { type: Type.STRING },
+            links: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  url: { type: Type.STRING },
                 },
-                branches: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      description: { type: Type.STRING },
-                      color: { type: Type.STRING },
-                      links: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            label: { type: Type.STRING },
-                            url: { type: Type.STRING },
-                          },
-                          required: ['label', 'url'],
-                        },
-                      },
-                      subbranches: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: { type: Type.STRING },
-                            description: { type: Type.STRING },
-                            links: {
-                              type: Type.ARRAY,
-                              items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                  label: { type: Type.STRING },
-                                  url: { type: Type.STRING },
-                                },
-                                required: ['label', 'url'],
-                              },
-                            },
-                          },
-                          required: ['title', 'description'],
-                        },
-                      },
-                    },
-                    required: ['title', 'description', 'subbranches'],
-                  },
-                },
+                required: ['label', 'url'],
               },
-              required: ['title', 'centralTopic', 'centralDescription', 'branches'],
+            },
+            branches: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  color: { type: Type.STRING },
+                  links: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        label: { type: Type.STRING },
+                        url: { type: Type.STRING },
+                      },
+                      required: ['label', 'url'],
+                    },
+                  },
+                  subbranches: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        title: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                        links: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              label: { type: Type.STRING },
+                              url: { type: Type.STRING },
+                            },
+                            required: ['label', 'url'],
+                          },
+                        },
+                      },
+                      required: ['title', 'description'],
+                    },
+                  },
+                },
+                required: ['title', 'description', 'subbranches'],
+              },
             },
           },
-        });
-        if (response && response.text) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        logDebug('warn', 'GEMINI_AI', `Model ${modelName} unavailable: ${err?.message || err}`);
-      }
-    }
-
-    if (!response || !response.text) {
-      throw lastError || new Error('No response from Gemini API models.');
-    }
+          required: ['title', 'centralTopic', 'centralDescription', 'branches'],
+        },
+      },
+    });
 
     const rawJson = (response.text || '{}').trim();
     const data = JSON.parse(rawJson);
@@ -2310,16 +2662,6 @@ app.post('/api/ai/generate-flowchart', async (req: Request, res: Response) => {
           'GEMINI_API_KEY is not configured on the server. Please set GEMINI_API_KEY in your server environment or Secrets.',
       });
     }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        timeout: 60000,
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
 
     const modelsToTry: Array<{ name: string; useLowThinking: boolean }> = [
       { name: 'gemini-4-hydrogen', useLowThinking: true },
@@ -2615,87 +2957,18 @@ INSTRUCTIONS:
 4. In "connections", define all directed flow arrows between step IDs so the graph is fully connected from start to end(s), with branch labels ("Yes", "No", etc.) on every decision branch.`;
     }
 
-    const describeGeminiError = (err: any): string => {
-      const msg = String(err?.message || err || 'Unknown Gemini error');
-      const causeCode = err?.cause?.code ? String(err.cause.code) : '';
-      const causeMsg = err?.cause?.message ? String(err.cause.message) : '';
-      if (/fetch failed/i.test(msg)) {
-        const causeDetail = [causeCode, causeMsg].filter(Boolean).join(': ');
-        return causeDetail
-          ? `Network request to Gemini API failed (${causeDetail}). Please check internet/proxy connectivity or try again.`
-          : 'Network request to Gemini API failed (connection reset or timed out). Please try again.';
-      }
-      return causeMsg && !msg.includes(causeMsg) ? `${msg} (${causeMsg})` : msg;
-    };
-
-    const isRetryableError = (err: any): boolean => {
-      const status = Number(err?.status || err?.code || 0);
-      if (status === 429 || status >= 500) return true;
-      const msg = String(err?.message || '').toLowerCase();
-      const causeCode = String(err?.cause?.code || '').toUpperCase();
-      return (
-        msg.includes('fetch failed') ||
-        msg.includes('timeout') ||
-        msg.includes('econnreset') ||
-        msg.includes('etimedout') ||
-        ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(causeCode)
-      );
-    };
-
-    let response: any = null;
-    let lastError: any = null;
-
-    for (const modelSpec of modelsToTry) {
-      const maxAttempts = 2;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          logDebug(
-            'info',
-            'GEMINI_AI',
-            `Attempting model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) to generate flowchart...`
-          );
-          response = await ai.models.generateContent({
-            model: modelSpec.name,
-            contents: promptText,
-            config: {
-              systemInstruction:
-                'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
-              responseMimeType: 'application/json',
-              responseSchema: flowchartResponseSchema,
-              ...(modelSpec.useLowThinking
-                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-                : {}),
-            },
-          });
-          if (response && response.text) {
-            break;
-          }
-        } catch (err: any) {
-          lastError = err;
-          const detail = describeGeminiError(err);
-          logDebug(
-            'warn',
-            'GEMINI_AI',
-            `Model ${modelSpec.name} (attempt ${attempt}/${maxAttempts}) failed during flowchart generation: ${detail}`
-          );
-          if (attempt < maxAttempts && isRetryableError(err)) {
-            await new Promise(resolve => setTimeout(resolve, 800 * attempt));
-            continue;
-          }
-          break;
-        }
-      }
-      if (response && response.text) {
-        break;
-      }
-    }
-
-    if (!response || !response.text) {
-      if (lastError) {
-        throw new Error(describeGeminiError(lastError));
-      }
-      throw new Error('No response from Gemini API models for flowchart generation.');
-    }
+    const response = await generateWithGeminiFallback({
+      apiKey,
+      models: modelsToTry,
+      contents: promptText,
+      contextLabel: 'flowchart generation',
+      config: {
+        systemInstruction:
+          'You design accurate ANSI/ISO 5807 flowcharts as structured JSON graphs. Keep labels concise and ensure all connection IDs match declared step IDs.',
+        responseMimeType: 'application/json',
+        responseSchema: flowchartResponseSchema,
+      },
+    });
 
     const parsed = JSON.parse(response.text.trim());
     const rawSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
@@ -3138,6 +3411,10 @@ INSTRUCTIONS:
 
 // Dev vs Production Vite Setup
 async function startServer() {
+  initNodeSystemCertificates();
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    void loadOsRootAndIntermediateCAs();
+  }
   await initStorageOnDisk();
 
   if (process.env.NODE_ENV !== 'production') {
