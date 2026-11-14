@@ -2184,18 +2184,21 @@ Return a JSON object conforming to the schema with:
         const parentY = parent?.y ?? avgY;
         const parentLevel = parent?.data?.level ?? 1;
 
-        // Side relative to parent or center
-        const side: 'left' | 'right' =
-          parentX < avgX ? 'left' : parentX > avgX ? 'right' : bIdx % 2 === 0 ? 'right' : 'left';
         const color = b.color || defaultColors[(existingNodes.length + bIdx) % defaultColors.length];
+        const branchOffset = bIdx - (newBranches.length - 1) / 2;
+        const outwardLean = parentX < avgX - 40 ? -45 : parentX > avgX + 40 ? 45 : 0;
 
-        const branchX = side === 'left' ? parentX - 280 : parentX + 280;
-        let branchY = parentY + (bIdx - (newBranches.length - 1) / 2) * 85;
+        let branchX = Math.round(parentX + outwardLean + branchOffset * 210);
+        let branchY = Math.round(parentY + 150 + (Math.abs(branchOffset) < 0.25 && newBranches.length >= 3 ? 30 : 0));
 
-        // Avoid overlap with existing nodes
+        // Avoid overlap with existing nodes (fan downward / outward cleanly)
         let attempts = 0;
-        while (isPositionOccupied(branchX, branchY) && attempts < 12) {
-          branchY += attempts % 2 === 0 ? 75 * (attempts + 1) : -75 * (attempts + 1);
+        while (isPositionOccupied(branchX, branchY) && attempts < 14) {
+          if (attempts % 2 === 0) {
+            branchX += (attempts / 2 + 1) * (outwardLean < 0 ? -90 : 90);
+          } else {
+            branchY += 85;
+          }
           attempts++;
         }
         occupiedPositions.push({ x: branchX, y: branchY });
@@ -2225,13 +2228,32 @@ Return a JSON object conforming to the schema with:
           links: formatLinks(b.links),
         });
 
+        const branchDx = branchX - parentX;
+        const branchDy = branchY - parentY;
+        const parentAnchor =
+          branchDy < 95 && Math.abs(branchDx) > 150
+            ? branchDx < 0
+              ? 'left'
+              : 'right'
+            : branchDx < -60
+            ? 'bottom-left'
+            : branchDx > 60
+            ? 'bottom-right'
+            : 'bottom';
+        const childTargetAnchor =
+          branchDy < 95 && Math.abs(branchDx) > 150
+            ? branchDx < 0
+              ? 'right'
+              : 'left'
+            : 'top';
+
         // Edge from existing parent to new branch
         newGeneratedEdges.push({
           id: `edge-${parent.id}-${branchId}`,
           sourceNodeId: parent.id,
           targetNodeId: branchId,
-          sourceAnchor: side === 'left' ? 'left' : 'right',
-          targetAnchor: side === 'left' ? 'right' : 'left',
+          sourceAnchor: parentAnchor,
+          targetAnchor: childTargetAnchor,
           type: 'curved',
           lineStyle: 'solid',
           markerStart: 'none',
@@ -2240,21 +2262,25 @@ Return a JSON object conforming to the schema with:
           strokeWidth: 2.5,
         });
 
-        // Subbranches
+        // Subbranches fanning downward beneath the new branch
         const subbranches = Array.isArray(b.subbranches) ? b.subbranches : [];
         const subCount = subbranches.length;
         if (subCount > 0) {
-          const subSpacingY = 70;
-          const subStartY = branchY - ((subCount - 1) * subSpacingY) / 2;
-          const subX = side === 'left' ? branchX - 250 : branchX + 250;
+          const subSpacingX = subCount >= 3 ? 145 : 170;
 
           subbranches.forEach((sub: any, sIdx: number) => {
             const subId = `mm-ext-sub-${Date.now()}-${bIdx}-${sIdx}`;
-            let subY = subStartY + sIdx * subSpacingY;
+            const subOffset = sIdx - (subCount - 1) / 2;
+            let subX = Math.round(branchX + outwardLean * 0.5 + subOffset * subSpacingX);
+            let subY = Math.round(branchY + 150 + (sIdx % 2 === 1 ? 12 : 0));
 
             let sAttempts = 0;
-            while (isPositionOccupied(subX, subY) && sAttempts < 12) {
-              subY += sAttempts % 2 === 0 ? 60 * (sAttempts + 1) : -60 * (sAttempts + 1);
+            while (isPositionOccupied(subX, subY) && sAttempts < 14) {
+              if (sAttempts % 2 === 0) {
+                subX += (sAttempts / 2 + 1) * (subOffset < 0 ? -85 : 85);
+              } else {
+                subY += 80;
+              }
               sAttempts++;
             }
             occupiedPositions.push({ x: subX, y: subY });
@@ -2283,12 +2309,18 @@ Return a JSON object conforming to the schema with:
               links: formatLinks(sub.links),
             });
 
+            const subDx = subX - branchX;
+            const subSourceAnchor =
+              subDx < -45 ? 'bottom-left' : subDx > 45 ? 'bottom-right' : 'bottom';
+            const subTargetAnchor =
+              subDx < -95 ? 'top-right' : subDx > 95 ? 'top-left' : 'top';
+
             newGeneratedEdges.push({
               id: `edge-${branchId}-${subId}`,
               sourceNodeId: branchId,
               targetNodeId: subId,
-              sourceAnchor: side === 'left' ? 'left' : 'right',
-              targetAnchor: side === 'left' ? 'right' : 'left',
+              sourceAnchor: subSourceAnchor,
+              targetAnchor: subTargetAnchor,
               type: 'curved',
               lineStyle: 'solid',
               markerStart: 'none',
@@ -2435,16 +2467,16 @@ Return a JSON object conforming to the schema with:
 
     // Using formatLinks defined above for Branch A and B
 
-    // Construct diagram nodes & edges with radial coordinate distribution
+    // Construct diagram nodes & edges as a top-down fanning tree growing downward from root
     const generatedNodes: DiagramNode[] = [];
     const generatedEdges: DiagramEdge[] = [];
 
-    // Central Root Node (Standard mind map oval dimensions: width 115, height 55)
-    const coreId = `mm-core-${Date.now()}`;
-    const coreX = 600;
-    const coreY = 350;
+    const stamp = Date.now();
+    const coreId = `mm-core-${stamp}`;
     const coreWidth = 115;
     const coreHeight = 55;
+    const coreX = 620;
+    const coreY = 120;
 
     generatedNodes.push({
       id: coreId,
@@ -2471,132 +2503,246 @@ Return a JSON object conforming to the schema with:
     });
 
     const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
+    const totalBranches = branches.length;
+    const placedBoxes: Array<{ x: number; y: number; w: number; h: number }> = [
+      { x: coreX, y: coreY, w: coreWidth, h: coreHeight },
+    ];
 
-    // Split branches evenly between left and right sides
-    const leftBranches: any[] = [];
-    const rightBranches: any[] = [];
-    branches.forEach((b: any, index: number) => {
-      if (index % 2 === 0) {
-        leftBranches.push({ ...b, originalIndex: index });
+    const overlapsBox = (x: number, y: number, padX = 28, padY = 22) =>
+      placedBoxes.some(
+        b =>
+          x < b.x + b.w + padX &&
+          x + coreWidth + padX > b.x &&
+          y < b.y + b.h + padY &&
+          y + coreHeight + padY > b.y
+      );
+
+    interface PlacedBranchMeta {
+      branch: any;
+      idx: number;
+      branchId: string;
+      branchX: number;
+      branchY: number;
+      offsetFromCenter: number;
+      color: string;
+    }
+
+    const placedBranches: PlacedBranchMeta[] = [];
+
+    // Pass 1: Place all Level 1 branches in a tiered downward fan from the top root
+    branches.forEach((b: any, idx: number) => {
+      const half = (totalBranches - 1) / 2;
+      const offsetFromCenter = totalBranches > 1 ? idx - half : 0;
+      const absNorm = half > 0 ? Math.abs(offsetFromCenter) / half : 0;
+      const isLeftOuter = totalBranches >= 3 && idx === 0;
+      const isRightOuter = totalBranches >= 3 && idx === totalBranches - 1;
+
+      const branchStepX = totalBranches <= 4 ? 220 : 215;
+      const branchX = Math.round(coreX + offsetFromCenter * branchStepX);
+
+      let dy = 145;
+      if (isLeftOuter || isRightOuter) {
+        dy = 145;
+      } else if (totalBranches >= 5 && absNorm >= 0.45) {
+        dy = 265;
       } else {
-        rightBranches.push({ ...b, originalIndex: index });
+        dy = totalBranches <= 4 ? 285 : 395;
       }
+      const branchY = Math.round(coreY + dy);
+      const color = b.color || defaultColors[idx % defaultColors.length];
+      const branchId = `mm-branch-${idx}-${stamp}`;
+
+      placedBoxes.push({ x: branchX, y: branchY, w: coreWidth, h: coreHeight });
+      placedBranches.push({
+        branch: b,
+        idx,
+        branchId,
+        branchX,
+        branchY,
+        offsetFromCenter,
+        color,
+      });
+
+      generatedNodes.push({
+        id: branchId,
+        type: 'mindmap-oval',
+        label: b.title,
+        x: branchX,
+        y: branchY,
+        width: coreWidth,
+        height: coreHeight,
+        style: {
+          fill: `${color}E6`,
+          stroke: color,
+          strokeWidth: 2,
+          textColor: '#ffffff',
+          gradient: true,
+        },
+        data: { level: 1 },
+        documentation: {
+          description: b.description,
+          status: 'approved',
+          tags: ['MindMap', 'Concept'],
+        },
+        links: formatLinks(b.links),
+      });
+
+      let sourceAnchor: string = 'bottom';
+      let targetAnchor: string = 'top';
+      if (isLeftOuter) {
+        sourceAnchor = 'left';
+        targetAnchor = 'right';
+      } else if (isRightOuter) {
+        sourceAnchor = 'right';
+        targetAnchor = 'left';
+      } else if (offsetFromCenter < -0.15) {
+        sourceAnchor = 'bottom-left';
+        targetAnchor = 'top';
+      } else if (offsetFromCenter > 0.15) {
+        sourceAnchor = 'bottom-right';
+        targetAnchor = 'top';
+      }
+
+      generatedEdges.push({
+        id: `edge-${coreId}-${branchId}`,
+        sourceNodeId: coreId,
+        targetNodeId: branchId,
+        sourceAnchor,
+        targetAnchor,
+        type: 'curved',
+        lineStyle: 'solid',
+        markerStart: 'none',
+        markerEnd: 'none',
+        color,
+        strokeWidth: 2.5,
+      });
     });
 
-    // Helper to position branches
-    const layoutBranchGroup = (
-      group: any[],
-      side: 'left' | 'right'
-    ) => {
-      const count = group.length;
-      if (count === 0) return;
+    // Pass 2: Fan out Level 2 sub-branches below/around each Level 1 branch
+    placedBranches.forEach(({ branch: b, idx, branchId, branchX, branchY, offsetFromCenter, color }) => {
+      const subbranches = Array.isArray(b.subbranches) ? b.subbranches : [];
+      const subCount = subbranches.length;
+      if (subCount === 0) return;
 
-      const spacingY = 190;
-      const startY = coreY - ((count - 1) * spacingY) / 2;
-      const branchX = side === 'left' ? coreX - 300 : coreX + 300;
-      const subX = side === 'left' ? branchX - 270 : branchX + 270;
+      const isLeftOuter = totalBranches >= 3 && idx === 0;
+      const isRightOuter = totalBranches >= 3 && idx === totalBranches - 1;
 
-      group.forEach((b: any, bIdx: number) => {
-        const branchId = `mm-branch-${b.originalIndex}-${Date.now()}`;
-        const branchY = startY + bIdx * spacingY;
-        const color = b.color || defaultColors[b.originalIndex % defaultColors.length];
+      subbranches.forEach((sub: any, sIdx: number) => {
+        const subId = `mm-sub-${idx}-${sIdx}-${stamp}`;
+        let subX: number;
+        let subY: number;
+        let sourceAnchor: string;
+        let targetAnchor: string;
 
-        // Level 1 Branch Node (Standard mind map oval dimensions: width 115, height 55)
+        if (isLeftOuter) {
+          if (sIdx === 0) {
+            subX = branchX - 245;
+            subY = branchY + 85;
+            sourceAnchor = 'left';
+            targetAnchor = 'right';
+          } else if (sIdx === 1) {
+            subX = branchX - 70;
+            subY = branchY + 135;
+            sourceAnchor = 'bottom';
+            targetAnchor = 'top-right';
+          } else {
+            subX = branchX + 75;
+            subY = branchY + 145;
+            sourceAnchor = 'bottom-right';
+            targetAnchor = 'top-left';
+          }
+        } else if (isRightOuter) {
+          if (sIdx === 0) {
+            subX = branchX + 245;
+            subY = branchY + 85;
+            sourceAnchor = 'right';
+            targetAnchor = 'left';
+          } else if (sIdx === 1) {
+            subX = branchX + 70;
+            subY = branchY + 135;
+            sourceAnchor = 'bottom';
+            targetAnchor = 'top-left';
+          } else {
+            subX = branchX - 75;
+            subY = branchY + 145;
+            sourceAnchor = 'bottom-left';
+            targetAnchor = 'top-right';
+          }
+        } else {
+          const leanX = offsetFromCenter < -0.15 ? -36 : offsetFromCenter > 0.15 ? 36 : 0;
+          const subStepX = subCount >= 3 ? 148 : 168;
+          const subOffset = sIdx - (subCount - 1) / 2;
+          subX = Math.round(branchX + leanX + subOffset * subStepX);
+          subY = Math.round(branchY + 165 + (sIdx % 2 === 1 ? 14 : 0));
+
+          const dx = subX - branchX;
+          sourceAnchor = dx < -35 ? 'bottom-left' : dx > 35 ? 'bottom-right' : 'bottom';
+          targetAnchor = dx < -95 ? 'top-right' : dx > 95 ? 'top-left' : 'top';
+        }
+
+        // Collision safety nudge if neighboring subtrees ever come too close
+        let guard = 0;
+        while (overlapsBox(subX, subY) && guard < 12) {
+          if (guard % 2 === 0) {
+            subY += 75;
+          } else {
+            subX += offsetFromCenter < 0 ? -70 : 70;
+          }
+          guard++;
+        }
+        placedBoxes.push({ x: subX, y: subY, w: coreWidth, h: coreHeight });
+
         generatedNodes.push({
-          id: branchId,
+          id: subId,
           type: 'mindmap-oval',
-          label: b.title,
-          x: branchX,
-          y: branchY,
-          width: 115,
-          height: 55,
+          label: sub.title,
+          x: subX,
+          y: subY,
+          width: coreWidth,
+          height: coreHeight,
           style: {
-            fill: `${color}E6`,
+            fill: `${color}B3`,
             stroke: color,
-            strokeWidth: 2,
+            strokeWidth: 1.5,
             textColor: '#ffffff',
             gradient: true,
           },
-          data: { level: 1 },
+          data: { level: 2 },
           documentation: {
-            description: b.description,
+            description: sub.description,
             status: 'approved',
-            tags: ['MindMap', 'Concept'],
+            tags: ['MindMap', 'Subtopic'],
           },
-          links: formatLinks(b.links),
+          links: formatLinks(sub.links),
         });
 
-        // Edge from Central Node to Branch
         generatedEdges.push({
-          id: `edge-${coreId}-${branchId}`,
-          sourceNodeId: coreId,
-          targetNodeId: branchId,
-          sourceAnchor: side === 'left' ? 'left' : 'right',
-          targetAnchor: side === 'left' ? 'right' : 'left',
+          id: `edge-${branchId}-${subId}`,
+          sourceNodeId: branchId,
+          targetNodeId: subId,
+          sourceAnchor,
+          targetAnchor,
           type: 'curved',
           lineStyle: 'solid',
           markerStart: 'none',
           markerEnd: 'none',
-          color: color,
-          strokeWidth: 2.5,
+          color,
+          strokeWidth: 2,
         });
-
-        // Level 2 Sub-branches (Standard mind map oval dimensions: width 115, height 55)
-        const subbranches = Array.isArray(b.subbranches) ? b.subbranches : [];
-        const subCount = subbranches.length;
-        if (subCount > 0) {
-          const subSpacingY = 70;
-          const subStartY = branchY - ((subCount - 1) * subSpacingY) / 2;
-
-          subbranches.forEach((sub: any, sIdx: number) => {
-            const subId = `mm-sub-${b.originalIndex}-${sIdx}-${Date.now()}`;
-            const subY = subStartY + sIdx * subSpacingY;
-
-            generatedNodes.push({
-              id: subId,
-              type: 'mindmap-oval',
-              label: sub.title,
-              x: subX,
-              y: subY,
-              width: 115,
-              height: 55,
-              style: {
-                fill: `${color}B3`,
-                stroke: color,
-                strokeWidth: 1.5,
-                textColor: '#ffffff',
-                gradient: true,
-              },
-              data: { level: 2 },
-              documentation: {
-                description: sub.description,
-                status: 'approved',
-                tags: ['MindMap', 'Subtopic'],
-              },
-              links: formatLinks(sub.links),
-            });
-
-            // Edge from Branch to Sub-branch
-            generatedEdges.push({
-              id: `edge-${branchId}-${subId}`,
-              sourceNodeId: branchId,
-              targetNodeId: subId,
-              sourceAnchor: side === 'left' ? 'left' : 'right',
-              targetAnchor: side === 'left' ? 'right' : 'left',
-              type: 'curved',
-              lineStyle: 'solid',
-              markerStart: 'none',
-              markerEnd: 'none',
-              color: color,
-              strokeWidth: 2,
-            });
-          });
-        }
       });
-    };
+    });
 
-    layoutBranchGroup(leftBranches, 'left');
-    layoutBranchGroup(rightBranches, 'right');
+    // Normalize coordinates so the entire tree sits cleanly in positive canvas space
+    const minNodeX = Math.min(...generatedNodes.map(n => n.x));
+    const minNodeY = Math.min(...generatedNodes.map(n => n.y));
+    const shiftX = minNodeX < 70 ? 70 - minNodeX : 0;
+    const shiftY = minNodeY < 70 ? 70 - minNodeY : 0;
+    if (shiftX > 0 || shiftY > 0) {
+      generatedNodes.forEach(n => {
+        n.x += shiftX;
+        n.y += shiftY;
+      });
+    }
 
     const durationMs = Date.now() - startTime;
     logDebug(

@@ -1,0 +1,634 @@
+{
+  "id": "doc-tech_tutorial-1794661124516",
+  "name": "Parquet ORC Avro",
+  "createdAt": "2026-11-14T12:58:44.516Z",
+  "updatedAt": "2026-11-14T13:01:25.420Z",
+  "activePageId": "page-mindmap-1794661124516",
+  "settings": {
+    "gridSnap": true,
+    "showGrid": true,
+    "theme": "dark",
+    "showMinimap": true
+  },
+  "versions": [],
+  "pages": [
+    {
+      "id": "page-mindmap-1794661124516",
+      "title": "Parquet ORC Avro",
+      "diagramType": "mindmap",
+      "description": "",
+      "viewport": {
+        "x": 50,
+        "y": 50,
+        "zoom": 1
+      },
+      "nodes": [
+        {
+          "id": "mm-core-1794661285407",
+          "type": "mindmap-oval",
+          "label": "Analytical Data Storage Formats",
+          "x": 580,
+          "y": 170,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "rgba(124, 58, 237, 0.95)",
+            "stroke": "#c084fc",
+            "strokeWidth": 3,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 0
+          },
+          "documentation": {
+            "description": "Modern big data architectures rely on specialized binary storage formats to optimize read/write performance, storage efficiency, and schema evolution. These formats, primarily including Apache Parquet, Apache ORC, and Apache Avro, are engineered for distinct use cases within data lakes and distributed storage systems. Parquet and ORC utilize columnar layouts to excel in analytical processing (OLAP) by minimizing I/O for selective attribute queries. Conversely, Avro leverages a row-based storage model that facilitates rapid write operations and schema evolution, making it the industry standard for message streaming and record-level ingestion (OLTP). Selecting the appropriate format requires a deep understanding of storage layout, compression strategies, metadata handling, and the specific query patterns of the consuming engines. This map explores the technical primitives, structural trade-offs, and ecosystem integration points for these critical serialization technologies in current data engineering pipelines.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "CentralTopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-q1vc",
+              "label": "Big Data File Formats Comparison",
+              "url": "https://blog.cloudera.com/apache-parquet-vs-apache-orc/"
+            },
+            {
+              "id": "link-1794661285408-1-5nw9",
+              "label": "Data Engineering Patterns",
+              "url": "https://www.oreilly.com/library/view/designing-data-intensive-applications/"
+            }
+          ]
+        },
+        {
+          "id": "mm-branch-0-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Apache Parquet Architecture",
+          "x": 340,
+          "y": 315,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#3b82f6E6",
+            "stroke": "#3b82f6",
+            "strokeWidth": 2,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 1
+          },
+          "documentation": {
+            "description": "Parquet is a high-performance, open-source columnar storage format designed for efficient data processing within the Hadoop ecosystem and beyond. It utilizes a sophisticated encoding scheme including Run-Length Encoding and Dictionary encoding to achieve significant compression ratios while preserving schema information via Thrift metadata. The format is organized into row groups containing column chunks, which allow query engines like Spark or Trino to perform predicate pushdown and column projection. By storing data columnarly, Parquet minimizes the amount of data read from disk for analytical queries that only require specific fields. It is widely considered the de facto standard for data lakes due to its high compatibility with almost all modern query engines.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Concept"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-hrw4",
+              "label": "Apache Parquet Home",
+              "url": "https://parquet.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-0-0-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Storage Layout Details",
+          "x": 70,
+          "y": 400,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#3b82f6B3",
+            "stroke": "#3b82f6",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Parquet stores data in a hierarchical format consisting of a header, multiple row groups, and a footer containing metadata. The metadata includes column-level statistics like min/max values and null counts, which enable efficient skipping of row groups during query execution. This structural design is specifically optimized for HDFS and cloud object stores where scanning entire files is prohibitively expensive.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-nl6w",
+              "label": "Parquet Format Specification",
+              "url": "https://parquet.apache.org/docs/file-format/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-0-1-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Encoding and Compression",
+          "x": 270,
+          "y": 450,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#3b82f6B3",
+            "stroke": "#3b82f6",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Parquet offers a modular approach to compression, supporting algorithms like Snappy, Gzip, and Zstd at the column chunk level. Dictionary encoding is automatically applied to low-cardinality data, dramatically reducing the memory footprint for categorical attributes. This tiered approach allows developers to balance CPU overhead with storage space consumption.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-3nbk",
+              "label": "Parquet Encoding Definitions",
+              "url": "https://github.com/apache/parquet-format"
+            }
+          ]
+        },
+        {
+          "id": "mm-branch-2-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Apache Avro Paradigms",
+          "x": 520,
+          "y": 465,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#f59e0bE6",
+            "stroke": "#f59e0b",
+            "strokeWidth": 2,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 1
+          },
+          "documentation": {
+            "description": "Avro is a row-based serialization format designed to handle data streaming and RPC communication with minimal overhead. It stores the schema with the data, ensuring that files are always self-describing and facilitating seamless schema evolution. Because it writes rows sequentially, it is ideal for ingestion pipelines where records are appended one by one. While it lacks the query-side performance benefits of columnar formats, it is vastly superior for data movement, messaging systems like Kafka, and record-based processing. The robust handling of schema addition, deletion, and modification makes it the gold standard for microservices and data pipelines.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Concept"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-8se5",
+              "label": "Apache Avro Home",
+              "url": "https://avro.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-2-0-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Schema Evolution Rules",
+          "x": 370,
+          "y": 630,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#f59e0bB3",
+            "stroke": "#f59e0b",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Avro provides an robust mechanism for handling evolving schemas, allowing readers to process data written with older versions of a schema. By defining rules for reader/writer schema resolution, it prevents data loss during upstream schema updates. This makes it essential for long-running streaming services where application updates are frequent.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-5879",
+              "label": "Avro Schema Specification",
+              "url": "https://avro.apache.org/docs/current/spec.html"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-2-1-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Serialization Efficiency",
+          "x": 550,
+          "y": 640,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#f59e0bB3",
+            "stroke": "#f59e0b",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Avro uses a compact binary format that avoids storing field names within every record, relying instead on a centralized schema. This significantly reduces the size of serialised messages compared to JSON or XML, making it extremely efficient for high-throughput network transmission in Kafka environments.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-umq2",
+              "label": "Avro Documentation",
+              "url": "https://avro.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-branch-1-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Apache ORC Deep Dive",
+          "x": 920,
+          "y": 315,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#10b981E6",
+            "stroke": "#10b981",
+            "strokeWidth": 2,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 1
+          },
+          "documentation": {
+            "description": "ORC (Optimized Row Columnar) is a self-describing, type-aware file format developed initially for the Hive ecosystem. It is designed to maximize the performance of large-scale analytical queries by storing data in stripes, which are larger than Parquet's row groups. Each stripe contains index data, row data, and a stripe footer, allowing for extremely granular metadata extraction during scans. ORC is renowned for its advanced indexing features, including Bloom filters, which allow for rapid lookups of specific values within large datasets. While primarily associated with Hive, it remains a high-performance alternative to Parquet for enterprise data warehouses.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Concept"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-4g84",
+              "label": "Apache ORC Home",
+              "url": "https://orc.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-1-0-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Stripe-Level Indexing",
+          "x": 1210,
+          "y": 400,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#10b981B3",
+            "stroke": "#10b981",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "The ORC format divides files into stripes that hold their own metadata, including index entries that point to the exact location of data. This allows the reader to jump directly to relevant data ranges without scanning the entire file. The inclusion of Bloom filters within these indexes makes it exceptionally fast for point queries on high-cardinality columns.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-d1g1",
+              "label": "ORC Specification Docs",
+              "url": "https://orc.apache.org/specification/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-1-1-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Type-Aware Storage",
+          "x": 1030,
+          "y": 470,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#10b981B3",
+            "stroke": "#10b981",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Unlike generic binary formats, ORC stores data in a way that respects the original schema types, which reduces the need for costly conversion during read operations. It provides optimized readers for complex types like maps, lists, and structs, making it a robust choice for nested analytical data structures.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-t489",
+              "label": "ORC Performance Guides",
+              "url": "https://orc.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-branch-3-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Alternative Storage Formats",
+          "x": 740,
+          "y": 445,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#8b5cf6E6",
+            "stroke": "#8b5cf6",
+            "strokeWidth": 2,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 1
+          },
+          "documentation": {
+            "description": "Beyond the traditional triad, several specialized formats have emerged to address specific challenges in big data storage and streaming. Apache Hudi and Delta Lake represent a shift toward 'table formats' that wrap Parquet/ORC files to provide ACID transactions, time travel, and upsert capabilities. Meanwhile, formats like Protobuf and FlatBuffers offer high-performance serialization for inter-service communication where ultra-low latency is required. These formats often occupy niche areas but are increasingly becoming necessary for managing complex, mutable data states in data lakes.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Concept"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-kz0b",
+              "label": "Data Lake Table Formats",
+              "url": "https://delta.io/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-3-0-1794661285408",
+          "type": "mindmap-oval",
+          "label": "ACID Table Layers",
+          "x": 990,
+          "y": 610,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#8b5cf6B3",
+            "stroke": "#8b5cf6",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Modern formats like Delta Lake and Iceberg solve the file management problems inherent in raw Parquet. They maintain a transaction log that tracks file additions and deletions, enabling atomic commits and ensuring data consistency during concurrent read/write operations.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-4qp0",
+              "label": "Apache Iceberg Docs",
+              "url": "https://iceberg.apache.org/"
+            }
+          ]
+        },
+        {
+          "id": "mm-sub-3-1-1794661285408",
+          "type": "mindmap-oval",
+          "label": "Performance Serialization",
+          "x": 770,
+          "y": 640,
+          "width": 115,
+          "height": 55,
+          "style": {
+            "fill": "#8b5cf6B3",
+            "stroke": "#8b5cf6",
+            "strokeWidth": 1.5,
+            "textColor": "#ffffff",
+            "gradient": true
+          },
+          "data": {
+            "level": 2
+          },
+          "documentation": {
+            "description": "Protobuf and FlatBuffers are optimized for extreme speed and memory efficiency in binary serialization. They are widely used in low-latency gRPC services where Avro's schema management might be too heavy or specific performance characteristics are required.",
+            "status": "approved",
+            "tags": [
+              "MindMap",
+              "Subtopic"
+            ]
+          },
+          "links": [
+            {
+              "id": "link-1794661285408-0-s9tu",
+              "label": "Google Protobuf",
+              "url": "https://protobuf.dev/"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-mm-core-1794661285407-mm-branch-0-1794661285408",
+          "sourceNodeId": "mm-core-1794661285407",
+          "targetNodeId": "mm-branch-0-1794661285408",
+          "sourceAnchor": "left",
+          "targetAnchor": "right",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#3b82f6",
+          "strokeWidth": 2.5
+        },
+        {
+          "id": "edge-mm-branch-0-1794661285408-mm-sub-0-0-1794661285408",
+          "sourceNodeId": "mm-branch-0-1794661285408",
+          "targetNodeId": "mm-sub-0-0-1794661285408",
+          "sourceAnchor": "left",
+          "targetAnchor": "right",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#3b82f6",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-branch-0-1794661285408-mm-sub-0-1-1794661285408",
+          "sourceNodeId": "mm-branch-0-1794661285408",
+          "targetNodeId": "mm-sub-0-1-1794661285408",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top-right",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#3b82f6",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-core-1794661285407-mm-branch-2-1794661285408",
+          "sourceNodeId": "mm-core-1794661285407",
+          "targetNodeId": "mm-branch-2-1794661285408",
+          "sourceAnchor": "bottom-left",
+          "targetAnchor": "top",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#f59e0b",
+          "strokeWidth": 2.5
+        },
+        {
+          "id": "edge-mm-branch-2-1794661285408-mm-sub-2-0-1794661285408",
+          "sourceNodeId": "mm-branch-2-1794661285408",
+          "targetNodeId": "mm-sub-2-0-1794661285408",
+          "sourceAnchor": "bottom-left",
+          "targetAnchor": "top-right",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#f59e0b",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-branch-2-1794661285408-mm-sub-2-1-1794661285408",
+          "sourceNodeId": "mm-branch-2-1794661285408",
+          "targetNodeId": "mm-sub-2-1-1794661285408",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#f59e0b",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-core-1794661285407-mm-branch-1-1794661285408",
+          "sourceNodeId": "mm-core-1794661285407",
+          "targetNodeId": "mm-branch-1-1794661285408",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#10b981",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-branch-1-1794661285408-mm-sub-1-0-1794661285408",
+          "sourceNodeId": "mm-branch-1-1794661285408",
+          "targetNodeId": "mm-sub-1-0-1794661285408",
+          "sourceAnchor": "right",
+          "targetAnchor": "left",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#10b981",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-branch-1-1794661285408-mm-sub-1-1-1794661285408",
+          "sourceNodeId": "mm-branch-1-1794661285408",
+          "targetNodeId": "mm-sub-1-1-1794661285408",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top-left",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#10b981",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-core-1794661285407-mm-branch-3-1794661285408",
+          "sourceNodeId": "mm-core-1794661285407",
+          "targetNodeId": "mm-branch-3-1794661285408",
+          "sourceAnchor": "bottom-right",
+          "targetAnchor": "top",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#8b5cf6",
+          "strokeWidth": 2.5
+        },
+        {
+          "id": "edge-mm-branch-3-1794661285408-mm-sub-3-0-1794661285408",
+          "sourceNodeId": "mm-branch-3-1794661285408",
+          "targetNodeId": "mm-sub-3-0-1794661285408",
+          "sourceAnchor": "bottom-right",
+          "targetAnchor": "left",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#8b5cf6",
+          "strokeWidth": 2
+        },
+        {
+          "id": "edge-mm-branch-3-1794661285408-mm-sub-3-1-1794661285408",
+          "sourceNodeId": "mm-branch-3-1794661285408",
+          "targetNodeId": "mm-sub-3-1-1794661285408",
+          "sourceAnchor": "bottom",
+          "targetAnchor": "top",
+          "type": "curved",
+          "lineStyle": "solid",
+          "markerStart": "none",
+          "markerEnd": "none",
+          "color": "#8b5cf6",
+          "strokeWidth": 2
+        }
+      ]
+    }
+  ]
+}
