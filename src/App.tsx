@@ -48,7 +48,7 @@ import { workspaceService } from './services/workspaceService';
 import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
-import { collectAggregationsFromPageAndChildren, AggregatedItem } from './utils/descriptionAggregation';
+import { collectAggregationsFromPageAndChildren, AggregatedItem, AggregationDataType } from './utils/descriptionAggregation';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
@@ -120,9 +120,9 @@ export default function App() {
   const [isGenerateFlowchartModalOpen, setIsGenerateFlowchartModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
-  // Aggregations Down Right Side State (Change 2)
+  // Aggregations Down Right Side State
   const [isAggregationsOpen, setIsAggregationsOpen] = useState(false);
-  const [selectedAggregationField, setSelectedAggregationField] = useState<string | null>(null);
+  const [selectedAggregationFields, setSelectedAggregationFields] = useState<string[]>([]);
   const [showAggregationBadges, setShowAggregationBadges] = useState(true);
   const [pendingNavigation, setPendingNavigation] = useState<{
     action: () => void | Promise<void>;
@@ -294,6 +294,85 @@ export default function App() {
     if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
     return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
   }, [currentPage, document, activeWs, scriptEvalVersion]);
+
+  const activeSelectedAggregationFields = React.useMemo(() => {
+    if (selectedAggregationFields.length === 0) return [];
+    const available = new Map(aggregationResult.groups.map(g => [g.name.toLowerCase(), g]));
+    const filtered: string[] = [];
+    let activeType: AggregationDataType | null = null;
+    for (const raw of selectedAggregationFields) {
+      const grp = available.get(raw.toLowerCase());
+      if (!grp) continue;
+      if (!activeType) activeType = grp.type;
+      if (grp.type === activeType && !filtered.includes(grp.name)) {
+        filtered.push(grp.name);
+      }
+    }
+    return filtered;
+  }, [selectedAggregationFields, aggregationResult.groups]);
+
+  const handleToggleAggregationField = useCallback(
+    (fieldName: string) => {
+      const targetGroup = aggregationResult.groups.find(
+        g => g.name.toLowerCase() === fieldName.toLowerCase()
+      );
+      if (!targetGroup) return;
+
+      let shouldOpenPanel = false;
+      setSelectedAggregationFields(prev => {
+        const available = new Map(aggregationResult.groups.map(g => [g.name.toLowerCase(), g]));
+        const validPrev = prev
+          .map(name => available.get(name.toLowerCase()))
+          .filter((g): g is NonNullable<typeof g> => Boolean(g));
+        const currentType = validPrev[0]?.type || null;
+
+        if (currentType && currentType !== targetGroup.type) {
+          shouldOpenPanel = true;
+          return [targetGroup.name];
+        }
+
+        const alreadySelected = validPrev.some(g => g.name === targetGroup.name);
+        if (alreadySelected) {
+          return validPrev.filter(g => g.name !== targetGroup.name).map(g => g.name);
+        }
+
+        shouldOpenPanel = true;
+        return [...validPrev.map(g => g.name), targetGroup.name];
+      });
+
+      if (shouldOpenPanel && !isAggregationsOpen) {
+        setIsAggregationsOpen(true);
+      }
+    },
+    [aggregationResult.groups, isAggregationsOpen]
+  );
+
+  const handleSelectAllAggregationType = useCallback(
+    (type: AggregationDataType) => {
+      const matching = aggregationResult.groups
+        .filter(g => g.type === type)
+        .map(g => g.name);
+      setSelectedAggregationFields(matching);
+      if (matching.length > 0 && !isAggregationsOpen) {
+        setIsAggregationsOpen(true);
+      }
+    },
+    [aggregationResult.groups, isAggregationsOpen]
+  );
+
+  const handleClearAggregationFields = useCallback(() => {
+    setSelectedAggregationFields([]);
+  }, []);
+
+  const handleToggleAggregationsPanel = useCallback(() => {
+    setIsAggregationsOpen(prev => {
+      const next = !prev;
+      if (next && activeSelectedAggregationFields.length === 0 && aggregationResult.groups.length > 0) {
+        setSelectedAggregationFields([aggregationResult.groups[0].name]);
+      }
+      return next;
+    });
+  }, [activeSelectedAggregationFields.length, aggregationResult.groups]);
 
   // Ensure all child/grandchild diagrams in the active workspace are loaded so tree aggregations are complete
   useEffect(() => {
@@ -1921,13 +2000,12 @@ export default function App() {
         onSwitchDiagram={handleSwitchDiagram}
         onDeleteDiagramFile={handleDeleteDiagramFile}
         aggregationGroups={aggregationResult.groups}
-        selectedAggregationField={selectedAggregationField}
+        selectedAggregationFields={activeSelectedAggregationFields}
         isAggregationsOpen={isAggregationsOpen}
-        onToggleAggregations={() => setIsAggregationsOpen(prev => !prev)}
-        onSelectAggregationField={name => {
-          setSelectedAggregationField(name);
-          setIsAggregationsOpen(true);
-        }}
+        onToggleAggregations={handleToggleAggregationsPanel}
+        onToggleAggregationField={handleToggleAggregationField}
+        onSelectAllAggregationType={handleSelectAllAggregationType}
+        onClearAggregationFields={handleClearAggregationFields}
         showValuesOnCanvas={showAggregationBadges}
         onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
       />
@@ -2063,8 +2141,10 @@ export default function App() {
               isOpen={isAggregationsOpen}
               onClose={() => setIsAggregationsOpen(false)}
               groups={aggregationResult.groups}
-              selectedFieldName={selectedAggregationField}
-              onSelectFieldName={setSelectedAggregationField}
+              selectedFieldNames={activeSelectedAggregationFields}
+              onToggleFieldName={handleToggleAggregationField}
+              onSelectAllOfType={handleSelectAllAggregationType}
+              onClearFieldNames={handleClearAggregationFields}
               totalSearchedPages={aggregationResult.totalSearchedPages}
               totalItemsFound={aggregationResult.totalItemsFound}
               theme={settings.theme}

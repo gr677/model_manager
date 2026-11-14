@@ -34,8 +34,10 @@ interface AggregationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   groups: AggregationGroup[];
-  selectedFieldName: string | null;
-  onSelectFieldName: (name: string) => void;
+  selectedFieldNames: string[];
+  onToggleFieldName: (name: string) => void;
+  onSelectAllOfType?: (type: AggregationDataType) => void;
+  onClearFieldNames?: () => void;
   totalSearchedPages: number;
   totalItemsFound: number;
   onFocusNode?: (nodeId: string, item?: AggregatedItem) => void;
@@ -48,8 +50,10 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   isOpen,
   onClose,
   groups,
-  selectedFieldName,
-  onSelectFieldName,
+  selectedFieldNames,
+  onToggleFieldName,
+  onSelectAllOfType,
+  onClearFieldNames,
   totalSearchedPages,
   totalItemsFound,
   onFocusNode,
@@ -61,7 +65,9 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   const [searchFilter, setSearchFilter] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isRefreshingRates, setIsRefreshingRates] = useState(false);
-  const lastGroupNameRef = React.useRef<string | null>(null);
+  const [isFieldDropdownOpen, setIsFieldDropdownOpen] = useState(false);
+  const fieldDropdownRef = React.useRef<HTMLDivElement>(null);
+  const lastSelectionKeyRef = React.useRef<string>('');
   const knownItemIdsRef = React.useRef<Set<string>>(new Set());
 
   const handleRefreshRates = async () => {
@@ -74,24 +80,82 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
     }
   };
 
+  // Keep field dropdown open until clicking away or pressing Escape
+  useEffect(() => {
+    if (!isFieldDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fieldDropdownRef.current && !fieldDropdownRef.current.contains(e.target as Node)) {
+        setIsFieldDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFieldDropdownOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFieldDropdownOpen]);
+
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
 
-  // Active group to display
-  const activeGroup = groups.find(g => g.name === selectedFieldName?.toLowerCase()) || groups[0];
+  const selectedNameSet = useMemo(
+    () => new Set(selectedFieldNames.map(n => n.toLowerCase())),
+    [selectedFieldNames]
+  );
+
+  // Resolve all selected groups (guaranteed same type)
+  const selectedGroups = useMemo(() => {
+    const matched = groups.filter(g => selectedNameSet.has(g.name.toLowerCase()));
+    if (matched.length === 0) return [];
+    const primaryType = matched[0].type;
+    return matched.filter(g => g.type === primaryType);
+  }, [groups, selectedNameSet]);
+
+  const activeType: AggregationDataType | null = selectedGroups[0]?.type || null;
+  const isMultiField = selectedGroups.length > 1;
+  const selectionKey = selectedGroups.map(g => g.name).sort().join('|');
+
+  const combinedTitle = useMemo(() => {
+    if (selectedGroups.length === 0) return '';
+    if (selectedGroups.length === 1) return selectedGroups[0].displayName;
+    if (selectedGroups.length <= 3) return selectedGroups.map(g => g.displayName).join(' + ');
+    return `${selectedGroups[0].displayName} + ${selectedGroups.length - 1} more`;
+  }, [selectedGroups]);
+
+  // Combined items across all selected groups of the same type
+  const mergedItems = useMemo(() => {
+    if (selectedGroups.length === 0) return [];
+    const combined = selectedGroups.flatMap(g => g.items);
+    if (activeType === 'date') {
+      return [...combined].sort((a, b) => {
+        const timeA = a.dateValue ? a.dateValue.getTime() : 0;
+        const timeB = b.dateValue ? b.dateValue.getTime() : 0;
+        return timeA - timeB;
+      });
+    }
+    return combined;
+  }, [selectedGroups, activeType]);
 
   // Keep selectedItemIds synced when switching fields OR when child/grandchild items load asynchronously
   useEffect(() => {
-    if (!activeGroup || !activeGroup.items) {
-      lastGroupNameRef.current = null;
-      knownItemIdsRef.current = new Set();
-      setSelectedItemIds(new Set());
+    if (!selectionKey || mergedItems.length === 0) {
+      if (!selectionKey) {
+        lastSelectionKeyRef.current = '';
+        knownItemIdsRef.current = new Set();
+        setSelectedItemIds(new Set());
+      }
       return;
     }
 
-    const currentIds = activeGroup.items.map(i => i.id);
-    if (lastGroupNameRef.current !== activeGroup.name) {
-      lastGroupNameRef.current = activeGroup.name;
+    const currentIds = mergedItems.map(i => i.id);
+    if (lastSelectionKeyRef.current !== selectionKey) {
+      lastSelectionKeyRef.current = selectionKey;
       knownItemIdsRef.current = new Set(currentIds);
       setSelectedItemIds(new Set(currentIds));
       return;
@@ -112,56 +176,57 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
       return next;
     });
     knownItemIdsRef.current = currentSet;
-  }, [activeGroup?.name, activeGroup?.items]);
+  }, [selectionKey, mergedItems]);
 
-  // Items filtered by search and selected items
-  const filteredItems = (activeGroup?.items || []).filter(item => {
+  // Items filtered by search
+  const filteredItems = mergedItems.filter(item => {
     if (!searchFilter.trim()) return true;
     const q = searchFilter.toLowerCase();
     return (
       item.value.toLowerCase().includes(q) ||
       item.nodeLabel.toLowerCase().includes(q) ||
-      item.pageTitle.toLowerCase().includes(q)
+      item.pageTitle.toLowerCase().includes(q) ||
+      item.displayName.toLowerCase().includes(q)
     );
   });
 
   const activeTickedItems = useMemo(() => {
-    if (!activeGroup) return [];
-    return activeGroup.items.filter(item => selectedItemIds.has(item.id));
-  }, [activeGroup, selectedItemIds]);
+    if (selectedGroups.length === 0) return [];
+    return mergedItems.filter(item => selectedItemIds.has(item.id));
+  }, [selectedGroups.length, mergedItems, selectedItemIds]);
 
   // Recalculated metrics based on ticked items
   const effectiveTotal = useMemo(() => {
-    if (!activeGroup || activeGroup.type !== 'number') return 0;
+    if (activeType !== 'number') return 0;
     return activeTickedItems.reduce((acc, curr) => acc + (curr.numericValue ?? 0), 0);
-  }, [activeGroup, activeTickedItems]);
+  }, [activeType, activeTickedItems]);
 
   const effectiveAvg = useMemo(() => {
     if (activeTickedItems.length === 0) return 0;
     return effectiveTotal / activeTickedItems.length;
   }, [activeTickedItems, effectiveTotal]);
 
-  // Map each item ID in the active group to a consistent chart color
+  // Map each item ID in the merged selection to a consistent chart color
   const itemColorMap = useMemo(() => {
     const map = new Map<string, string>();
-    (activeGroup?.items || []).forEach((item, idx) => {
+    mergedItems.forEach((item, idx) => {
       map.set(item.id, CHART_PALETTE[idx % CHART_PALETTE.length]);
     });
     return map;
-  }, [activeGroup]);
+  }, [mergedItems]);
 
   // Prepare chart data for numbers
   const chartData: ChartDatum[] = useMemo(() => {
-    if (!activeGroup || activeGroup.type !== 'number') return [];
+    if (activeType !== 'number') return [];
     return activeTickedItems.map((item, idx) => ({
       id: item.id,
-      label: item.nodeLabel,
+      label: isMultiField ? `${item.nodeLabel} (${item.displayName})` : item.nodeLabel,
       value: item.numericValue ?? 0,
       nodeId: item.nodeId,
       pageTitle: item.pageTitle,
       color: itemColorMap.get(item.id) || CHART_PALETTE[idx % CHART_PALETTE.length],
     }));
-  }, [activeGroup, activeTickedItems, itemColorMap]);
+  }, [activeType, activeTickedItems, itemColorMap, isMultiField]);
 
   const handleToggleItem = (itemId: string) => {
     setSelectedItemIds(prev => {
@@ -176,9 +241,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   };
 
   const handleSelectAll = () => {
-    if (activeGroup) {
-      setSelectedItemIds(new Set(activeGroup.items.map(i => i.id)));
-    }
+    setSelectedItemIds(new Set(mergedItems.map(i => i.id)));
   };
 
   const handleDeselectAll = () => {
@@ -199,7 +262,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
 
   if (!isOpen) return null;
 
-  const isPieView = activeGroup?.type === 'number' && chartType === 'pie';
+  const isPieView = activeType === 'number' && chartType === 'pie';
 
   return (
     <aside
@@ -253,47 +316,180 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
             onChange={onToggleShowValuesOnCanvas}
             className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 focus:ring-0 cursor-pointer"
           />
-          <span className="text-[11px] font-medium text-slate-300">
+          <span className={`text-[11px] font-medium ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
             Display value badges on diagram nodes
           </span>
         </label>
         <Eye className={`w-3.5 h-3.5 ${showValuesOnCanvas ? 'text-blue-400' : 'text-slate-500'}`} />
       </div>
 
-      {/* Field Switcher Selector Dropdown */}
+      {/* Multi-Select Same-Type Field Selector Dropdown (Stays open until click-away) */}
       <div className={`p-3 border-b flex flex-col gap-1.5 shrink-0 ${isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
-        <label className="text-[10px] font-mono uppercase text-slate-400 flex items-center justify-between">
-          <span>Active Aggregated Field:</span>
-          {activeGroup && (
-            <span className="text-[9px] uppercase font-bold text-sky-400">
-              @{activeGroup.type}
-            </span>
+        <div className="text-[10px] font-mono uppercase text-slate-400 flex items-center justify-between">
+          <span>Selected Aggregated Fields:</span>
+          {activeType ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] uppercase font-bold text-sky-400">
+                @{activeType} ({selectedGroups.length})
+              </span>
+              {onClearFieldNames && (
+                <button
+                  type="button"
+                  onClick={onClearFieldNames}
+                  className="text-[9px] text-slate-400 hover:text-rose-400 cursor-pointer"
+                  title="Clear selected fields"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          ) : (
+            <span className="text-[9px] text-slate-500">Same type only</span>
           )}
-        </label>
-        <div className="relative">
-          <select
-            value={activeGroup ? activeGroup.name : ''}
-            onChange={e => onSelectFieldName(e.target.value)}
-            className={`w-full appearance-none pl-8 pr-8 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        </div>
+
+        <div ref={fieldDropdownRef} className="relative">
+          <button
+            type="button"
+            disabled={groups.length === 0}
+            onClick={() => setIsFieldDropdownOpen(v => !v)}
+            className={`w-full pl-8 pr-8 py-2 rounded-xl text-xs font-semibold border text-left transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between ${
               isDark
                 ? 'bg-slate-950 border-slate-700 text-slate-100 hover:border-slate-600'
                 : 'bg-slate-100 border-slate-300 text-slate-800 hover:border-slate-400'
-            }`}
+            } ${groups.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {groups.length === 0 && (
-              <option value="">No special @type tags found</option>
-            )}
-            {groups.map(group => (
-              <option key={group.name} value={group.name}>
-                @{group.type} {group.displayName} ({group.items.length} item{group.items.length === 1 ? '' : 's'})
-              </option>
-            ))}
-          </select>
-          <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-            {activeGroup ? getTypeIcon(activeGroup.type) : <Layers className="w-3.5 h-3.5 text-slate-400" />}
-          </div>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+              {activeType ? getTypeIcon(activeType) : <Layers className="w-3.5 h-3.5 text-slate-400" />}
+            </div>
+            <span className="truncate">
+              {groups.length === 0
+                ? 'No special @type tags found'
+                : selectedGroups.length === 0
+                ? 'Select one or more fields...'
+                : selectedGroups.length === 1
+                ? `@${selectedGroups[0].type} ${selectedGroups[0].displayName} (${selectedGroups[0].items.length})`
+                : `${selectedGroups.length} @${activeType} fields (${mergedItems.length} items)`}
+            </span>
+            <ChevronDown className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none transition-transform ${isFieldDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {isFieldDropdownOpen && groups.length > 0 && (
+            <div
+              className={`absolute left-0 right-0 mt-1.5 border rounded-xl shadow-2xl p-2 z-50 text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-1 ${
+                isDark ? 'bg-slate-900/98 border-slate-700 text-slate-200' : 'bg-white/98 border-slate-200 text-slate-800'
+              }`}
+            >
+              <div className={`px-2 py-1 text-[9.5px] font-mono uppercase border-b mb-1.5 flex items-center justify-between ${
+                isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
+              }`}>
+                <span>
+                  {activeType ? `Multi-select @${activeType}:` : 'Pick fields (same @type):'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {activeType && onSelectAllOfType && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectAllOfType(activeType)}
+                      className="text-sky-400 hover:text-sky-300 font-bold cursor-pointer"
+                    >
+                      All @{activeType}
+                    </button>
+                  )}
+                  {selectedGroups.length > 0 && onClearFieldNames && (
+                    <>
+                      <span className="text-slate-600">·</span>
+                      <button
+                        type="button"
+                        onClick={onClearFieldNames}
+                        className="text-slate-400 hover:text-rose-400 font-bold cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1 max-h-60 overflow-y-auto pr-0.5">
+                {groups.map(group => {
+                  const isChecked = selectedNameSet.has(group.name.toLowerCase());
+                  const isDifferentType = Boolean(activeType && activeType !== group.type);
+                  return (
+                    <button
+                      key={group.name}
+                      type="button"
+                      onClick={() => onToggleFieldName(group.name)}
+                      title={
+                        isDifferentType
+                          ? `Different type from @${activeType} — click to switch to @${group.type}`
+                          : isChecked
+                          ? `Uncheck ${group.displayName}`
+                          : `Check ${group.displayName}`
+                      }
+                      className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between transition-all cursor-pointer group ${
+                        isChecked
+                          ? 'bg-blue-600/25 border border-blue-500/50 text-blue-300 font-bold'
+                          : isDifferentType
+                          ? isDark
+                            ? 'hover:bg-slate-800/80 text-slate-400 opacity-65 hover:opacity-100 border border-transparent'
+                            : 'hover:bg-slate-100 text-slate-500 opacity-70 hover:opacity-100 border border-transparent'
+                          : isDark
+                          ? 'hover:bg-slate-800 text-slate-200 border border-transparent'
+                          : 'hover:bg-slate-100 text-slate-800 border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isChecked ? (
+                          <CheckSquare className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        ) : (
+                          <Square className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        )}
+                        {getTypeIcon(group.type)}
+                        <span className="truncate">{group.displayName}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        {isDifferentType && (
+                          <span className="hidden group-hover:inline text-[8px] font-mono text-amber-400">
+                            switch
+                          </span>
+                        )}
+                        <span className="text-[9px] font-mono text-slate-400">@{group.type}</span>
+                        <span className="text-[10px] font-mono text-slate-400">({group.items.length})</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Removable chips when 2+ fields are combined */}
+        {selectedGroups.length > 1 && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {selectedGroups.map(g => (
+              <span
+                key={g.name}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono border ${
+                  isDark
+                    ? 'bg-blue-950/60 border-blue-800/70 text-blue-300'
+                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                }`}
+              >
+                <span>{g.displayName}</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleFieldName(g.name)}
+                  className="hover:text-rose-400 cursor-pointer"
+                  title={`Remove ${g.displayName}`}
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main Panel Content */}
@@ -315,10 +511,42 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               <div className="text-amber-300">@date due: 2027-10-25</div>
             </div>
           </div>
-        ) : !activeGroup ? null : (
+        ) : selectedGroups.length === 0 ? (
+          <div className="p-4 text-center space-y-3 mt-4">
+            <div className="w-11 h-11 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-400">
+              <CheckSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                No Fields Selected
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                Check one or more fields of the same type (<span className="font-mono">@number</span>, <span className="font-mono">@date</span>, or <span className="font-mono">@text</span>) above to combine them here.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-1.5 pt-1">
+              {groups.map(g => (
+                <button
+                  key={g.name}
+                  type="button"
+                  onClick={() => onToggleFieldName(g.name)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors ${
+                    isDark
+                      ? 'bg-slate-950 border-slate-800 hover:border-blue-500/50 text-slate-200'
+                      : 'bg-white border-slate-200 hover:border-blue-500/50 text-slate-700'
+                  }`}
+                >
+                  {getTypeIcon(g.type)}
+                  <span>{g.displayName}</span>
+                  <span className="text-[9px] font-mono text-slate-400">({g.items.length})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
           <>
-            {/* 1. NUMBER FIELD: Normal Bar/Pie Chart & Breakdown with Tickbox Filtering */}
-            {activeGroup.type === 'number' && (
+            {/* 1. NUMBER FIELD(S): Normal Bar/Pie Chart & Breakdown with Tickbox Filtering */}
+            {activeType === 'number' && (
               <div className="space-y-3 animate-in fade-in">
                 {/* Summary Metrics Cards (Recalculates with ticked items) */}
                 <div className="grid grid-cols-2 gap-2">
@@ -348,7 +576,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     onChangeChartType={setChartType}
                     isDark={isDark}
                     totalSum={effectiveTotal}
-                    fieldName={activeGroup.displayName}
+                    fieldName={combinedTitle}
                     backgroundColor={themeDef.canvasBg}
                   />
                 </ErrorBoundary>
@@ -357,7 +585,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300 pb-1 border-b border-slate-800">
                     <div className="flex items-center gap-1.5">
-                      <span>Values ({activeTickedItems.length}/{activeGroup.items.length})</span>
+                      <span>Values ({activeTickedItems.length}/{mergedItems.length})</span>
                     </div>
                     {/* Live rates refresh & Tickbox controls: Select All / None */}
                     <div className="flex items-center gap-1.5 text-[10px] font-mono">
@@ -395,7 +623,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                   </div>
 
                   <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
-                    {activeGroup.items.map((item, idx) => {
+                    {mergedItems.map((item, idx) => {
                       const isTicked = selectedItemIds.has(item.id);
                       const total = effectiveTotal || 1;
                       const percent = isTicked ? Math.round(((item.numericValue ?? 0) / total) * 100) : 0;
@@ -442,9 +670,14 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                                   className="w-2 h-2 rounded-full shrink-0"
                                   style={{ backgroundColor: itemColor }}
                                 />
-                                <span className={`font-semibold truncate max-w-[155px] ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                                <span className={`font-semibold truncate max-w-[140px] ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
                                   {item.nodeLabel}
                                 </span>
+                                {isMultiField && (
+                                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                    @{item.displayName}
+                                  </span>
+                                )}
                               </div>
                               <span className="font-mono font-bold text-emerald-400 shrink-0 ml-1">
                                 {(item.numericValue ?? 0).toLocaleString()}
@@ -472,16 +705,16 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               </div>
             )}
 
-            {/* 2. DATE FIELD: Ordered by Date Ascending (date asc) with Tickbox controls */}
-            {activeGroup.type === 'date' && (
+            {/* 2. DATE FIELD(S): Ordered by Date Ascending (date asc) */}
+            {activeType === 'date' && (
               <div className="space-y-3 animate-in fade-in">
                 <div className={`p-2.5 rounded-xl border flex items-center justify-between ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-amber-400" />
                     <div>
                       <span className="text-[10px] font-mono uppercase text-slate-400 block font-bold">Ordered By Date Ascending</span>
-                      <span className="text-xs font-semibold text-slate-200">
-                        {activeGroup.items.length} Milestone Date{activeGroup.items.length === 1 ? '' : 's'}
+                      <span className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                        {mergedItems.length} Milestone Date{mergedItems.length === 1 ? '' : 's'}
                       </span>
                     </div>
                   </div>
@@ -492,7 +725,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
 
                 {/* Timeline Cards in Date Ascending Order */}
                 <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-0.5">
-                  {activeGroup.items.map((item, idx) => {
+                  {mergedItems.map((item, idx) => {
                     const d = item.dateValue;
                     const dateFormatted = item.formattedDate || (d ? d.toLocaleDateString() : item.value);
 
@@ -515,8 +748,13 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
 
                         <div className="flex items-start justify-between gap-2 pl-1.5">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 font-bold text-xs text-slate-100 truncate">
-                              <span>{item.nodeLabel}</span>
+                            <div className="flex items-center gap-1.5 font-bold text-xs truncate">
+                              <span className={isDark ? 'text-slate-100' : 'text-slate-800'}>{item.nodeLabel}</span>
+                              {isMultiField && (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                                  @{item.displayName}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono">
                               <span className="truncate max-w-[150px]">{item.pageTitle}</span>
@@ -544,8 +782,8 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
               </div>
             )}
 
-            {/* 3. TEXT FIELD: List of text entries with search filter */}
-            {activeGroup.type === 'text' && (
+            {/* 3. TEXT FIELD(S): List of text entries with search filter */}
+            {activeType === 'text' && (
               <div className="space-y-3 animate-in fade-in">
                 {/* Search in Text entries */}
                 <div className="relative">
@@ -554,7 +792,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     type="text"
                     value={searchFilter}
                     onChange={e => setSearchFilter(e.target.value)}
-                    placeholder={`Filter ${activeGroup.displayName} items...`}
+                    placeholder={`Filter ${combinedTitle} items...`}
                     className={`w-full pl-8 pr-3 py-1.5 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 ${
                       isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-800'
                     }`}
@@ -573,8 +811,15 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                       }`}
                       title={`Click to navigate to "${item.nodeLabel}" (${item.diagramFilename} / ${item.pageTitle})`}
                     >
-                      <div className="text-xs font-semibold text-slate-100 leading-relaxed whitespace-pre-wrap break-words">
-                        {item.value}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className={`text-xs font-semibold leading-relaxed whitespace-pre-wrap break-words ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                          {item.value}
+                        </div>
+                        {isMultiField && (
+                          <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 shrink-0">
+                            @{item.displayName}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/60">
                         <span className="font-medium text-sky-400 truncate max-w-[140px]">
