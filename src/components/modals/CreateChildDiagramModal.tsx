@@ -19,6 +19,7 @@ import {
   Sparkles,
   Check,
   ArrowRight,
+  Search,
 } from 'lucide-react';
 
 interface CreateChildDiagramModalProps {
@@ -49,6 +50,7 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
   const [title, setTitle] = useState('');
   const [filename, setFilename] = useState('');
   const [selectedType, setSelectedType] = useState<DiagramType>('mindmap');
+  const [typeSearch, setTypeSearch] = useState('');
   const [selectedExistingFile, setSelectedExistingFile] = useState<string>('');
 
   const existingChildren = parentNode ? getNodeChildDiagrams(parentNode) : [];
@@ -56,6 +58,7 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
   // Prepopulate title and workspace-unique filename when modal opens or parentNode changes
   React.useEffect(() => {
     if (parentNode && isOpen) {
+      setTypeSearch('');
       const sanitizedName = parentNode.label.toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 20);
       const currentChildren = getNodeChildDiagrams(parentNode);
       const suffix = currentChildren.length > 0 ? `_${currentChildren.length + 1}` : '';
@@ -308,22 +311,48 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
 
             {/* Diagram Type Grid */}
             <div>
-              <label
-                className={`text-[10px] uppercase font-mono block mb-1.5 font-bold ${
-                  isDark ? 'text-slate-400' : 'text-slate-600'
-                }`}
-              >
-                Child Diagram Type (Can differ from parent &quot;{parentDiagramType.toUpperCase()}&quot;)
-              </label>
-              <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                {DIAGRAM_TYPES_CATALOG.map(t => {
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label
+                  className={`text-[10px] uppercase font-mono font-bold ${
+                    isDark ? 'text-slate-400' : 'text-slate-600'
+                  }`}
+                >
+                  Child Diagram Type (Can differ from parent &quot;{parentDiagramType.toUpperCase()}&quot;)
+                </label>
+                <div className="relative w-44">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={typeSearch}
+                    onChange={e => setTypeSearch(e.target.value)}
+                    placeholder="Filter types (e.g. fishbone)..."
+                    className={`w-full pl-6 pr-2 py-1 rounded-md text-[10px] border focus:outline-none ${
+                      isDark
+                        ? 'bg-slate-950 border-slate-700 text-slate-200 placeholder-slate-500 focus:border-purple-500'
+                        : 'bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-purple-500'
+                    }`}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-1">
+                {DIAGRAM_TYPES_CATALOG.filter(t => {
+                  const q = typeSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    t.name.toLowerCase().includes(q) ||
+                    t.id.toLowerCase().includes(q) ||
+                    t.category.toLowerCase().includes(q) ||
+                    t.standard.toLowerCase().includes(q)
+                  );
+                }).map(t => {
                   const isSelected = selectedType === t.id;
                   return (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setSelectedType(t.id as DiagramType)}
-                      className={`p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                      title={t.name}
+                      className={`p-2 rounded-lg border text-left cursor-pointer transition-all flex flex-col justify-between ${
                         isSelected
                           ? 'border-purple-500 bg-purple-500/15 text-purple-300 ring-1 ring-purple-500/50'
                           : isDark
@@ -331,8 +360,8 @@ export const CreateChildDiagramModal: React.FC<CreateChildDiagramModalProps> = (
                           : 'border-slate-200 bg-slate-50 hover:border-slate-300 text-slate-700'
                       }`}
                     >
-                      <div className="font-bold text-[11px] truncate">{t.name}</div>
-                      <div className="text-[9px] opacity-70 font-mono uppercase truncate">{t.category}</div>
+                      <div className="font-bold text-[11px] leading-tight line-clamp-2">{t.name}</div>
+                      <div className="text-[9px] opacity-70 font-mono uppercase truncate mt-1">{t.category}</div>
                     </button>
                   );
                 })}
