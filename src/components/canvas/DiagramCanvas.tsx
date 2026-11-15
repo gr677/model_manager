@@ -131,6 +131,13 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     return [];
   }, [selectedNodeIds, selectedNodeId]);
 
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const effectiveSelectedNodeIdsRef = useRef(effectiveSelectedNodeIds);
+  effectiveSelectedNodeIdsRef.current = effectiveSelectedNodeIds;
+  const onUpdateNodesRef = useRef(onUpdateNodes);
+  onUpdateNodesRef.current = onUpdateNodes;
+
   // Viewport transformation
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -1097,7 +1104,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     }
   };
 
-  // Keyboard shortcut listener (Delete selected nodes, cancel connecting)
+  // Keyboard shortcut listener (Delete selected nodes, cancel connecting, arrow-key nudge)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1105,21 +1112,66 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
         if (reconnectingEdge) setReconnectingEdge(null);
         return;
       }
+
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isEditingText =
+        activeEl?.tagName === 'INPUT' ||
+        activeEl?.tagName === 'TEXTAREA' ||
+        activeEl?.tagName === 'SELECT' ||
+        Boolean(activeEl?.isContentEditable);
+
+      if (isEditingText) return;
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isReadOnly) {
-        if (
-          document.activeElement?.tagName !== 'INPUT' &&
-          document.activeElement?.tagName !== 'TEXTAREA'
-        ) {
-          if (effectiveSelectedNodeIds.length > 0 || selectedEdgeId) {
-            e.preventDefault();
-            onDeleteSelected();
-          }
+        if (effectiveSelectedNodeIds.length > 0 || selectedEdgeId) {
+          e.preventDefault();
+          onDeleteSelected();
         }
+        return;
+      }
+
+      // Nudge one or more selected nodes with Arrow keys (2px) or Shift+Arrow (20px)
+      if (
+        !isReadOnly &&
+        !e.defaultPrevented &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        (e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight')
+      ) {
+        const selectedIds = effectiveSelectedNodeIdsRef.current;
+        if (selectedIds.length === 0) return;
+        // Avoid nudging canvas nodes while any modal dialog/lightbox is open
+        if (document.querySelector('.fixed.inset-0.z-50')) return;
+
+        e.preventDefault();
+        const step = e.shiftKey ? (settings?.gridSize || 20) : 2;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+
+        const selectedSet = new Set(selectedIds);
+        const currentNodes = nodesRef.current;
+        const nextNodes = currentNodes.map(n => {
+          if (selectedSet.has(n.id) || (n.parentId && selectedSet.has(n.parentId))) {
+            return {
+              ...n,
+              x: n.x + dx,
+              y: n.y + dy,
+            };
+          }
+          return n;
+        });
+
+        nodesRef.current = nextNodes;
+        onUpdateNodesRef.current(nextNodes);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [effectiveSelectedNodeIds, selectedEdgeId, isReadOnly, onDeleteSelected, connectingFrom, reconnectingEdge]);
+  }, [effectiveSelectedNodeIds, selectedEdgeId, isReadOnly, onDeleteSelected, connectingFrom, reconnectingEdge, settings?.gridSize]);
 
   // Determine active edge being reconnected for helper banners
   const reconnectingEdgeObj = reconnectingEdge
