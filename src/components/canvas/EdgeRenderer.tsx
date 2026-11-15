@@ -100,6 +100,9 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
   }
 
   // Helper to map edge marker type to SVG marker ID in DiagramCanvas (Change 2)
+  const safeEdgeId = (edge.id || 'edge').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const customArrowMarkerId = edge.color ? `marker-arrow-${safeEdgeId}` : '';
+
   const getMarkerId = (marker?: string): string => {
     switch (marker) {
       case 'crow-zero-many': return 'marker-crow-zero-many'; // 0..*
@@ -112,14 +115,18 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
       case 'diamond': return 'marker-diamond';
       case 'diamond-filled': return 'marker-diamond-filled';
       case 'circle': return 'marker-circle';
-      case 'arrow': return 'marker-arrow';
+      case 'arrow': return customArrowMarkerId || 'marker-arrow';
       case 'none': return '';
       default: return '';
     }
   };
 
   const markerStartId = getMarkerId(edge.markerStart);
-  const markerEndId = edge.markerEnd ? getMarkerId(edge.markerEnd) : (edge.markerStart ? '' : 'marker-arrow');
+  const markerEndId = edge.markerEnd
+    ? getMarkerId(edge.markerEnd)
+    : edge.markerStart
+    ? ''
+    : customArrowMarkerId || 'marker-arrow';
 
   const strokeColor = edge.color || (isSelected ? '#38bdf8' : '#94a3b8');
   const strokeDash =
@@ -156,6 +163,24 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
       }}
     >
       <title>{`Connector: ${sourceNode.label} → ${targetNode.label} (${styleLabel}) - Click to select, drag endpoint handles to move connector, or drag line handle to reposition orthogonal corners`}</title>
+
+      {customArrowMarkerId &&
+        (markerEndId === customArrowMarkerId || markerStartId === customArrowMarkerId) && (
+          <defs>
+            <marker
+              id={customArrowMarkerId}
+              viewBox="0 0 10 10"
+              refX="8.2"
+              refY="5"
+              markerUnits="userSpaceOnUse"
+              markerWidth={(edge.strokeWidth || 2) >= 4 ? 14 : 10}
+              markerHeight={(edge.strokeWidth || 2) >= 4 ? 14 : 10}
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 9 5 L 0 9 z" fill={strokeColor} />
+            </marker>
+          </defs>
+        )}
 
       {/* Invisible wider path for easier clicking/hover */}
       <path

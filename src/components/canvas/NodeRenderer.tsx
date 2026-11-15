@@ -30,6 +30,28 @@ import {
   Hash,
   ImageIcon,
   Maximize2,
+  Settings,
+  Headphones,
+  Handshake,
+  Tag,
+  Trophy,
+  Heart,
+  Bug,
+  Puzzle,
+  Gauge,
+  AlertCircle,
+  TrendingUp,
+  RefreshCw,
+  HelpCircle,
+  Coins,
+  DollarSign,
+  Percent,
+  Smartphone,
+  Megaphone,
+  MessageSquare,
+  Gift,
+  Mail,
+  Target,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
@@ -1704,17 +1726,32 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         );
       }
 
-      // 25. Fishbone (Ishikawa) Head (Effect / Problem Statement facing right)
+      // 25. Fishbone (Ishikawa) Head (Guitar-pick / rounded shield facing right)
       case 'fishbone-head': {
-        const fill = node.style?.fill || 'rgba(225, 29, 72, 0.92)';
-        const stroke = node.style?.stroke || '#fb7185';
+        const fill = node.style?.fill || '#f97316';
+        const stroke = node.style?.stroke || '#9a3412';
         const strokeWidth = node.style?.strokeWidth ?? 3;
-        const textColor = node.style?.textColor || '#fff1f2';
+        const textColor = node.style?.textColor || '#1c1917';
         const w = node.width;
         const h = node.height;
         const pad = Math.max(strokeWidth, 2);
-        const gillX = pad + 14;
-        const headPath = `M ${pad} ${pad + 4} Q ${gillX} ${h / 2} ${pad} ${h - pad - 4} C ${w * 0.48} ${h - pad + 4}, ${w * 0.86} ${h * 0.78}, ${w - pad} ${h / 2} C ${w * 0.86} ${h * 0.22}, ${w * 0.48} ${pad - 4}, ${pad} ${pad + 4} Z`;
+        const gradId = `fb-head-grad-${node.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        // Rounded triangular / guitar-pick fish head facing right with vertical left edge
+        const headPath = `
+          M ${pad + 14} ${pad + 2}
+          Q ${pad} ${pad + 2}, ${pad} ${pad + 18}
+          L ${pad} ${h - pad - 18}
+          Q ${pad} ${h - pad - 2}, ${pad + 14} ${h - pad - 2}
+          C ${w * 0.42} ${h - pad + 2}, ${w * 0.94} ${h * 0.72}, ${w - pad} ${h * 0.54}
+          Q ${w + 1} ${h / 2}, ${w - pad} ${h * 0.46}
+          C ${w * 0.94} ${h * 0.28}, ${w * 0.42} ${pad - 2}, ${pad + 14} ${pad + 2}
+          Z
+        `;
+
+        const lines = (node.label || '').split('\n').map(l => l.trim()).filter(Boolean);
+        const hasPrefix = lines.length > 1 && lines[0].endsWith(':');
+        const subtitle = hasPrefix ? lines[0] : '';
+        const headline = hasPrefix ? lines.slice(1).join('\n') : node.label;
 
         return (
           <div className="relative w-full h-full flex items-center justify-center overflow-visible">
@@ -1722,57 +1759,78 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
               className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-xl"
               viewBox={`0 0 ${w} ${h}`}
             >
+              <defs>
+                <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#fdba74" />
+                  <stop offset="48%" stopColor={fill} />
+                  <stop offset="100%" stopColor="#ea580c" />
+                </linearGradient>
+              </defs>
               <path
                 d={headPath}
-                fill={fill}
+                fill={`url(#${gradId})`}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 strokeLinejoin="round"
               />
-              {/* Subtle gill arc */}
+              {/* Subtle inner highlight curve */}
               <path
-                d={`M ${pad + 18} ${h * 0.22} Q ${pad + 28} ${h * 0.5} ${pad + 18} ${h * 0.78}`}
+                d={`M ${pad + 16} ${pad + 9} C ${w * 0.42} ${pad + 6}, ${w * 0.76} ${h * 0.26}, ${w * 0.88} ${h * 0.42}`}
                 fill="none"
-                stroke={stroke}
-                strokeWidth={1.5}
-                strokeOpacity={0.55}
-              />
-              {/* Stylized fish eye */}
-              <circle
-                cx={w * 0.81}
-                cy={h * 0.34}
-                r={Math.max(4, Math.min(6.5, h * 0.05))}
-                fill={textColor}
-                fillOpacity={0.9}
-              />
-              <circle
-                cx={w * 0.818}
-                cy={h * 0.34}
-                r={Math.max(2, Math.min(3, h * 0.025))}
-                fill="#0f172a"
+                stroke="#fff7ed"
+                strokeWidth={2}
+                strokeOpacity={0.45}
+                strokeLinecap="round"
               />
             </svg>
-            <div className="relative z-10 text-center pl-6 pr-10 pointer-events-none select-none max-w-full">
+            <div className="relative z-10 flex flex-col items-center justify-center text-center pl-4 pr-7 pointer-events-none select-none max-w-full">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center mb-1.5 shadow-sm border"
+                style={{
+                  backgroundColor: 'rgba(154, 52, 18, 0.14)',
+                  borderColor: stroke,
+                  color: stroke,
+                }}
+              >
+                <Target className="w-4 h-4" />
+              </div>
+              {subtitle && (
+                <span
+                  className="text-[11px] font-semibold leading-tight opacity-85 mb-0.5"
+                  style={{ color: textColor }}
+                >
+                  {subtitle}
+                </span>
+              )}
               <span
-                className="text-xs font-bold leading-snug whitespace-pre-line line-clamp-4"
+                className="text-sm font-extrabold leading-tight whitespace-pre-line line-clamp-3"
                 style={{ color: textColor }}
               >
-                {node.label}
+                {headline}
               </span>
             </div>
           </div>
         );
       }
 
-      // 25b. Fishbone (Ishikawa) Tail Fin (far-left spine anchor)
+      // 25b. Fishbone (Ishikawa) Organic Curved Tail Fin (far-left spine anchor)
       case 'fishbone-tail': {
-        const fill = node.style?.fill || 'rgba(51, 65, 85, 0.9)';
-        const stroke = node.style?.stroke || '#94a3b8';
+        const fill = node.style?.fill || '#4db6c6';
+        const stroke = node.style?.stroke || '#155e75';
         const strokeWidth = node.style?.strokeWidth ?? 2.5;
         const w = node.width;
         const h = node.height;
         const pad = Math.max(strokeWidth, 2);
-        const tailPath = `M ${pad} ${pad} L ${w - pad} ${h * 0.44} L ${w - pad} ${h * 0.56} L ${pad} ${h - pad} L ${w * 0.38} ${h / 2} Z`;
+        const gradId = `fb-tail-grad-${node.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        const tailPath = `
+          M ${pad + 4} ${pad + 6}
+          C ${w * 0.36} ${h * 0.14}, ${w * 0.62} ${h * 0.44}, ${w - 1} ${h * 0.485}
+          L ${w - 1} ${h * 0.515}
+          C ${w * 0.62} ${h * 0.56}, ${w * 0.36} ${h * 0.86}, ${pad + 4} ${h - pad - 6}
+          C ${w * 0.18} ${h * 0.72}, ${w * 0.28} ${h * 0.58}, ${w * 0.32} ${h * 0.5}
+          C ${w * 0.28} ${h * 0.42}, ${w * 0.18} ${h * 0.28}, ${pad + 4} ${pad + 6}
+          Z
+        `;
 
         return (
           <div className="relative w-full h-full flex items-center justify-center overflow-visible">
@@ -1780,89 +1838,167 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
               className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-lg"
               viewBox={`0 0 ${w} ${h}`}
             >
+              <defs>
+                <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="50%">
+                  <stop offset="0%" stopColor="#7dd3d0" />
+                  <stop offset="55%" stopColor={fill} />
+                  <stop offset="100%" stopColor="#0e7490" />
+                </linearGradient>
+              </defs>
               <path
                 d={tailPath}
-                fill={fill}
+                fill={`url(#${gradId})`}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 strokeLinejoin="round"
+              />
+              {/* Delicate fin ray lines */}
+              <path
+                d={`
+                  M ${w * 0.22} ${h * 0.22} Q ${w * 0.48} ${h * 0.38} ${w * 0.86} ${h * 0.49}
+                  M ${w * 0.3} ${h * 0.38} Q ${w * 0.54} ${h * 0.45} ${w * 0.86} ${h * 0.495}
+                  M ${w * 0.22} ${h * 0.78} Q ${w * 0.48} ${h * 0.62} ${w * 0.86} ${h * 0.51}
+                  M ${w * 0.3} ${h * 0.62} Q ${w * 0.54} ${h * 0.55} ${w * 0.86} ${h * 0.505}
+                `}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={1.1}
+                strokeOpacity={0.4}
+                strokeLinecap="round"
               />
             </svg>
           </div>
         );
       }
 
-      // 25c. Fishbone (Ishikawa) Category Rib Header
+      // 25c. Fishbone (Ishikawa) Category Rib Banner with Circular Icon Emblem
       case 'fishbone-category': {
-        const fill = node.style?.fill || 'rgba(159, 18, 57, 0.88)';
-        const stroke = node.style?.stroke || '#fb7185';
+        const fill = node.style?.fill || '#8ecae6';
+        const stroke = node.style?.stroke || '#0369a1';
         const strokeWidth = node.style?.strokeWidth ?? 2;
-        const textColor = node.style?.textColor || '#ffe4e6';
-        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, 'rgba(159, 18, 57, 0.88)');
-        const isBottom = node.data?.side === 'bottom';
+        const textColor = node.style?.textColor || '#0f172a';
+        const badgeFill = node.data?.badgeFill || fill;
+        const iconName: string | undefined = node.data?.icon;
+
+        const renderCategoryIcon = () => {
+          const props = { className: 'w-4 h-4', style: { color: textColor } };
+          switch (iconName) {
+            case 'settings': return <Settings {...props} />;
+            case 'headphones': return <Headphones {...props} />;
+            case 'handshake': return <Handshake {...props} />;
+            case 'tag': return <Tag {...props} />;
+            case 'trophy': return <Trophy {...props} />;
+            case 'heart': return <Heart {...props} />;
+            case 'users': return <Users {...props} />;
+            case 'cpu': return <Cpu {...props} />;
+            case 'database': return <Database {...props} />;
+            case 'git-fork': return <GitFork {...props} />;
+            case 'clock': return <Clock {...props} />;
+            default: return <GitFork {...props} />;
+          }
+        };
 
         return (
           <div
-            className="relative flex items-center justify-center h-full px-3 py-1.5 shadow-lg text-center transition-all border-2 overflow-hidden"
+            className="relative flex items-center h-full px-2 py-1 shadow-lg transition-all overflow-hidden gap-2"
             style={{
-              ...bgStyle,
+              backgroundColor: fill,
               borderColor: stroke,
               borderWidth: `${strokeWidth}px`,
-              borderRadius: '6px',
+              borderStyle: 'solid',
+              borderRadius: node.style?.rounded !== undefined ? `${node.style.rounded}px` : '12px',
               color: textColor,
             }}
           >
             <div
-              className={`absolute left-0 right-0 h-1 ${isBottom ? 'top-0' : 'bottom-0'}`}
-              style={{ backgroundColor: stroke }}
-            />
-            <span className="text-[11px] font-extrabold uppercase tracking-wider leading-tight line-clamp-2 select-none whitespace-pre-line">
+              className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border shadow-xs"
+              style={{
+                backgroundColor: badgeFill,
+                borderColor: stroke,
+              }}
+            >
+              {renderCategoryIcon()}
+            </div>
+            <span className="text-[11px] font-extrabold uppercase tracking-wide leading-tight line-clamp-2 select-none flex-1 text-center pr-1 whitespace-pre-line">
               {node.label}
             </span>
           </div>
         );
       }
 
-      // 25d. Fishbone (Ishikawa) Horizontal Cause / Sub-Cause Twig
+      // 25d. Fishbone (Ishikawa) Horizontal Cause Capsule Pill
       case 'fishbone-cause': {
-        const stroke = node.style?.stroke || '#38bdf8';
-        const textColor = node.style?.textColor || '#f1f5f9';
-        const fill = node.style?.fill || 'rgba(15, 23, 42, 0.65)';
+        const stroke = node.style?.stroke || '#0369a1';
+        const textColor = node.style?.textColor || '#0f172a';
+        const fill = node.style?.fill || '#bae6fd';
+        const iconName: string | undefined = node.data?.icon;
+
+        const renderCauseIcon = () => {
+          const props = { className: 'w-3.5 h-3.5 shrink-0', style: { color: stroke } };
+          switch (iconName) {
+            case 'clock': return <Clock {...props} />;
+            case 'bug': return <Bug {...props} />;
+            case 'puzzle': return <Puzzle {...props} />;
+            case 'gauge': return <Gauge {...props} />;
+            case 'headphones': return <Headphones {...props} />;
+            case 'alert-circle': return <AlertCircle {...props} />;
+            case 'user-check': return <UserCheck {...props} />;
+            case 'trending-up': return <TrendingUp {...props} />;
+            case 'refresh-cw': return <RefreshCw {...props} />;
+            case 'help-circle': return <HelpCircle {...props} />;
+            case 'coins': return <Coins {...props} />;
+            case 'tag': return <Tag {...props} />;
+            case 'dollar-sign': return <DollarSign {...props} />;
+            case 'sparkles': return <Sparkles {...props} />;
+            case 'percent': return <Percent {...props} />;
+            case 'smartphone': return <Smartphone {...props} />;
+            case 'megaphone': return <Megaphone {...props} />;
+            case 'message-square': return <MessageSquare {...props} />;
+            case 'gift': return <Gift {...props} />;
+            case 'mail': return <Mail {...props} />;
+            case 'file-text': return <FileText {...props} />;
+            default:
+              return (
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: stroke }}
+                />
+              );
+          }
+        };
 
         return (
           <div
-            className="relative flex items-center justify-end h-full px-2.5 pb-1 text-right transition-all rounded-t-md"
+            className="relative flex items-center h-full px-2.5 gap-1.5 shadow-sm transition-all"
             style={{
               backgroundColor: fill,
-              borderBottom: `2.5px solid ${stroke}`,
+              border: `${node.style?.strokeWidth ?? 1.5}px solid ${stroke}`,
+              borderRadius: node.style?.rounded !== undefined ? `${node.style.rounded}px` : '9999px',
               color: textColor,
             }}
           >
-            <span
-              className="w-2 h-2 rounded-full mr-2 shrink-0"
-              style={{ backgroundColor: stroke }}
-            />
-            <span className="text-[11px] font-medium leading-tight line-clamp-2 select-none flex-1 text-left">
+            {renderCauseIcon()}
+            <span className="text-[11px] font-semibold leading-tight line-clamp-1 select-none flex-1 text-center pr-1">
               {node.label}
             </span>
           </div>
         );
       }
 
-      // 25e. Fishbone (Ishikawa) Spine / Rib Junction Joint
+      // 25e. Fishbone (Ishikawa) Spine / Rib Junction Joint (clean flush joint)
       case 'fishbone-junction': {
-        const fill = node.style?.fill || '#cbd5e1';
-        const stroke = node.style?.stroke || '#0f172a';
-        const dotSize = Math.max(8, Math.min(node.width, node.height) - 4);
+        const fill = node.style?.fill || '#0284c7';
+        const stroke = node.style?.stroke || 'transparent';
+        const dotSize = Math.max(6, Math.min(node.width, node.height));
         return (
           <div className="w-full h-full flex items-center justify-center pointer-events-none">
             <div
-              className="rounded-full shadow-md transition-transform group-hover:scale-125"
+              className="rounded-full transition-transform group-hover:scale-150"
               style={{
                 width: `${dotSize}px`,
                 height: `${dotSize}px`,
                 backgroundColor: fill,
-                border: `2px solid ${stroke}`,
+                border: stroke && stroke !== 'transparent' ? `1.5px solid ${stroke}` : 'none',
               }}
             />
           </div>

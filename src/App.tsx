@@ -49,7 +49,7 @@ import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
 import { THEMES } from './utils/themeConfig';
 import { AggregationsPanel } from './components/aggregations/AggregationsPanel';
 import { collectAggregationsFromPageAndChildren, AggregatedItem, AggregationDataType } from './utils/descriptionAggregation';
-import { createFishboneTemplate } from './utils/fishboneBuilder';
+import { createFishboneExamplePage, createFishboneTemplate } from './utils/fishboneBuilder';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
@@ -937,19 +937,27 @@ export default function App() {
     [document, requestNavigation]
   );
 
-  // Create new page
+  // Create new page (populates Fishbone pages with the illustrated Customer Churn example)
   const handleCreatePage = useCallback(
     (title: string, diagramType: DiagramType, parentId?: string, description?: string) => {
-      const newPage: DiagramPage = {
-        id: `page-${Date.now()}`,
-        title,
-        diagramType,
-        parentId,
-        description: description || '',
-        nodes: [],
-        edges: [],
-        viewport: { x: 50, y: 50, zoom: 1 },
-      };
+      const newPage: DiagramPage =
+        diagramType === 'fishbone'
+          ? createFishboneExamplePage({
+              pageId: `page-${Date.now()}`,
+              title: title || 'High Customer Churn Rate (Fishbone)',
+              parentId,
+              description: description || undefined,
+            })
+          : {
+              id: `page-${Date.now()}`,
+              title,
+              diagramType,
+              parentId,
+              description: description || '',
+              nodes: [],
+              edges: [],
+              viewport: { x: 50, y: 50, zoom: 1 },
+            };
 
       const updatedPages = [...document.pages, newPage];
       const updatedDoc = {
@@ -958,19 +966,19 @@ export default function App() {
         activePageId: newPage.id,
       };
       setActivePageId(newPage.id);
+      setSelectedCategory(diagramType);
       persistDocument(updatedDoc);
     },
     [document, persistDocument]
   );
 
-  // Insert an authentic 6M Ishikawa Fishbone skeleton onto the current page
+  // Insert an authentic Ishikawa Fishbone skeleton onto the current page
   const handleInsertFishboneTemplate = useCallback(() => {
     if (!currentPage || userRole === 'viewer') return;
     const maxY = currentPage.nodes.reduce((acc, n) => Math.max(acc, n.y + n.height), 0);
     const offsetY = currentPage.nodes.length > 0 ? maxY + 80 : 0;
     const { nodes: fbNodes, edges: fbEdges } = createFishboneTemplate({
       offsetY,
-      problemStatement: `EFFECT / PROBLEM:\n${currentPage.title || 'Core Issue'}`,
     });
     const updatedPages = document.pages.map(p =>
       p.id === currentPage.id
@@ -978,12 +986,12 @@ export default function App() {
             ...p,
             nodes: [...p.nodes, ...fbNodes],
             edges: [...p.edges, ...fbEdges],
-            viewport: currentPage.nodes.length === 0 ? { x: 40, y: 40, zoom: 0.72 } : p.viewport,
+            viewport: currentPage.nodes.length === 0 ? { x: 30, y: 30, zoom: 0.72 } : p.viewport,
           }
         : p
     );
     persistDocument({ ...document, pages: updatedPages });
-    collaborationService.addActivity('You', '#f43f5e', `Inserted 6M Fishbone template onto '${currentPage.title}'`);
+    collaborationService.addActivity('You', '#f97316', `Inserted Fishbone example onto '${currentPage.title}'`);
   }, [currentPage, document, persistDocument, userRole]);
 
   // Delete an existing page (at least 1 page must remain in the diagram)
@@ -1344,30 +1352,35 @@ export default function App() {
           return;
         }
 
-        // 3. Otherwise, create a clean empty diagram page for this type
-        const emptyPage: DiagramPage = {
-          id: `page-${type}-${Date.now()}`,
-          title: `${type.toUpperCase()} Diagram`,
-          diagramType: type,
-          description: '',
-          nodes: [],
-          edges: [],
-          viewport: { x: 50, y: 50, zoom: 1 },
-        };
-        const updatedPages = [...document.pages, emptyPage];
+        // 3. Otherwise, create a new diagram page for this type (Fishbone gets populated with an example)
+        const newPage: DiagramPage =
+          type === 'fishbone'
+            ? createFishboneExamplePage({ pageId: `page-${type}-${Date.now()}` })
+            : {
+                id: `page-${type}-${Date.now()}`,
+                title: `${type.toUpperCase()} Diagram`,
+                diagramType: type,
+                description: '',
+                nodes: [],
+                edges: [],
+                viewport: { x: 50, y: 50, zoom: 1 },
+              };
+        const updatedPages = [...document.pages, newPage];
         const updatedDoc = {
           ...document,
           pages: updatedPages,
-          activePageId: emptyPage.id,
+          activePageId: newPage.id,
         };
         persistDocument(updatedDoc);
-        setActivePageId(emptyPage.id);
+        setActivePageId(newPage.id);
         setSelectedCategory(type);
-        setLastPageByType(prev => ({ ...prev, [type]: emptyPage.id }));
+        setLastPageByType(prev => ({ ...prev, [type]: newPage.id }));
         collaborationService.addActivity(
           'You',
           '#10b981',
-          `Created empty ${type.toUpperCase()} diagram`
+          type === 'fishbone'
+            ? 'Created Fishbone diagram with example'
+            : `Created empty ${type.toUpperCase()} diagram`
         );
       }, type.toUpperCase());
     },

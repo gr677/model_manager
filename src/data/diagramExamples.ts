@@ -4,7 +4,7 @@
  */
 
 import { DiagramPage, DiagramType } from '../types/diagram';
-import { createFishboneTemplate } from '../utils/fishboneBuilder';
+import { createFishboneExamplePage } from '../utils/fishboneBuilder';
 
 export function getExampleDiagramForType(type: DiagramType): DiagramPage {
   const timestamp = Date.now();
@@ -294,19 +294,10 @@ export function getExampleDiagramForType(type: DiagramType): DiagramPage {
 
     // 5. Fishbone (Ishikawa Cause & Effect)
     case 'fishbone': {
-      const fishbone = createFishboneTemplate({
+      return createFishboneExamplePage({
+        pageId: `page-fishbone-${timestamp}`,
         idPrefix: `fb-ex-${timestamp}`,
-        problemStatement: 'PROBLEM STATEMENT:\nAPI P99 Latency > 1200ms\nDuring Peak Traffic',
       });
-      return {
-        id: `page-fishbone-${timestamp}`,
-        title: 'Payment Gateway Latency Spike (Fishbone)',
-        diagramType: 'fishbone',
-        description: 'Root cause analysis using the 6M categories: Man, Machine, Method, Material, Measurement, Milieu.',
-        viewport: { x: 40, y: 40, zoom: 0.72 },
-        nodes: fishbone.nodes,
-        edges: fishbone.edges,
-      };
     }
 
     // 6. UML Sequence Diagram

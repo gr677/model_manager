@@ -6,6 +6,7 @@
 import { DiagramDocument, DiagramPage, DiagramType, NodeImageAttachment } from '../types/diagram';
 import { initialDiagramDocument } from '../data/seedDiagrams';
 import { convertLegacyJsonToDocument } from '../utils/legacyJsonImporter';
+import { createFishboneExamplePage } from '../utils/fishboneBuilder';
 
 export interface WorkspaceDiagram {
   filename: string; // e.g. "root.json", "child_payment.json"
@@ -560,21 +561,26 @@ class WorkspaceService {
     const cleanBasePath = (basePath || this.getActiveWorkspace()?.basePath || DEFAULT_BASE_PATH).trim();
 
     const targetType: DiagramType = diagramType || 'generic';
-    const emptyStarterPage: DiagramPage = {
-      id: `page-${targetType}-${Date.now()}`,
-      title: name.trim() || 'Main Diagram',
-      diagramType: targetType,
-      description: '',
-      viewport: { x: 50, y: 50, zoom: 1 },
-      nodes: [],
-      edges: [],
-    };
+    const starterPage: DiagramPage =
+      targetType === 'fishbone'
+        ? createFishboneExamplePage({
+            title: name.trim() || 'High Customer Churn Rate (Fishbone)',
+          })
+        : {
+            id: `page-${targetType}-${Date.now()}`,
+            title: name.trim() || 'Main Diagram',
+            diagramType: targetType,
+            description: '',
+            viewport: { x: 50, y: 50, zoom: 1 },
+            nodes: [],
+            edges: [],
+          };
     const starterDoc: DiagramDocument = {
       id: `doc-${id}-root`,
       name: `${name.trim()} Architecture`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      activePageId: emptyStarterPage.id,
+      activePageId: starterPage.id,
       settings: {
         gridSnap: true,
         showGrid: true,
@@ -582,7 +588,7 @@ class WorkspaceService {
         showMinimap: true,
       },
       versions: [],
-      pages: [emptyStarterPage],
+      pages: [starterPage],
     };
 
     const newWorkspace: Workspace = {
@@ -965,21 +971,26 @@ class WorkspaceService {
       newDoc = JSON.parse(JSON.stringify(doc));
     } else {
       const targetType: DiagramType = initialType || 'generic';
-      const cleanPage: DiagramPage = {
-        id: `page-${targetType}-${Date.now()}`,
-        title: name || safeFilename.replace('.json', '') || `${targetType.toUpperCase()} Diagram`,
-        diagramType: targetType,
-        description: '',
-        viewport: { x: 50, y: 50, zoom: 1 },
-        nodes: [],
-        edges: [],
-      };
+      const initialPage: DiagramPage =
+        targetType === 'fishbone'
+          ? createFishboneExamplePage({
+              title: name || safeFilename.replace('.json', '') || 'High Customer Churn Rate (Fishbone)',
+            })
+          : {
+              id: `page-${targetType}-${Date.now()}`,
+              title: name || safeFilename.replace('.json', '') || `${targetType.toUpperCase()} Diagram`,
+              diagramType: targetType,
+              description: '',
+              viewport: { x: 50, y: 50, zoom: 1 },
+              nodes: [],
+              edges: [],
+            };
       newDoc = {
         id: `doc-${ws.id}-${Date.now()}`,
         name: name || safeFilename.replace('.json', ''),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        activePageId: cleanPage.id,
+        activePageId: initialPage.id,
         settings: {
           gridSnap: true,
           showGrid: true,
@@ -987,7 +998,7 @@ class WorkspaceService {
           showMinimap: true,
         },
         versions: [],
-        pages: [cleanPage],
+        pages: [initialPage],
       };
     }
 

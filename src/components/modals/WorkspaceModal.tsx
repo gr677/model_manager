@@ -41,6 +41,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
   const [newWsName, setNewWsName] = useState('');
   const [newDiagramName, setNewDiagramName] = useState('');
   const [newDiagramFilename, setNewDiagramFilename] = useState('');
+  const [newDiagramType, setNewDiagramType] = useState<DiagramType>('generic');
   const [newWsDiagramType, setNewWsDiagramType] = useState<DiagramType>('mindmap');
   const [isCreatingWs, setIsCreatingWs] = useState(false);
   const [isCreatingDiagram, setIsCreatingDiagram] = useState(false);
@@ -129,13 +130,16 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
 
     const newDoc = workspaceService.createDiagram(
       safeFilename,
-      newDiagramName.trim() || safeFilename.replace('.json', '')
+      newDiagramName.trim() || safeFilename.replace('.json', ''),
+      undefined,
+      newDiagramType
     );
     await workspaceService.saveCurrentDiagramToServer(newDoc, safeFilename, activeWs.id);
     workspaceService.setActiveDiagram(safeFilename);
     onLoadDiagram(newDoc, safeFilename, activeWs.id);
     setNewDiagramFilename('');
     setNewDiagramName('');
+    setNewDiagramType('generic');
     setIsCreatingDiagram(false);
   };
 
@@ -615,6 +619,43 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
                       }`}
                     />
                   </div>
+                </div>
+                <div>
+                  <label
+                    className={`text-[10px] uppercase font-mono block mb-1 ${
+                      isDark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                  >
+                    Diagram Type
+                  </label>
+                  <select
+                    value={newDiagramType}
+                    onChange={e => setNewDiagramType(e.target.value as DiagramType)}
+                    className={`w-full px-2.5 py-1.5 rounded text-xs font-mono border focus:outline-none focus:border-blue-400 ${
+                      isDark
+                        ? 'bg-slate-900 border-slate-700 text-white'
+                        : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value="generic">★ Universal Freeform (All Shapes)</option>
+                    <option value="bpmn">BPMN 2.0 Business Process</option>
+                    <option value="c4">C4 Architecture</option>
+                    <option value="ceqa">CEQA Environmental</option>
+                    <option value="dfd">Data Flow Diagram (DFD)</option>
+                    <option value="erd">Entity Relationship (ERD)</option>
+                    <option value="fishbone">Fishbone (Ishikawa Cause &amp; Effect — Includes Example)</option>
+                    <option value="flowchart">Flowchart (Standard ANSI/ISO)</option>
+                    <option value="gantt">Gantt Timelines</option>
+                    <option value="idef0">IDEF0 Functional Model</option>
+                    <option value="mindmap">Mind Map</option>
+                    <option value="pert">PERT Network</option>
+                    <option value="sipoc">SIPOC Matrix</option>
+                    <option value="uml">UML Class Diagram</option>
+                    <option value="uml-sequence">UML Sequence Diagram</option>
+                    <option value="uml-state">UML State Machine</option>
+                    <option value="uml-usecase">UML Use Case</option>
+                    <option value="vsm">Value Stream Map (VSM)</option>
+                  </select>
                 </div>
                 {createDiagramError && (
                   <p className="text-[11px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded px-2.5 py-1.5">
