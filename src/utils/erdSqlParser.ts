@@ -49,6 +49,31 @@ export interface ParseSqlResult {
     pkCount: number;
     fkCount: number;
     statementCount: number;
+    alterCount: number;
+  };
+}
+
+export interface EntityChangeSummary {
+  tableName: string;
+  nodeId: string;
+  status: 'modified' | 'created' | 'dropped' | 'unchanged';
+  changes: string[];
+  table: ParsedTable;
+}
+
+export interface ApplySqlChangesResult {
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  entitySummaries: EntityChangeSummary[];
+  warnings: string[];
+  stats: {
+    modifiedCount: number;
+    createdCount: number;
+    droppedCount: number;
+    edgeAddedCount: number;
+    edgeRemovedCount: number;
+    statementCount: number;
+    totalChangeCount: number;
   };
 }
 
@@ -144,15 +169,15 @@ function splitStatements(sql: string): string[] {
 }
 
 /**
- * Cleans identifier by removing quotes and schema qualifications (e.g. "public"."users" -> "users").
+ * Cleans identifier by removing quotes/brackets and schema qualifications (e.g. "public"."users" -> "users").
  */
 export function cleanIdentifier(raw: string): string {
   if (!raw) return '';
   const trimmed = raw.trim();
   const parts = trimmed.split('.');
   const name = parts[parts.length - 1].trim();
-  // Strip outer quotes if any
-  return name.replace(/^["'`]|["'`]$/g, '').trim();
+  // Strip outer quotes or brackets if any
+  return name.replace(/^["'`\[]+|["'`\]]+$/g, '').trim();
 }
 
 /**
@@ -162,7 +187,7 @@ export function extractSchema(raw: string): string | undefined {
   if (!raw) return undefined;
   const parts = raw.trim().split('.');
   if (parts.length > 1) {
-    return parts[0].trim().replace(/^["'`]|["'`]$/g, '');
+    return parts[0].trim().replace(/^["'`\[]+|["'`\]]+$/g, '').trim();
   }
   return undefined;
 }
@@ -299,13 +324,430 @@ function parseColumnDef(def: string, tableKey: string): { column?: ParsedColumn;
   return { column, inlineFk };
 }
 
+function recalculateTableColumnFlags(table: ParsedTable): void {
+  const pkSet = new Set(table.primaryKeys.map(k => k.toLowerCase()));
+  const fkColsSet = new Set<string>();
+  for (const fk of table.foreignKeys) {
+    for (const col of fk.sourceColumns) {
+      fkColsSet.add(col.toLowerCase());
+    }
+  }
+
+  for (const col of table.columns) {
+    if (pkSet.has(col.name.toLowerCase())) {
+      col.isPk = true;
+      col.isNullable = false;
+    }
+    if (fkColsSet.has(col.name.toLowerCase())) {
+      col.isFk = true;
+    }
+  }
+}
+
 /**
- * Core SQL DDL parser for ERwin-generated PostgreSQL SQL.
+ * Unwraps Oracle-style parenthesized ALTER TABLE ADD (col1 INT, col2 TEXT) into individual ADD actions,
+ * and passes through comma-separated PostgreSQL/MySQL actions.
+ */
+function expandAlterActions(actionsBody: string): string[] {
+  const rawActions = splitColumnDefinitions(actionsBody);
+  const expanded: string[] = [];
+
+  for (const raw of rawActions) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+
+    // Detect Oracle/generic ADD (col1 TYPE, col2 TYPE) vs ADD CONSTRAINT ... / ADD PRIMARY KEY (...)
+    const parenAddMatch = trimmed.match(/^ADD\s*\(([\s\S]+)\)$/i);
+    if (parenAddMatch) {
+      const inner = parenAddMatch[1].trim();
+      const innerUpper = inner.toUpperCase();
+      if (
+        !innerUpper.startsWith('CONSTRAINT') &&
+        !innerUpper.startsWith('PRIMARY KEY') &&
+        !innerUpper.startsWith('FOREIGN KEY') &&
+        !innerUpper.startsWith('UNIQUE') &&
+        !innerUpper.startsWith('CHECK')
+      ) {
+        const subItems = splitColumnDefinitions(inner);
+        for (const sub of subItems) {
+          if (sub.trim()) expanded.push(`ADD COLUMN ${sub.trim()}`);
+        }
+        continue;
+      }
+    }
+
+    expanded.push(trimmed);
+  }
+
+  return expanded;
+}
+
+interface AlterExecutionContext {
+  getTable: (tableName: string) => ParsedTable | undefined;
+  renameTable: (oldTable: ParsedTable, newName: string, newSchema?: string) => void;
+  onForeignKeyAdded: (fk: ParsedForeignKey) => void;
+  onForeignKeyRemoved?: (tableName: string, constraintName?: string, droppedColumn?: string) => void;
+  onColumnRenamed?: (tableName: string, oldCol: string, newCol: string) => void;
+  onChange?: (tableName: string, description: string) => void;
+  onWarning: (msg: string) => void;
+}
+
+/**
+ * Applies a single ALTER TABLE statement (single or comma-separated actions) against a mutable table map.
+ */
+function processAlterTableStatement(stmt: string, ctx: AlterExecutionContext): boolean {
+  const alterMatch = stmt.match(
+    /^ALTER\s+TABLE(?:\s+IF\s+EXISTS)?(?:\s+ONLY)?\s+([A-Za-z0-9_."`\[\]]+)\s+([\s\S]+)$/i
+  );
+  if (!alterMatch) return false;
+
+  const rawTableName = alterMatch[1];
+  const tableName = cleanIdentifier(rawTableName);
+  const actionsBody = alterMatch[2].trim();
+
+  const table = ctx.getTable(tableName);
+  if (!table) {
+    ctx.onWarning(`Table "${tableName}" not found for statement: ${stmt.slice(0, 72)}${stmt.length > 72 ? '...' : ''}`);
+    return true;
+  }
+
+  const actions = expandAlterActions(actionsBody);
+
+  for (const action of actions) {
+    const trimmedAction = action.trim();
+    if (!trimmedAction) continue;
+
+    // 1. RENAME TO new_table_name
+    const renameTableMatch = trimmedAction.match(/^RENAME\s+TO\s+([A-Za-z0-9_."`\[\]]+)$/i);
+    if (renameTableMatch) {
+      const newRaw = renameTableMatch[1];
+      const newName = cleanIdentifier(newRaw);
+      const newSchema = extractSchema(newRaw);
+      const oldName = table.name;
+      ctx.renameTable(table, newName, newSchema);
+      ctx.onChange?.(newName, `Renamed table ${oldName} → ${newName}`);
+      continue;
+    }
+
+    // 2. RENAME [COLUMN] old_col TO new_col
+    const renameColMatch = trimmedAction.match(
+      /^RENAME\s+(?:COLUMN\s+)?([A-Za-z0-9_."`\[\]]+)\s+TO\s+([A-Za-z0-9_."`\[\]]+)$/i
+    );
+    if (renameColMatch) {
+      const oldColName = cleanIdentifier(renameColMatch[1]);
+      const newColName = cleanIdentifier(renameColMatch[2]);
+      const col = table.columns.find(c => c.name.toLowerCase() === oldColName.toLowerCase());
+      if (!col) {
+        ctx.onWarning(`Column "${oldColName}" not found on table "${table.name}" for RENAME COLUMN.`);
+        continue;
+      }
+      const prevName = col.name;
+      col.name = newColName;
+      col.id = `col_${newColName.toLowerCase()}`;
+      table.primaryKeys = table.primaryKeys.map(pk =>
+        pk.toLowerCase() === oldColName.toLowerCase() ? newColName : pk
+      );
+      for (const fk of table.foreignKeys) {
+        fk.sourceColumns = fk.sourceColumns.map(sc =>
+          sc.toLowerCase() === oldColName.toLowerCase() ? newColName : sc
+        );
+      }
+      ctx.onColumnRenamed?.(table.name, prevName, newColName);
+      ctx.onChange?.(table.name, `Renamed column ${prevName} → ${newColName}`);
+      continue;
+    }
+
+    // 3. ADD [CONSTRAINT name] PRIMARY KEY (col1, col2)
+    const addPkMatch = trimmedAction.match(
+      /^ADD(?:\s+CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+))?\s+PRIMARY\s+KEY\s*\(([^)]+)\)/i
+    );
+    if (addPkMatch) {
+      const cols = addPkMatch[2].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
+      for (const pkCol of cols) {
+        if (!table.primaryKeys.some(existing => existing.toLowerCase() === pkCol.toLowerCase())) {
+          table.primaryKeys.push(pkCol);
+        }
+        const found = table.columns.find(c => c.name.toLowerCase() === pkCol.toLowerCase());
+        if (found) {
+          found.isPk = true;
+          found.isNullable = false;
+        }
+      }
+      ctx.onChange?.(table.name, `+ PK (${cols.join(', ')})`);
+      continue;
+    }
+
+    // 4. ADD [CONSTRAINT name] UNIQUE (col1, ...)
+    const addUniqueMatch = trimmedAction.match(
+      /^ADD(?:\s+CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+))?\s+UNIQUE\s*\(([^)]+)\)/i
+    );
+    if (addUniqueMatch) {
+      const cols = addUniqueMatch[2].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
+      for (const uqCol of cols) {
+        const found = table.columns.find(c => c.name.toLowerCase() === uqCol.toLowerCase());
+        if (found) {
+          found.isUnique = true;
+        }
+      }
+      ctx.onChange?.(table.name, `+ UNIQUE (${cols.join(', ')})`);
+      continue;
+    }
+
+    // 5. ADD [CONSTRAINT name] FOREIGN KEY (src) REFERENCES target [(tcols)]
+    const addFkMatch = trimmedAction.match(
+      /^ADD(?:\s+CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+))?\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([A-Za-z0-9_."`\[\]]+)\s*(?:\(([^)]+)\))?(?:[\s\S]*)/i
+    );
+    if (addFkMatch) {
+      const constraintName = addFkMatch[1] ? cleanIdentifier(addFkMatch[1]) : undefined;
+      const srcCols = addFkMatch[2].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
+      const targetTable = cleanIdentifier(addFkMatch[3]);
+      const targetCols = addFkMatch[4]
+        ? addFkMatch[4].split(',').map(c => cleanIdentifier(c)).filter(Boolean)
+        : srcCols;
+
+      const fkObj: ParsedForeignKey = {
+        constraintName,
+        sourceTable: table.name,
+        sourceColumns: srcCols,
+        targetTable,
+        targetColumns: targetCols,
+      };
+      table.foreignKeys.push(fkObj);
+      for (const srcCol of srcCols) {
+        const found = table.columns.find(c => c.name.toLowerCase() === srcCol.toLowerCase());
+        if (found) found.isFk = true;
+      }
+      ctx.onForeignKeyAdded(fkObj);
+      ctx.onChange?.(table.name, `+ FK (${srcCols.join(', ')}) → ${targetTable}`);
+      continue;
+    }
+
+    // 6. ADD [CONSTRAINT name] CHECK (...) — recognize cleanly so it isn't parsed as a column
+    if (/^ADD(?:\s+CONSTRAINT\s+[A-Za-z0-9_."`\[\]]+)?\s+CHECK\s*\(/i.test(trimmedAction)) {
+      ctx.onChange?.(table.name, `+ CHECK constraint`);
+      continue;
+    }
+
+    // 7. ADD [COLUMN] [IF NOT EXISTS] col_def
+    const addColMatch = trimmedAction.match(
+      /^ADD(?:\s+COLUMN)?(\s+IF\s+NOT\s+EXISTS)?\s+([\s\S]+)$/i
+    );
+    if (addColMatch) {
+      const ifNotExists = !!addColMatch[1];
+      const colDef = addColMatch[2].trim();
+      const parsed = parseColumnDef(colDef, table.name);
+      if (parsed && parsed.column) {
+        const existingIdx = table.columns.findIndex(
+          c => c.name.toLowerCase() === parsed.column!.name.toLowerCase()
+        );
+        if (existingIdx >= 0) {
+          if (ifNotExists) {
+            continue;
+          }
+          table.columns[existingIdx] = parsed.column;
+          ctx.onChange?.(table.name, `~ ${parsed.column.name} (${parsed.column.type})`);
+        } else {
+          table.columns.push(parsed.column);
+          ctx.onChange?.(table.name, `+ ${parsed.column.name} (${parsed.column.type})`);
+        }
+        if (parsed.column.isPk && !table.primaryKeys.some(k => k.toLowerCase() === parsed.column!.name.toLowerCase())) {
+          table.primaryKeys.push(parsed.column.name);
+        }
+        if (parsed.inlineFk) {
+          table.foreignKeys.push(parsed.inlineFk);
+          ctx.onForeignKeyAdded(parsed.inlineFk);
+          ctx.onChange?.(table.name, `+ FK (${parsed.column.name}) → ${parsed.inlineFk.targetTable}`);
+        }
+        continue;
+      }
+    }
+
+    // 8. DROP CONSTRAINT [IF EXISTS] constraint_name
+    const dropConstraintMatch = trimmedAction.match(
+      /^DROP\s+CONSTRAINT(?:\s+IF\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)(?:\s+(?:CASCADE|RESTRICT))?$/i
+    );
+    if (dropConstraintMatch) {
+      const cName = cleanIdentifier(dropConstraintMatch[1]);
+      table.foreignKeys = table.foreignKeys.filter(
+        fk => (fk.constraintName || '').toLowerCase() !== cName.toLowerCase()
+      );
+      // Re-sync isFk on columns from remaining foreignKeys
+      const remainingFkCols = new Set(
+        table.foreignKeys.flatMap(fk => fk.sourceColumns.map(c => c.toLowerCase()))
+      );
+      for (const col of table.columns) {
+        if (!remainingFkCols.has(col.name.toLowerCase())) {
+          col.isFk = false;
+        }
+      }
+      ctx.onForeignKeyRemoved?.(table.name, cName, undefined);
+      ctx.onChange?.(table.name, `- Constraint ${cName}`);
+      continue;
+    }
+
+    // 9. DROP PRIMARY KEY
+    if (/^DROP\s+PRIMARY\s+KEY\b/i.test(trimmedAction)) {
+      table.primaryKeys = [];
+      for (const col of table.columns) {
+        col.isPk = false;
+      }
+      ctx.onChange?.(table.name, `- PRIMARY KEY`);
+      continue;
+    }
+
+    // 10. DROP [COLUMN] [IF EXISTS] col_name [CASCADE|RESTRICT]
+    const dropColMatch = trimmedAction.match(
+      /^DROP(?:\s+COLUMN)?(\s+IF\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)(?:\s+(?:CASCADE|RESTRICT))?$/i
+    );
+    if (dropColMatch) {
+      const ifExists = !!dropColMatch[1];
+      const colName = cleanIdentifier(dropColMatch[2]);
+      const idx = table.columns.findIndex(c => c.name.toLowerCase() === colName.toLowerCase());
+      if (idx === -1) {
+        if (!ifExists) {
+          ctx.onWarning(`Column "${colName}" not found on table "${table.name}" for DROP COLUMN.`);
+        }
+        continue;
+      }
+      const removed = table.columns[idx];
+      table.columns.splice(idx, 1);
+      table.primaryKeys = table.primaryKeys.filter(pk => pk.toLowerCase() !== colName.toLowerCase());
+      table.foreignKeys = table.foreignKeys.filter(
+        fk => !fk.sourceColumns.some(sc => sc.toLowerCase() === colName.toLowerCase())
+      );
+      ctx.onForeignKeyRemoved?.(table.name, undefined, removed.name);
+      ctx.onChange?.(table.name, `- ${removed.name}`);
+      continue;
+    }
+
+    // 11. ALTER [COLUMN] col_name (SET DATA TYPE / TYPE / SET NOT NULL / DROP NOT NULL / SET DEFAULT / DROP DEFAULT)
+    const alterColMatch = trimmedAction.match(
+      /^ALTER(?:\s+COLUMN)?\s+([A-Za-z0-9_."`\[\]]+)\s+([\s\S]+)$/i
+    );
+    if (alterColMatch) {
+      const colName = cleanIdentifier(alterColMatch[1]);
+      const subAction = alterColMatch[2].trim();
+      const col = table.columns.find(c => c.name.toLowerCase() === colName.toLowerCase());
+      if (!col) {
+        ctx.onWarning(`Column "${colName}" not found on table "${table.name}" for ALTER COLUMN.`);
+        continue;
+      }
+
+      const typeChangeMatch = subAction.match(
+        /^(?:SET\s+DATA\s+)?TYPE\s+([\s\S]+?)(?:\s+(?:USING|COLLATE)\s+[\s\S]+)?$/i
+      );
+      if (typeChangeMatch) {
+        col.type = typeChangeMatch[1].trim().toUpperCase();
+        ctx.onChange?.(table.name, `~ ${col.name}: ${col.type}`);
+        continue;
+      }
+
+      if (/^SET\s+NOT\s+NULL$/i.test(subAction)) {
+        col.isNullable = false;
+        ctx.onChange?.(table.name, `~ ${col.name}: NOT NULL`);
+        continue;
+      }
+
+      if (/^DROP\s+NOT\s+NULL$/i.test(subAction)) {
+        col.isNullable = true;
+        ctx.onChange?.(table.name, `~ ${col.name}: NULLABLE`);
+        continue;
+      }
+
+      const setDefaultMatch = subAction.match(/^SET\s+DEFAULT\s+([\s\S]+)$/i);
+      if (setDefaultMatch) {
+        col.defaultValue = setDefaultMatch[1].trim();
+        ctx.onChange?.(table.name, `~ ${col.name}: DEFAULT ${col.defaultValue}`);
+        continue;
+      }
+
+      if (/^DROP\s+DEFAULT$/i.test(subAction)) {
+        col.defaultValue = undefined;
+        ctx.onChange?.(table.name, `~ ${col.name}: DROP DEFAULT`);
+        continue;
+      }
+
+      // SQL Server / shorthand: ALTER COLUMN col_name NEW_TYPE [NOT NULL | NULL]
+      const shorthandMatch = parseColumnDef(`${colName} ${subAction}`, table.name);
+      if (shorthandMatch?.column && shorthandMatch.column.type !== 'TEXT') {
+        col.type = shorthandMatch.column.type;
+        if (/\bNOT\s+NULL\b/i.test(subAction)) col.isNullable = false;
+        else if (/\bNULL\b/i.test(subAction)) col.isNullable = true;
+        ctx.onChange?.(table.name, `~ ${col.name}: ${col.type}`);
+        continue;
+      }
+
+      ctx.onWarning(`Unsupported ALTER COLUMN clause on "${table.name}.${col.name}": ${subAction}`);
+      continue;
+    }
+
+    // 12. MODIFY [COLUMN] col_def (MySQL / Oracle syntax)
+    const modifyColMatch = trimmedAction.match(/^MODIFY(?:\s+COLUMN)?\s+([\s\S]+)$/i);
+    if (modifyColMatch) {
+      const parsed = parseColumnDef(modifyColMatch[1].trim(), table.name);
+      if (parsed && parsed.column) {
+        const idx = table.columns.findIndex(
+          c => c.name.toLowerCase() === parsed.column!.name.toLowerCase()
+        );
+        if (idx >= 0) {
+          const prev = table.columns[idx];
+          table.columns[idx] = {
+            ...prev,
+            type: parsed.column.type,
+            isNullable: parsed.column.isNullable,
+            isPk: parsed.column.isPk || prev.isPk,
+            isUnique: parsed.column.isUnique ?? prev.isUnique,
+          };
+          ctx.onChange?.(table.name, `~ ${parsed.column.name} (${parsed.column.type})`);
+        } else {
+          ctx.onWarning(`Column "${parsed.column.name}" not found on "${table.name}" for MODIFY.`);
+        }
+        continue;
+      }
+    }
+
+    // 13. CHANGE [COLUMN] old_col new_col_def (MySQL syntax)
+    const changeColMatch = trimmedAction.match(
+      /^CHANGE(?:\s+COLUMN)?\s+([A-Za-z0-9_."`\[\]]+)\s+([\s\S]+)$/i
+    );
+    if (changeColMatch) {
+      const oldColName = cleanIdentifier(changeColMatch[1]);
+      const parsed = parseColumnDef(changeColMatch[2].trim(), table.name);
+      if (parsed && parsed.column) {
+        const idx = table.columns.findIndex(c => c.name.toLowerCase() === oldColName.toLowerCase());
+        if (idx >= 0) {
+          const prev = table.columns[idx];
+          table.columns[idx] = {
+            ...parsed.column,
+            isPk: parsed.column.isPk || prev.isPk,
+            isFk: parsed.column.isFk || prev.isFk,
+          };
+          ctx.onColumnRenamed?.(table.name, prev.name, parsed.column.name);
+          ctx.onChange?.(
+            table.name,
+            `~ ${prev.name} → ${parsed.column.name} (${parsed.column.type})`
+          );
+        } else {
+          ctx.onWarning(`Column "${oldColName}" not found on "${table.name}" for CHANGE COLUMN.`);
+        }
+        continue;
+      }
+    }
+
+    ctx.onWarning(`Skipped unrecognized ALTER TABLE action on "${table.name}": ${trimmedAction.slice(0, 60)}`);
+  }
+
+  return true;
+}
+
+/**
+ * Core SQL DDL parser for ERwin-generated PostgreSQL SQL (CREATE TABLE + ALTER TABLE).
  */
 export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
   const warnings: string[] = [];
   const tablesMap = new Map<string, ParsedTable>();
   const relationships: ParsedForeignKey[] = [];
+  let alterCount = 0;
 
   const cleanedSql = stripComments(sqlText);
   const statements = splitStatements(cleanedSql);
@@ -315,9 +757,8 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
     if (!trimmed) continue;
 
     // 1. CREATE TABLE statement
-    // Pattern: CREATE TABLE [IF NOT EXISTS] [schema.]table_name ( ... )
     const createTableMatch = trimmed.match(
-      /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z0-9_."]+)\s*\(([\s\S]+)\)/i
+      /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)\s*\(([\s\S]+)\)/i
     );
 
     if (createTableMatch) {
@@ -345,13 +786,9 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
 
       for (const def of colDefs) {
         const trimmedDef = def.trim();
-        const upperDef = trimmedDef.toUpperCase();
 
-        // Check for table-level PRIMARY KEY constraint
-        // e.g. CONSTRAINT pk_orders PRIMARY KEY (order_id, customer_id)
-        // or PRIMARY KEY (order_id)
         const pkMatch = trimmedDef.match(
-          /(?:CONSTRAINT\s+([A-Za-z0-9_."]+)\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)/i
+          /(?:CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+)\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)/i
         );
         if (pkMatch) {
           const pkCols = pkMatch[2]
@@ -362,11 +799,8 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
           continue;
         }
 
-        // Check for table-level FOREIGN KEY constraint
-        // e.g. CONSTRAINT fk_order_cust FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
-        // or FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
         const fkMatch = trimmedDef.match(
-          /(?:CONSTRAINT\s+([A-Za-z0-9_."]+)\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([A-Za-z0-9_."]+)\s*\(([^)]+)\)(?:\s+ON\s+DELETE\s+([A-Za-z\s]+))?(?:\s+ON\s+UPDATE\s+([A-Za-z\s]+))?/i
+          /(?:CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+)\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([A-Za-z0-9_."`\[\]]+)\s*\(([^)]+)\)(?:\s+ON\s+DELETE\s+([A-Za-z\s]+))?(?:\s+ON\s+UPDATE\s+([A-Za-z\s]+))?/i
         );
         if (fkMatch) {
           const constraintName = fkMatch[1] ? cleanIdentifier(fkMatch[1]) : undefined;
@@ -389,7 +823,6 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
           continue;
         }
 
-        // Otherwise parse column definition
         const parsed = parseColumnDef(trimmedDef, tableName);
         if (parsed && parsed.column) {
           if (parsed.column.isPk) {
@@ -406,57 +839,37 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
       continue;
     }
 
-    // 2. ALTER TABLE ... ADD CONSTRAINT ... PRIMARY KEY
-    // Common ERwin pattern:
-    // ALTER TABLE [schema.]table_name ADD CONSTRAINT pk_name PRIMARY KEY (col1, col2);
-    // or ALTER TABLE table_name ADD PRIMARY KEY (col1);
-    const alterPkMatch = trimmed.match(
-      /ALTER\s+TABLE(?:\s+ONLY)?\s+([A-Za-z0-9_."]+)\s+ADD(?:\s+CONSTRAINT\s+([A-Za-z0-9_."]+))?\s+PRIMARY\s+KEY\s*\(([^)]+)\)/i
-    );
-    if (alterPkMatch) {
-      const tableName = cleanIdentifier(alterPkMatch[1]);
-      const tableKey = tableName.toLowerCase();
-      const cols = alterPkMatch[3].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
-
-      const table = tablesMap.get(tableKey);
-      if (table) {
-        table.primaryKeys.push(...cols);
-      }
+    // 2. ALTER TABLE statements (ADD/DROP/ALTER/MODIFY/CHANGE/RENAME columns, constraints, table)
+    if (/^ALTER\s+TABLE\b/i.test(trimmed)) {
+      alterCount++;
+      processAlterTableStatement(trimmed, {
+        getTable: name => tablesMap.get(name.toLowerCase()),
+        renameTable: (tbl, newName, newSchema) => {
+          tablesMap.delete(tbl.name.toLowerCase());
+          tbl.name = newName;
+          tbl.id = `tbl_${newName.toLowerCase()}`;
+          if (newSchema) tbl.schema = newSchema;
+          tablesMap.set(newName.toLowerCase(), tbl);
+        },
+        onForeignKeyAdded: fk => relationships.push(fk),
+        onWarning: msg => warnings.push(msg),
+      });
       continue;
     }
 
-    // 3. ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY
-    // Common ERwin pattern:
-    // ALTER TABLE [schema.]child_table ADD CONSTRAINT R_1 FOREIGN KEY (col1) REFERENCES [schema.]parent_table (pcol1) [ON DELETE ...] [ON UPDATE ...];
-    const alterFkMatch = trimmed.match(
-      /ALTER\s+TABLE(?:\s+ONLY)?\s+([A-Za-z0-9_."]+)\s+ADD(?:\s+CONSTRAINT\s+([A-Za-z0-9_."]+))?\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([A-Za-z0-9_."]+)\s*\(([^)]+)\)(?:[\s\S]*)/i
+    // 3. DROP TABLE
+    const dropTableMatch = trimmed.match(
+      /^DROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)/i
     );
-    if (alterFkMatch) {
-      const childTableName = cleanIdentifier(alterFkMatch[1]);
-      const constraintName = alterFkMatch[2] ? cleanIdentifier(alterFkMatch[2]) : undefined;
-      const srcCols = alterFkMatch[3].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
-      const parentTableName = cleanIdentifier(alterFkMatch[4]);
-      const targetCols = alterFkMatch[5].split(',').map(c => cleanIdentifier(c)).filter(Boolean);
-
-      const fkObj: ParsedForeignKey = {
-        constraintName,
-        sourceTable: childTableName,
-        sourceColumns: srcCols,
-        targetTable: parentTableName,
-        targetColumns: targetCols,
-      };
-
-      const table = tablesMap.get(childTableName.toLowerCase());
-      if (table) {
-        table.foreignKeys.push(fkObj);
-      }
-      relationships.push(fkObj);
+    if (dropTableMatch) {
+      const tblName = cleanIdentifier(dropTableMatch[1]);
+      tablesMap.delete(tblName.toLowerCase());
       continue;
     }
 
     // 4. COMMENT ON TABLE / COLUMN
     const commentTableMatch = trimmed.match(
-      /COMMENT\s+ON\s+TABLE\s+([A-Za-z0-9_."]+)\s+IS\s+'([^']*)'/i
+      /COMMENT\s+ON\s+TABLE\s+([A-Za-z0-9_."`\[\]]+)\s+IS\s+'([^']*)'/i
     );
     if (commentTableMatch) {
       const tableName = cleanIdentifier(commentTableMatch[1]);
@@ -467,29 +880,26 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
       }
       continue;
     }
+
+    const commentColMatch = trimmed.match(
+      /COMMENT\s+ON\s+COLUMN\s+([A-Za-z0-9_."`\[\]]+)\s+IS\s+'([^']*)'/i
+    );
+    if (commentColMatch) {
+      const parts = commentColMatch[1].split('.');
+      if (parts.length >= 2) {
+        const colName = cleanIdentifier(parts[parts.length - 1]);
+        const tblName = cleanIdentifier(parts[parts.length - 2]);
+        const table = tablesMap.get(tblName.toLowerCase());
+        const col = table?.columns.find(c => c.name.toLowerCase() === colName.toLowerCase());
+        if (col) col.comment = commentColMatch[2];
+      }
+      continue;
+    }
   }
 
   // Post-process tables: sync isPk and isFk flags on individual columns
   for (const table of tablesMap.values()) {
-    const pkSet = new Set(table.primaryKeys.map(k => k.toLowerCase()));
-
-    // Create a set of columns involved in foreign keys
-    const fkColsSet = new Set<string>();
-    for (const fk of table.foreignKeys) {
-      for (const col of fk.sourceColumns) {
-        fkColsSet.add(col.toLowerCase());
-      }
-    }
-
-    for (const col of table.columns) {
-      if (pkSet.has(col.name.toLowerCase())) {
-        col.isPk = true;
-        col.isNullable = false;
-      }
-      if (fkColsSet.has(col.name.toLowerCase())) {
-        col.isFk = true;
-      }
-    }
+    recalculateTableColumnFlags(table);
   }
 
   // Also check relationships that were added via ALTER TABLE to set isFk on child tables
@@ -534,8 +944,484 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
       pkCount: totalPks,
       fkCount: totalFks,
       statementCount: statements.length,
+      alterCount,
     },
   };
+}
+
+/**
+ * Applies SQL DDL statements (ALTER TABLE, CREATE TABLE, DROP TABLE, COMMENT ON) incrementally
+ * against the existing ERD entities and edges on the current canvas page, preserving node positions.
+ */
+export function applySqlChangesToErd(
+  sqlText: string,
+  existingNodes: DiagramNode[],
+  existingEdges: DiagramEdge[]
+): ApplySqlChangesResult {
+  const warnings: string[] = [];
+  const cleanedSql = stripComments(sqlText);
+  const statements = splitStatements(cleanedSql);
+
+  interface MutableEntity {
+    nodeId: string;
+    originalNode?: DiagramNode;
+    table: ParsedTable;
+    changes: string[];
+    isNew: boolean;
+    isDropped: boolean;
+  }
+
+  const entityMap = new Map<string, MutableEntity>();
+  const entityByNodeId = new Map<string, MutableEntity>();
+  const newForeignKeys: ParsedForeignKey[] = [];
+  let workingEdges: DiagramEdge[] = existingEdges.map(e => ({ ...e }));
+  let edgeRemovedCount = 0;
+
+  // Seed entityMap with existing erd-entity nodes from current canvas
+  for (const node of existingNodes) {
+    if (node.type !== 'erd-entity') continue;
+    const rawTableName = (node.data?.tableName || node.label || '').trim();
+    if (!rawTableName) continue;
+    const cleanName = cleanIdentifier(rawTableName);
+    const key = cleanName.toLowerCase();
+
+    const rawFields: any[] = Array.isArray(node.data?.fields) ? node.data.fields : [];
+    const columns: ParsedColumn[] = rawFields.map((f, idx) => ({
+      id: f.id || `col_${(f.name || idx).toString().toLowerCase()}`,
+      name: f.name || `col_${idx + 1}`,
+      type: f.type || 'TEXT',
+      isPk: !!f.isPk,
+      isFk: !!f.isFk,
+      isUnique: f.isUnique || f.unique || undefined,
+      isNullable: f.isNullable !== undefined ? !!f.isNullable : !f.isPk,
+      defaultValue: f.defaultValue,
+      comment: f.comment,
+    }));
+
+    const table: ParsedTable = {
+      id: `tbl_${key}`,
+      name: cleanName,
+      schema: node.data?.schema,
+      columns,
+      primaryKeys: columns.filter(c => c.isPk).map(c => c.name),
+      foreignKeys: [],
+      comment: node.data?.comment || node.documentation?.description,
+    };
+
+    const ent: MutableEntity = {
+      nodeId: node.id,
+      originalNode: node,
+      table,
+      changes: [],
+      isNew: false,
+      isDropped: false,
+    };
+    entityMap.set(key, ent);
+    entityByNodeId.set(node.id, ent);
+  }
+
+  for (const stmt of statements) {
+    const trimmed = stmt.trim();
+    if (!trimmed) continue;
+
+    // 1. CREATE TABLE [IF NOT EXISTS]
+    const createTableMatch = trimmed.match(
+      /^CREATE\s+TABLE(\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)\s*\(([\s\S]+)\)$/i
+    );
+    if (createTableMatch) {
+      const ifNotExists = !!createTableMatch[1];
+      const rawTableName = createTableMatch[2];
+      const tableName = cleanIdentifier(rawTableName);
+      const schema = extractSchema(rawTableName);
+      const key = tableName.toLowerCase();
+      const body = createTableMatch[3];
+
+      const existingEnt = entityMap.get(key);
+      if (existingEnt && ifNotExists) {
+        warnings.push(`Table "${tableName}" already exists; skipped (IF NOT EXISTS).`);
+        continue;
+      }
+
+      const parsedNew: ParsedTable = {
+        id: `tbl_${key}`,
+        name: tableName,
+        schema,
+        columns: [],
+        primaryKeys: [],
+        foreignKeys: [],
+      };
+
+      const colDefs = splitColumnDefinitions(body);
+      for (const def of colDefs) {
+        const trimmedDef = def.trim();
+        const pkMatch = trimmedDef.match(
+          /(?:CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+)\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)/i
+        );
+        if (pkMatch) {
+          parsedNew.primaryKeys.push(
+            ...pkMatch[2].split(',').map(c => cleanIdentifier(c)).filter(Boolean)
+          );
+          continue;
+        }
+        const fkMatch = trimmedDef.match(
+          /(?:CONSTRAINT\s+([A-Za-z0-9_."`\[\]]+)\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([A-Za-z0-9_."`\[\]]+)\s*\(([^)]+)\)/i
+        );
+        if (fkMatch) {
+          const fkObj: ParsedForeignKey = {
+            constraintName: fkMatch[1] ? cleanIdentifier(fkMatch[1]) : undefined,
+            sourceTable: tableName,
+            sourceColumns: fkMatch[2].split(',').map(c => cleanIdentifier(c)),
+            targetTable: cleanIdentifier(fkMatch[3]),
+            targetColumns: fkMatch[4].split(',').map(c => cleanIdentifier(c)),
+          };
+          parsedNew.foreignKeys.push(fkObj);
+          newForeignKeys.push(fkObj);
+          continue;
+        }
+        const colRes = parseColumnDef(trimmedDef, tableName);
+        if (colRes?.column) {
+          if (colRes.column.isPk) parsedNew.primaryKeys.push(colRes.column.name);
+          if (colRes.inlineFk) {
+            parsedNew.foreignKeys.push(colRes.inlineFk);
+            newForeignKeys.push(colRes.inlineFk);
+          }
+          parsedNew.columns.push(colRes.column);
+        }
+      }
+      recalculateTableColumnFlags(parsedNew);
+
+      if (existingEnt) {
+        existingEnt.table = parsedNew;
+        existingEnt.changes.push(`Replaced definition (${parsedNew.columns.length} cols)`);
+      } else {
+        const newNodeId = `erd_${key}_${Math.random().toString(36).substring(2, 7)}`;
+        const newEnt: MutableEntity = {
+          nodeId: newNodeId,
+          table: parsedNew,
+          changes: [`Created table (${parsedNew.columns.length} cols)`],
+          isNew: true,
+          isDropped: false,
+        };
+        entityMap.set(key, newEnt);
+        entityByNodeId.set(newNodeId, newEnt);
+      }
+      continue;
+    }
+
+    // 2. ALTER TABLE
+    if (/^ALTER\s+TABLE\b/i.test(trimmed)) {
+      processAlterTableStatement(trimmed, {
+        getTable: name => entityMap.get(name.toLowerCase())?.table,
+        renameTable: (tbl, newName, newSchema) => {
+          const oldKey = tbl.name.toLowerCase();
+          const ent = entityMap.get(oldKey);
+          if (!ent) return;
+          entityMap.delete(oldKey);
+          tbl.name = newName;
+          tbl.id = `tbl_${newName.toLowerCase()}`;
+          if (newSchema) tbl.schema = newSchema;
+          entityMap.set(newName.toLowerCase(), ent);
+        },
+        onForeignKeyAdded: fk => newForeignKeys.push(fk),
+        onForeignKeyRemoved: (tblName, constraintName, droppedCol) => {
+          const ent = entityMap.get(tblName.toLowerCase());
+          if (!ent) return;
+          const beforeLen = workingEdges.length;
+          workingEdges = workingEdges.filter(edge => {
+            if (edge.sourceNodeId !== ent.nodeId && edge.targetNodeId !== ent.nodeId) return true;
+            if (constraintName && edge.label?.toLowerCase() === constraintName.toLowerCase()) {
+              return false;
+            }
+            if (
+              droppedCol &&
+              edge.sourceNodeId === ent.nodeId &&
+              edge.label?.toLowerCase().startsWith(`${droppedCol.toLowerCase()} ➔`)
+            ) {
+              return false;
+            }
+            return true;
+          });
+          edgeRemovedCount += beforeLen - workingEdges.length;
+        },
+        onColumnRenamed: (tblName, oldCol, newCol) => {
+          const ent = entityMap.get(tblName.toLowerCase());
+          if (!ent) return;
+          workingEdges = workingEdges.map(edge => {
+            if (
+              edge.sourceNodeId === ent.nodeId &&
+              edge.label?.toLowerCase().startsWith(`${oldCol.toLowerCase()} ➔`)
+            ) {
+              return { ...edge, label: edge.label.replace(new RegExp(`^${oldCol}`, 'i'), newCol) };
+            }
+            return edge;
+          });
+        },
+        onChange: (tblName, description) => {
+          const ent = entityMap.get(tblName.toLowerCase());
+          if (ent) ent.changes.push(description);
+        },
+        onWarning: msg => warnings.push(msg),
+      });
+      continue;
+    }
+
+    // 3. DROP TABLE [IF EXISTS]
+    const dropTableMatch = trimmed.match(
+      /^DROP\s+TABLE(\s+IF\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)(?:\s+(?:CASCADE|RESTRICT))?$/i
+    );
+    if (dropTableMatch) {
+      const ifExists = !!dropTableMatch[1];
+      const tblName = cleanIdentifier(dropTableMatch[2]);
+      const ent = entityMap.get(tblName.toLowerCase());
+      if (!ent) {
+        if (!ifExists) warnings.push(`Table "${tblName}" not found for DROP TABLE.`);
+        continue;
+      }
+      ent.isDropped = true;
+      ent.changes.push('Dropped table');
+      const beforeLen = workingEdges.length;
+      workingEdges = workingEdges.filter(
+        e => e.sourceNodeId !== ent.nodeId && e.targetNodeId !== ent.nodeId
+      );
+      edgeRemovedCount += beforeLen - workingEdges.length;
+      continue;
+    }
+
+    // 4. COMMENT ON TABLE / COLUMN
+    const commentTableMatch = trimmed.match(
+      /^COMMENT\s+ON\s+TABLE\s+([A-Za-z0-9_."`\[\]]+)\s+IS\s+'([^']*)'$/i
+    );
+    if (commentTableMatch) {
+      const tblName = cleanIdentifier(commentTableMatch[1]);
+      const ent = entityMap.get(tblName.toLowerCase());
+      if (!ent) {
+        warnings.push(`Table "${tblName}" not found for COMMENT ON TABLE.`);
+        continue;
+      }
+      ent.table.comment = commentTableMatch[2];
+      ent.changes.push('Updated table comment');
+      continue;
+    }
+
+    const commentColMatch = trimmed.match(
+      /^COMMENT\s+ON\s+COLUMN\s+([A-Za-z0-9_."`\[\]]+)\s+IS\s+'([^']*)'$/i
+    );
+    if (commentColMatch) {
+      const parts = commentColMatch[1].split('.');
+      if (parts.length >= 2) {
+        const colName = cleanIdentifier(parts[parts.length - 1]);
+        const tblName = cleanIdentifier(parts[parts.length - 2]);
+        const ent = entityMap.get(tblName.toLowerCase());
+        const col = ent?.table.columns.find(c => c.name.toLowerCase() === colName.toLowerCase());
+        if (col && ent) {
+          col.comment = commentColMatch[2];
+          ent.changes.push(`Updated comment on ${col.name}`);
+        } else {
+          warnings.push(`Column "${tblName}.${colName}" not found for COMMENT ON COLUMN.`);
+        }
+      }
+      continue;
+    }
+  }
+
+  // Finalize all entity tables and rebuild nodes list
+  const droppedNodeIds = new Set<string>();
+  const allEntities = Array.from(entityByNodeId.values());
+  for (const ent of allEntities) {
+    if (ent.isDropped) {
+      droppedNodeIds.add(ent.nodeId);
+    } else {
+      recalculateTableColumnFlags(ent.table);
+    }
+  }
+
+  // Preserve non-ERD nodes and update existing ERD nodes in place
+  const updatedNodes: DiagramNode[] = [];
+  const tablePositions = new Map<
+    string,
+    { x: number; y: number; width: number; height: number; nodeId: string }
+  >();
+
+  let maxBottomY = 0;
+  for (const node of existingNodes) {
+    if (node.y + node.height > maxBottomY) maxBottomY = node.y + node.height;
+    if (node.type !== 'erd-entity') {
+      updatedNodes.push(node);
+      continue;
+    }
+    const ent = entityByNodeId.get(node.id);
+    if (!ent || ent.isDropped) continue;
+
+    const changed = ent.changes.length > 0;
+    const fieldsCount = Math.max(1, ent.table.columns.length);
+    const computedHeight = changed ? Math.max(85, 44 + fieldsCount * 25 + 16) : node.height;
+
+    const updatedNode: DiagramNode = changed
+      ? {
+          ...node,
+          label: ent.table.name,
+          height: computedHeight,
+          data: {
+            ...node.data,
+            tableName: ent.table.name,
+            schema: ent.table.schema ?? node.data?.schema,
+            fields: ent.table.columns.map(c => ({
+              id: c.id,
+              name: c.name,
+              type: c.type,
+              isPk: c.isPk,
+              isFk: c.isFk,
+              isUnique: c.isUnique,
+              isNullable: c.isNullable,
+              defaultValue: c.defaultValue,
+              comment: c.comment,
+            })),
+            comment: ent.table.comment ?? node.data?.comment,
+          },
+          documentation: ent.table.comment
+            ? {
+                ...(node.documentation || { tags: ['ERD'], status: 'approved' as const }),
+                description: ent.table.comment,
+              }
+            : node.documentation,
+        }
+      : node;
+
+    updatedNodes.push(updatedNode);
+    tablePositions.set(ent.table.name.toLowerCase(), {
+      x: updatedNode.x,
+      y: updatedNode.y,
+      width: updatedNode.width,
+      height: updatedNode.height,
+      nodeId: updatedNode.id,
+    });
+  }
+
+  // Layout any newly created tables below existing nodes
+  const newEntities = allEntities.filter(e => e.isNew && !e.isDropped);
+  if (newEntities.length > 0) {
+    const newTables = newEntities.map(e => e.table);
+    const { nodes: laidOutNew, tablePositions: newPosMap } = layoutErdTables(newTables);
+    const offsetY = maxBottomY > 0 ? maxBottomY : 0;
+
+    laidOutNew.forEach((n, idx) => {
+      const ent = newEntities[idx];
+      const finalNode: DiagramNode = {
+        ...n,
+        id: ent.nodeId,
+        y: n.y + offsetY,
+      };
+      updatedNodes.push(finalNode);
+      const pos = newPosMap.get(ent.table.name.toLowerCase());
+      if (pos) {
+        tablePositions.set(ent.table.name.toLowerCase(), {
+          ...pos,
+          y: pos.y + offsetY,
+          nodeId: ent.nodeId,
+        });
+      }
+    });
+  }
+
+  // Create edges for newly added FKs
+  const rawNewEdges = createErdEdges(newForeignKeys, tablePositions, new Map());
+  let edgeAddedCount = 0;
+  for (const ne of rawNewEdges) {
+    const duplicate = workingEdges.some(
+      existing =>
+        existing.sourceNodeId === ne.sourceNodeId &&
+        existing.targetNodeId === ne.targetNodeId &&
+        (existing.label || '').toLowerCase() === (ne.label || '').toLowerCase()
+    );
+    if (!duplicate) {
+      workingEdges.push(ne);
+      edgeAddedCount++;
+    }
+  }
+
+  const entitySummaries: EntityChangeSummary[] = allEntities
+    .filter(e => e.changes.length > 0)
+    .map(e => ({
+      tableName: e.table.name,
+      nodeId: e.nodeId,
+      status: e.isDropped ? 'dropped' : e.isNew ? 'created' : 'modified',
+      changes: e.changes,
+      table: e.table,
+    }));
+
+  const modifiedCount = entitySummaries.filter(s => s.status === 'modified').length;
+  const createdCount = entitySummaries.filter(s => s.status === 'created').length;
+  const droppedCount = entitySummaries.filter(s => s.status === 'dropped').length;
+  const totalChangeCount = entitySummaries.reduce((acc, s) => acc + s.changes.length, 0);
+
+  return {
+    nodes: updatedNodes,
+    edges: workingEdges,
+    entitySummaries,
+    warnings,
+    stats: {
+      modifiedCount,
+      createdCount,
+      droppedCount,
+      edgeAddedCount,
+      edgeRemovedCount,
+      statementCount: statements.length,
+      totalChangeCount,
+    },
+  };
+}
+
+/**
+ * Inspects SQL text to help UI pick the best default import mode.
+ */
+export function detectSqlIntent(sqlText: string): {
+  hasCreateTable: boolean;
+  hasAlterOrMutate: boolean;
+} {
+  const cleaned = stripComments(sqlText);
+  return {
+    hasCreateTable: /\bCREATE\s+TABLE\b/i.test(cleaned),
+    hasAlterOrMutate: /\b(?:ALTER\s+TABLE|DROP\s+TABLE|COMMENT\s+ON)\b/i.test(cleaned),
+  };
+}
+
+/**
+ * Builds a tailored sample ALTER TABLE script for the current canvas entities.
+ */
+export function buildSampleAlterSql(existingNodes: DiagramNode[]): string {
+  const erdNodes = existingNodes.filter(n => n.type === 'erd-entity');
+  const firstNode = erdNodes[0];
+  const tableName = cleanIdentifier((firstNode?.data?.tableName || firstNode?.label || 'customers').trim()) || 'customers';
+  const secondNode = erdNodes[1];
+  const secondName = secondNode
+    ? cleanIdentifier((secondNode.data?.tableName || secondNode.label || '').trim())
+    : '';
+  const fields: any[] = Array.isArray(firstNode?.data?.fields) ? firstNode.data.fields : [];
+  const sampleCol = fields.find(f => !f.isPk) || fields[0];
+  const colName = sampleCol?.name || 'email';
+
+  const lines: string[] = [
+    `-- Sample ALTER TABLE migration for existing "${tableName}" entity`,
+    `ALTER TABLE ${tableName}`,
+    `    ADD COLUMN loyalty_tier VARCHAR(20) NOT NULL DEFAULT 'STANDARD',`,
+    `    ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE,`,
+    `    ALTER COLUMN ${colName} TYPE VARCHAR(255);`,
+    ``,
+    `COMMENT ON TABLE ${tableName} IS 'Updated via ALTER TABLE migration';`,
+  ];
+
+  if (secondName && secondName.toLowerCase() !== tableName.toLowerCase()) {
+    const secondPk = (secondNode.data?.fields || []).find((f: any) => f.isPk)?.name || `${secondName}_id`;
+    lines.push(
+      ``,
+      `-- Link "${tableName}" to "${secondName}" with a new Foreign Key`,
+      `ALTER TABLE ${tableName}`,
+      `    ADD COLUMN ${secondName}_id INTEGER,`,
+      `    ADD CONSTRAINT fk_${tableName}_${secondName} FOREIGN KEY (${secondName}_id) REFERENCES ${secondName} (${secondPk});`
+    );
+  }
+
+  return lines.join('\n');
 }
 
 /**

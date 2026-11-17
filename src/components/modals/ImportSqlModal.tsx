@@ -20,24 +20,34 @@ import {
   ArrowRight,
   PlusCircle,
   Layers,
+  Wrench,
+  AlertTriangle,
 } from 'lucide-react';
 import { AppTheme, DiagramEdge, DiagramNode } from '../../types/diagram';
 import { THEMES } from '../../utils/themeConfig';
 import {
+  applySqlChangesToErd,
+  ApplySqlChangesResult,
+  buildSampleAlterSql,
+  detectSqlIntent,
   parseErwinPostgresSql,
   ParseSqlResult,
   SAMPLE_ERWIN_POSTGRES_SQL,
 } from '../../utils/erdSqlParser';
 
+export type ImportErdMode = 'replace' | 'append' | 'new_page' | 'update';
+
 interface ImportSqlModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentPageName?: string;
+  existingNodes?: DiagramNode[];
+  existingEdges?: DiagramEdge[];
   theme?: AppTheme;
   onImportErd: (
     nodes: DiagramNode[],
     edges: DiagramEdge[],
-    mode: 'replace' | 'append' | 'new_page',
+    mode: ImportErdMode,
     newPageTitle?: string
   ) => void;
 }
@@ -46,12 +56,15 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
   isOpen,
   onClose,
   currentPageName = 'Current ERD Page',
+  existingNodes = [],
+  existingEdges = [],
   theme = 'dark',
   onImportErd,
 }) => {
   const [sqlContent, setSqlContent] = useState<string>('');
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [importMode, setImportMode] = useState<'replace' | 'append' | 'new_page'>('replace');
+  const [importMode, setImportMode] = useState<ImportErdMode>('replace');
+  const [hasManuallyPickedMode, setHasManuallyPickedMode] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState<string>('PostgreSQL ERD');
   const [isDragging, setIsDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
@@ -60,7 +73,30 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
 
-  // Real-time parsed result
+  const existingErdCount = useMemo(
+    () => existingNodes.filter(n => n.type === 'erd-entity').length,
+    [existingNodes]
+  );
+
+  // Reset manual mode flag whenever modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setHasManuallyPickedMode(false);
+    }
+  }, [isOpen]);
+
+  // Auto-select 'update' when SQL contains ALTER/DROP/COMMENT without CREATE TABLE and canvas has entities
+  useEffect(() => {
+    if (!sqlContent.trim() || hasManuallyPickedMode) return;
+    const intent = detectSqlIntent(sqlContent);
+    if (existingErdCount > 0 && intent.hasAlterOrMutate && !intent.hasCreateTable) {
+      setImportMode('update');
+    } else if (intent.hasCreateTable && importMode === 'update' && !intent.hasAlterOrMutate) {
+      setImportMode(existingErdCount > 0 ? 'append' : 'replace');
+    }
+  }, [sqlContent, existingErdCount, hasManuallyPickedMode, importMode]);
+
+  // Real-time parsed result (full schema mode)
   const parseResult: ParseSqlResult | null = useMemo(() => {
     if (!sqlContent.trim()) return null;
     try {
@@ -70,6 +106,17 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
       return null;
     }
   }, [sqlContent]);
+
+  // Real-time incremental diff result (Update Existing Entities / ALTER TABLE mode)
+  const alterResult: ApplySqlChangesResult | null = useMemo(() => {
+    if (!sqlContent.trim() || existingErdCount === 0) return null;
+    try {
+      return applySqlChangesToErd(sqlContent, existingNodes, existingEdges);
+    } catch (err) {
+      console.error('SQL ALTER Parsing error:', err);
+      return null;
+    }
+  }, [sqlContent, existingNodes, existingEdges, existingErdCount]);
 
   // Handle file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,6 +173,17 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
     setSqlContent(SAMPLE_ERWIN_POSTGRES_SQL);
     setUploadedFileName('erwin_ecommerce_postgres.sql');
     setNewPageTitle('E-Commerce ERD');
+    setHasManuallyPickedMode(false);
+    setImportMode('replace');
+    setActiveTab('preview');
+  };
+
+  // Load sample ALTER TABLE script tailored to current canvas entities
+  const handleLoadSampleAlter = () => {
+    setSqlContent(buildSampleAlterSql(existingNodes));
+    setUploadedFileName('alter_entities_migration.sql');
+    setHasManuallyPickedMode(false);
+    setImportMode('update');
     setActiveTab('preview');
   };
 
@@ -133,12 +191,31 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
   const handleClear = () => {
     setSqlContent('');
     setUploadedFileName(null);
+    setHasManuallyPickedMode(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setActiveTab('editor');
   };
 
-  // Execute import
+  const canApplyUpdate =
+    importMode === 'update' &&
+    !!alterResult &&
+    (alterResult.stats.totalChangeCount > 0 ||
+      alterResult.stats.edgeAddedCount > 0 ||
+      alterResult.stats.edgeRemovedCount > 0);
+
+  const canImportSchema =
+    importMode !== 'update' && !!parseResult && parseResult.nodes.length > 0;
+
+  const isReady = canApplyUpdate || canImportSchema;
+
+  // Execute import or update
   const handleConfirmImport = () => {
+    if (importMode === 'update') {
+      if (!canApplyUpdate || !alterResult) return;
+      onImportErd(alterResult.nodes, alterResult.edges, 'update');
+      onClose();
+      return;
+    }
     if (!parseResult || parseResult.nodes.length === 0) return;
     onImportErd(
       parseResult.nodes,
@@ -226,15 +303,34 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
             >
               <Table className="w-3.5 h-3.5" />
               <span>Parsed Preview</span>
-              {parseResult && (
+              {importMode === 'update' && alterResult ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                  {alterResult.entitySummaries.length}
+                </span>
+              ) : parseResult ? (
                 <span className="px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 font-mono text-[10px]">
                   {parseResult.stats.tableCount}
                 </span>
-              )}
+              ) : null}
             </button>
           </div>
 
           <div className="flex items-center gap-2">
+            {existingErdCount > 0 && (
+              <button
+                type="button"
+                onClick={handleLoadSampleAlter}
+                className={`px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 ${
+                  isDark
+                    ? 'bg-emerald-950/60 hover:bg-emerald-900/60 border-emerald-700/60 text-emerald-300'
+                    : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                }`}
+                title="Load example ALTER TABLE statements targeting your current entities"
+              >
+                <Wrench className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Sample ALTER</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleLoadSample}
@@ -330,15 +426,18 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
                 <textarea
                   value={sqlContent}
                   onChange={e => setSqlContent(e.target.value)}
-                  placeholder="-- Paste ERwin PostgreSQL SQL DDL here...
+                  placeholder="-- Paste CREATE TABLE or ALTER TABLE SQL DDL here...
 CREATE TABLE customer (
     customer_id INTEGER NOT NULL,
     first_name VARCHAR(50) NOT NULL,
     email VARCHAR(100)
 );
 
-ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
-..."
+-- Or update existing entities on the current ERD page:
+ALTER TABLE customer
+    ADD COLUMN loyalty_tier VARCHAR(20) DEFAULT 'SILVER',
+    ALTER COLUMN email TYPE VARCHAR(255);
+"
                   rows={10}
                   className={`w-full p-3 font-mono text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-sky-500/50 resize-y ${
                     isDark
@@ -351,22 +450,155 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
           ) : (
             /* Parsed Preview Tab */
             <div className="space-y-4">
-              {!parseResult || parseResult.stats.tableCount === 0 ? (
+              {importMode === 'update' && alterResult ? (
+                alterResult.entitySummaries.length === 0 && alterResult.warnings.length === 0 ? (
+                  <div className="p-8 text-center space-y-3">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div className="text-sm font-semibold">No entity changes detected yet</div>
+                    <p className={`text-xs max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Paste ALTER TABLE, DROP TABLE, CREATE TABLE, or COMMENT ON statements matching entities on &quot;{currentPageName}&quot;.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Update Stats Bar */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium mb-1">
+                          <Wrench className="w-3.5 h-3.5" />
+                          <span>Modified</span>
+                        </div>
+                        <div className="text-xl font-bold font-mono">{alterResult.stats.modifiedCount}</div>
+                      </div>
+                      <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="flex items-center gap-1.5 text-sky-400 text-xs font-medium mb-1">
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>Created</span>
+                        </div>
+                        <div className="text-xl font-bold font-mono">{alterResult.stats.createdCount}</div>
+                      </div>
+                      <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="flex items-center gap-1.5 text-rose-400 text-xs font-medium mb-1">
+                          <Table className="w-3.5 h-3.5" />
+                          <span>Dropped</span>
+                        </div>
+                        <div className="text-xl font-bold font-mono">{alterResult.stats.droppedCount}</div>
+                      </div>
+                      <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="flex items-center gap-1.5 text-purple-400 text-xs font-medium mb-1">
+                          <Link2 className="w-3.5 h-3.5" />
+                          <span>FK Edges</span>
+                        </div>
+                        <div className="text-xl font-bold font-mono">
+                          +{alterResult.stats.edgeAddedCount} / -{alterResult.stats.edgeRemovedCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    {alterResult.warnings.length > 0 && (
+                      <div className={`p-3 rounded-xl border text-xs space-y-1 ${isDark ? 'bg-amber-950/40 border-amber-700/50 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
+                        <div className="font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Warnings ({alterResult.warnings.length})</span>
+                        </div>
+                        <ul className="list-disc pl-5 space-y-0.5 text-[11px] opacity-90">
+                          {alterResult.warnings.map((w, idx) => (
+                            <li key={idx}>{w}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Affected Entities List */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase font-mono tracking-wider text-slate-400">
+                        Affected Entities ({alterResult.entitySummaries.length})
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                        {alterResult.entitySummaries.map(summary => (
+                          <div
+                            key={summary.nodeId}
+                            className={`p-3 rounded-xl border flex flex-col justify-between ${
+                              isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/60 mb-2">
+                                <div className="flex items-center gap-1.5 font-bold text-xs text-sky-400 truncate">
+                                  <Table className="w-3.5 h-3.5 shrink-0" />
+                                  <span>{summary.tableName}</span>
+                                </div>
+                                <span
+                                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold uppercase ${
+                                    summary.status === 'created'
+                                      ? 'bg-sky-500/20 text-sky-300'
+                                      : summary.status === 'dropped'
+                                      ? 'bg-rose-500/20 text-rose-300'
+                                      : 'bg-emerald-500/20 text-emerald-300'
+                                  }`}
+                                >
+                                  {summary.status}
+                                </span>
+                              </div>
+                              <ul className="space-y-1 text-[11px] font-mono mb-2">
+                                {summary.changes.map((chg, idx) => (
+                                  <li
+                                    key={idx}
+                                    className={
+                                      chg.startsWith('+')
+                                        ? 'text-emerald-400'
+                                        : chg.startsWith('-') || chg.startsWith('Drop')
+                                        ? 'text-rose-400'
+                                        : 'text-amber-300'
+                                    }
+                                  >
+                                    {chg}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            {summary.status !== 'dropped' && (
+                              <div className="pt-1.5 border-t border-slate-800/60 text-[10px] text-slate-400 font-mono">
+                                Resulting columns: {summary.table.columns.length}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : !parseResult || parseResult.stats.tableCount === 0 ? (
                 <div className="p-8 text-center space-y-3">
                   <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
                     <AlertCircle className="w-6 h-6" />
                   </div>
                   <div className="text-sm font-semibold">No ERD tables detected yet</div>
                   <p className={`text-xs max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Upload an SQL file or paste your CREATE TABLE statements in the editor tab to view the live parsed model.
+                    {existingErdCount > 0
+                      ? 'Upload an SQL file or paste CREATE TABLE / ALTER TABLE statements. Switch to "Update Existing Entities" to apply ALTER TABLE changes to existing tables.'
+                      : 'Upload an SQL file or paste your CREATE TABLE statements in the editor tab to view the live parsed model.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleLoadSample}
-                    className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
-                  >
-                    Load Sample ERwin DDL
-                  </button>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadSample}
+                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      Load Sample ERwin DDL
+                    </button>
+                    {existingErdCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleLoadSampleAlter}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                      >
+                        Load Sample ALTER
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -472,7 +704,7 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
           )}
 
           {/* Import Mode Target Options */}
-          {parseResult && parseResult.stats.tableCount > 0 && (
+          {sqlContent.trim().length > 0 && (
             <div
               className={`p-4 rounded-xl border space-y-3 ${
                 isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -482,7 +714,41 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
                 <Layers className="w-3.5 h-3.5 text-sky-400" />
                 <span>Destination Placement</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+                {/* Update Existing Entities (ALTER TABLE) */}
+                <label
+                  className={`p-2.5 rounded-lg border flex items-start gap-2.5 transition-all ${
+                    existingErdCount === 0
+                      ? 'opacity-45 cursor-not-allowed border-slate-800 bg-slate-900/30'
+                      : importMode === 'update'
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/40 cursor-pointer'
+                      : isDark
+                      ? 'border-slate-800 hover:border-slate-700 bg-slate-900/60 cursor-pointer'
+                      : 'border-slate-200 hover:border-slate-300 bg-white cursor-pointer'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="importMode"
+                    value="update"
+                    disabled={existingErdCount === 0}
+                    checked={importMode === 'update'}
+                    onChange={() => {
+                      setHasManuallyPickedMode(true);
+                      setImportMode('update');
+                    }}
+                    className="mt-0.5 text-emerald-500"
+                  />
+                  <div>
+                    <div className="font-semibold text-xs">Update Existing Entities</div>
+                    <div className="text-[10px] opacity-75 mt-0.5">
+                      {existingErdCount > 0
+                        ? `Apply ALTER TABLE & DDL edits to ${existingErdCount} existing entities.`
+                        : 'Requires existing ERD entities on this page.'}
+                    </div>
+                  </div>
+                </label>
+
                 {/* Replace */}
                 <label
                   className={`p-2.5 rounded-lg border flex items-start gap-2.5 cursor-pointer transition-all ${
@@ -498,7 +764,10 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
                     name="importMode"
                     value="replace"
                     checked={importMode === 'replace'}
-                    onChange={() => setImportMode('replace')}
+                    onChange={() => {
+                      setHasManuallyPickedMode(true);
+                      setImportMode('replace');
+                    }}
                     className="mt-0.5 text-sky-500"
                   />
                   <div>
@@ -524,7 +793,10 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
                     name="importMode"
                     value="append"
                     checked={importMode === 'append'}
-                    onChange={() => setImportMode('append')}
+                    onChange={() => {
+                      setHasManuallyPickedMode(true);
+                      setImportMode('append');
+                    }}
                     className="mt-0.5 text-sky-500"
                   />
                   <div>
@@ -550,7 +822,10 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
                     name="importMode"
                     value="new_page"
                     checked={importMode === 'new_page'}
-                    onChange={() => setImportMode('new_page')}
+                    onChange={() => {
+                      setHasManuallyPickedMode(true);
+                      setImportMode('new_page');
+                    }}
                     className="mt-0.5 text-sky-500"
                   />
                   <div className="flex-1 min-w-0">
@@ -587,13 +862,18 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
           }`}
         >
           <div className="text-xs text-slate-400 flex items-center gap-1.5">
-            {parseResult && parseResult.stats.tableCount > 0 ? (
+            {importMode === 'update' && alterResult && canApplyUpdate ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Ready to apply {alterResult.stats.totalChangeCount} change(s) across {alterResult.entitySummaries.length} entities
+              </span>
+            ) : importMode !== 'update' && parseResult && parseResult.stats.tableCount > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Ready to generate {parseResult.stats.tableCount} tables and {parseResult.edges.length} relationships
               </span>
             ) : (
-              <span>Upload or paste an ERwin SQL file to begin</span>
+              <span>Upload or paste CREATE TABLE / ALTER TABLE SQL to begin</span>
             )}
           </div>
 
@@ -609,16 +889,24 @@ ALTER TABLE customer ADD CONSTRAINT pk_customer PRIMARY KEY (customer_id);
             </button>
             <button
               type="button"
-              disabled={!parseResult || parseResult.stats.tableCount === 0}
+              disabled={!isReady}
               onClick={handleConfirmImport}
               className={`px-5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-md ${
-                !parseResult || parseResult.stats.tableCount === 0
+                !isReady
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50'
+                  : importMode === 'update'
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
                   : 'bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30'
               }`}
             >
               <span>
-                Import {parseResult ? `${parseResult.stats.tableCount} Tables` : 'SQL'} to ERD
+                {importMode === 'update'
+                  ? canApplyUpdate && alterResult
+                    ? `Apply Changes (${alterResult.entitySummaries.length} Entities)`
+                    : 'Apply ALTER Changes'
+                  : parseResult
+                  ? `Import ${parseResult.stats.tableCount} Tables to ERD`
+                  : 'Import SQL to ERD'}
               </span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>

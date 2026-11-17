@@ -37,7 +37,7 @@ import { WorkspaceModal } from './components/modals/WorkspaceModal';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { CreateChildDiagramModal } from './components/modals/CreateChildDiagramModal';
 import { SaveSuccessModal } from './components/modals/SaveSuccessModal';
-import { ImportSqlModal } from './components/modals/ImportSqlModal';
+import { ImportErdMode, ImportSqlModal } from './components/modals/ImportSqlModal';
 import { ImportLegacyJsonModal, LegacyImportPayload } from './components/modals/ImportLegacyJsonModal';
 import { GenerateMindmapModal } from './components/modals/GenerateMindmapModal';
 import { GenerateFlowchartModal } from './components/modals/GenerateFlowchartModal';
@@ -1044,9 +1044,30 @@ export default function App() {
     (
       importedNodes: DiagramNode[],
       importedEdges: DiagramEdge[],
-      mode: 'replace' | 'append' | 'new_page',
+      mode: ImportErdMode,
       newPageTitle?: string
     ) => {
+      if (mode === 'update') {
+        const updatedPages = document.pages.map(page =>
+          page.id === currentPage.id
+            ? {
+                ...page,
+                diagramType: 'erd' as DiagramType,
+                nodes: importedNodes,
+                edges: importedEdges,
+              }
+            : page
+        );
+        persistDocument({ ...document, pages: updatedPages });
+        setSelectedCategory('erd');
+        collaborationService.addActivity(
+          'You',
+          '#10b981',
+          `Updated ERD entities (${importedNodes.filter(n => n.type === 'erd-entity').length} tables) from SQL DDL`
+        );
+        return;
+      }
+
       if (mode === 'new_page') {
         const pageTitle = newPageTitle?.trim() || 'PostgreSQL ERD';
         const newPage: DiagramPage = {
@@ -2391,6 +2412,8 @@ export default function App() {
         isOpen={isImportSqlModalOpen}
         onClose={() => setIsImportSqlModalOpen(false)}
         currentPageName={currentPage.title}
+        existingNodes={currentPage.nodes}
+        existingEdges={currentPage.edges}
         theme={settings.theme}
         onImportErd={handleImportErd}
       />
