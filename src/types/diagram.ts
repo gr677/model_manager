@@ -195,6 +195,7 @@ export interface DiagramEdge {
   color?: string;
   strokeWidth?: number;
   midOffset?: number; // Custom position for movable orthogonal line segments
+  waypoints?: { x: number; y: number }[]; // Custom intermediate corner vertices for multi-corner routing
 }
 
 export interface DiagramPage {

@@ -1047,27 +1047,6 @@ export default function App() {
       mode: ImportErdMode,
       newPageTitle?: string
     ) => {
-      if (mode === 'update') {
-        const updatedPages = document.pages.map(page =>
-          page.id === currentPage.id
-            ? {
-                ...page,
-                diagramType: 'erd' as DiagramType,
-                nodes: importedNodes,
-                edges: importedEdges,
-              }
-            : page
-        );
-        persistDocument({ ...document, pages: updatedPages });
-        setSelectedCategory('erd');
-        collaborationService.addActivity(
-          'You',
-          '#10b981',
-          `Updated ERD entities (${importedNodes.filter(n => n.type === 'erd-entity').length} tables) from SQL DDL`
-        );
-        return;
-      }
-
       if (mode === 'new_page') {
         const pageTitle = newPageTitle?.trim() || 'PostgreSQL ERD';
         const newPage: DiagramPage = {
@@ -1116,29 +1095,23 @@ export default function App() {
       }
 
       if (mode === 'append') {
-        let maxBottomY = 0;
-        for (const n of currentPage.nodes) {
-          if (n.y + n.height > maxBottomY) maxBottomY = n.y + n.height;
-        }
-        const offsetY = maxBottomY > 0 ? maxBottomY + 80 : 0;
-        const shiftedNodes = importedNodes.map(n => ({
-          ...n,
-          y: n.y + offsetY,
-        }));
         const updatedPages = document.pages.map(page =>
           page.id === currentPage.id
             ? {
                 ...page,
-                nodes: [...page.nodes, ...shiftedNodes],
-                edges: [...page.edges, ...importedEdges],
+                diagramType: 'erd' as DiagramType,
+                nodes: importedNodes,
+                edges: importedEdges,
               }
             : page
         );
         persistDocument({ ...document, pages: updatedPages });
+        setSelectedCategory('erd');
+        const erdCount = importedNodes.filter(n => n.type === 'erd-entity').length;
         collaborationService.addActivity(
           'You',
-          '#0284c7',
-          `Appended ${importedNodes.length} tables from ERwin PostgreSQL SQL`
+          '#10b981',
+          `Appended / updated ERD entities (${erdCount} tables) from SQL DDL`
         );
       }
     },

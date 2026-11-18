@@ -41,6 +41,14 @@ import {
   getAnchorLabel,
   NODE_ANCHOR_DEFINITIONS,
 } from '../../utils/diagramAnchors';
+import {
+  buildOrthogonalVertices,
+  getEditableSegments,
+  getOptimalAnchors,
+  moveOrthogonalSegment,
+  Point,
+  splitOrthogonalSegment,
+} from '../../utils/edgeRouting';
 
 interface DiagramCanvasProps {
   nodes: DiagramNode[];
@@ -205,13 +213,17 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     endpoint: 'source' | 'target';
   } | null>(null);
 
-  // Movable orthogonal connector lines state (move cornered line segments)
-  const [movingEdgeSegment, setMovingEdgeSegment] = useState<{
+  // Multi-corner orthogonal waypoint & segment dragging state
+  const [editingWaypoints, setEditingWaypoints] = useState<{
     edgeId: string;
+    basePoints: Point[];
+    segIndex: number;
     axis: 'x' | 'y';
-    initialCoord: number;
+    startMouseCoord: number;
+    didDrag: boolean;
+    fromSplit?: boolean;
   } | null>(null);
-  const [tempSegmentOffset, setTempSegmentOffset] = useState<number | null>(null);
+  const [tempWaypoints, setTempWaypoints] = useState<Point[] | null>(null);
 
   const [currentMousePos, setCurrentMousePos] = useState({ x: 0, y: 0 });
 
@@ -521,28 +533,111 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     setReconnectingEdge({ edgeId, endpoint });
   };
 
-  // Start moving an orthogonal connector line segment (orthogonal corner adjustment)
-  const handleStartMoveSegment = (
+  // Start dragging any interior orthogonal segment (supports 2, 4, 6+ corners)
+  const handleStartMoveWaypointSegment = (
     edgeId: string,
+    segIndex: number,
     axis: 'x' | 'y',
     initialCoord: number,
+    points: Point[],
     e: React.MouseEvent
   ) => {
     if (isReadOnly) return;
     e.stopPropagation();
     onSelectEdge(edgeId);
-    setMovingEdgeSegment({ edgeId, axis, initialCoord });
-    setTempSegmentOffset(initialCoord);
+    setEditingWaypoints({
+      edgeId,
+      basePoints: points.map(p => ({ ...p })),
+      segIndex,
+      axis,
+      startMouseCoord: initialCoord,
+      didDrag: false,
+    });
+    setTempWaypoints(points.slice(1, -1));
   };
 
-  // Reset an orthogonal connector line segment offset to auto-centered default
-  const handleResetSegmentOffset = (edgeId: string) => {
+  // Click or drag a "+" split handle on a segment to insert 2 extra 90° corners
+  const handleStartSplitSegment = (
+    edgeId: string,
+    segIndex: number,
+    axis: 'x' | 'y',
+    initialCoord: number,
+    points: Point[],
+    e: React.MouseEvent
+  ) => {
+    if (isReadOnly) return;
+    e.stopPropagation();
+    onSelectEdge(edgeId);
+    const split = splitOrthogonalSegment(points, segIndex, undefined, 44);
+    const splitBasePoints: Point[] = [
+      points[0],
+      ...split.waypoints,
+      points[points.length - 1],
+    ];
+    setEditingWaypoints({
+      edgeId,
+      basePoints: splitBasePoints,
+      segIndex: split.newSegmentIndex,
+      axis,
+      startMouseCoord: initialCoord,
+      didDrag: false,
+      fromSplit: true,
+    });
+    setTempWaypoints(split.waypoints);
+  };
+
+  // Add a 2-corner detour to the longest segment of an orthogonal connector
+  const handleAddEdgeCorner = (edgeId: string) => {
     if (isReadOnly || !onUpdateEdge) return;
     const targetEdge = edges.find(e => e.id === edgeId);
-    if (targetEdge) {
-      onUpdateEdge({ ...targetEdge, midOffset: undefined });
-    }
-    setTempSegmentOffset(null);
+    if (!targetEdge) return;
+    const src = nodes.find(n => n.id === targetEdge.sourceNodeId);
+    const tgt = nodes.find(n => n.id === targetEdge.targetNodeId);
+    if (!src || !tgt) return;
+
+    const start = getNodeAnchorCoords(src, targetEdge.sourceAnchor);
+    const end = getNodeAnchorCoords(tgt, targetEdge.targetAnchor);
+    const pts = buildOrthogonalVertices(
+      start,
+      end,
+      targetEdge.sourceAnchor,
+      targetEdge.targetAnchor,
+      targetEdge.midOffset,
+      targetEdge.waypoints
+    );
+    const segs = getEditableSegments(pts);
+    const bestSeg =
+      segs.filter(s => s.isMovable).sort((a, b) => b.length - a.length)[0] ||
+      segs.sort((a, b) => b.length - a.length)[0];
+    if (!bestSeg) return;
+
+    const split = splitOrthogonalSegment(pts, bestSeg.index, undefined, 48);
+    onUpdateEdge({
+      ...targetEdge,
+      type: 'orthogonal',
+      midOffset: undefined,
+      waypoints: split.waypoints,
+    });
+  };
+
+  // Reset connector routing: clears custom waypoints & midOffset, restores default style, optimizes anchors
+  const handleResetEdgeRouting = (edgeId: string) => {
+    if (isReadOnly || !onUpdateEdge) return;
+    const targetEdge = edges.find(e => e.id === edgeId);
+    if (!targetEdge) return;
+    const src = nodes.find(n => n.id === targetEdge.sourceNodeId);
+    const tgt = nodes.find(n => n.id === targetEdge.targetNodeId);
+    const optimal = src && tgt ? getOptimalAnchors(src, tgt) : null;
+    onUpdateEdge({
+      ...targetEdge,
+      type: defaultConnectorStyle,
+      sourceAnchor: optimal ? optimal.sourceAnchor : targetEdge.sourceAnchor,
+      targetAnchor: optimal ? optimal.targetAnchor : targetEdge.targetAnchor,
+      midOffset: undefined,
+      waypoints: undefined,
+    });
+    setEditingWaypoints(null);
+    setTempWaypoints(null);
   };
 
   // Direct Node Mouse Down for selection and batch dragging (Change 3)
@@ -672,7 +767,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
       !marqueeBox &&
       !reconnectingEdge &&
       !connectingFrom &&
-      !movingEdgeSegment
+      !editingWaypoints
     ) {
       return;
     }
@@ -689,11 +784,24 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
         return;
       }
 
-      // Handle Movable Orthogonal Connector Line Segment Dragging
-      if (movingEdgeSegment) {
-        const coord = movingEdgeSegment.axis === 'x' ? canvasCoords.x : canvasCoords.y;
-        const snappedCoord = gridSnap ? Math.round(coord / 20) * 20 : Math.round(coord);
-        setTempSegmentOffset(snappedCoord);
+      // Handle multi-corner orthogonal segment drag / live split detour drag
+      if (editingWaypoints) {
+        const coord = editingWaypoints.axis === 'x' ? canvasCoords.x : canvasCoords.y;
+        const delta = Math.abs(coord - editingWaypoints.startMouseCoord);
+        const didDragNow = editingWaypoints.didDrag || delta >= 5;
+        if (didDragNow) {
+          const snappedCoord = gridSnap ? Math.round(coord / 20) * 20 : Math.round(coord);
+          const nextWaypoints = moveOrthogonalSegment(
+            editingWaypoints.basePoints,
+            editingWaypoints.segIndex,
+            snappedCoord,
+            false
+          );
+          setTempWaypoints(nextWaypoints);
+          if (!editingWaypoints.didDrag) {
+            setEditingWaypoints(prev => (prev ? { ...prev, didDrag: true } : null));
+          }
+        }
         return;
       }
 
@@ -962,19 +1070,37 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
         setReconnectingEdge(null);
       }
 
-      // Handle releasing a moved orthogonal connector line segment
-      if (movingEdgeSegment && !isReadOnly && onUpdateEdge) {
-        if (tempSegmentOffset !== null) {
-          const targetEdge = edges.find(ed => ed.id === movingEdgeSegment.edgeId);
-          if (targetEdge) {
+      // Commit multi-corner orthogonal segment move or split
+      if (editingWaypoints && !isReadOnly && onUpdateEdge) {
+        const targetEdge = edges.find(ed => ed.id === editingWaypoints.edgeId);
+        if (targetEdge) {
+          if (editingWaypoints.didDrag) {
+            const dropCoords = screenToCanvasCoords(e.clientX, e.clientY);
+            const rawCoord = editingWaypoints.axis === 'x' ? dropCoords.x : dropCoords.y;
+            const snappedCoord = gridSnap ? Math.round(rawCoord / 20) * 20 : Math.round(rawCoord);
+            const finalWaypoints = moveOrthogonalSegment(
+              editingWaypoints.basePoints,
+              editingWaypoints.segIndex,
+              snappedCoord,
+              true
+            );
             onUpdateEdge({
               ...targetEdge,
-              midOffset: tempSegmentOffset,
+              type: 'orthogonal',
+              midOffset: undefined,
+              waypoints: finalWaypoints.length > 0 ? finalWaypoints : undefined,
+            });
+          } else if (editingWaypoints.fromSplit && tempWaypoints) {
+            onUpdateEdge({
+              ...targetEdge,
+              type: 'orthogonal',
+              midOffset: undefined,
+              waypoints: tempWaypoints,
             });
           }
         }
-        setMovingEdgeSegment(null);
-        setTempSegmentOffset(null);
+        setEditingWaypoints(null);
+        setTempWaypoints(null);
       }
     };
 
@@ -994,8 +1120,8 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     marqueeBox,
     reconnectingEdge,
     connectingFrom,
-    movingEdgeSegment,
-    tempSegmentOffset,
+    editingWaypoints,
+    tempWaypoints,
     edges,
     gridSnap,
     isReadOnly,
@@ -1338,18 +1464,33 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             </button>
           </div>
 
-          {/* Reset to Diagram Default if modified */}
-          {selectedEdge.type !== defaultConnectorStyle && (
+          {/* Add extra corners (+2 bends) when using orthogonal routing */}
+          {(selectedEdge.type || 'orthogonal') === 'orthogonal' && (
             <button
               type="button"
-              onClick={() => onUpdateEdge?.({ ...selectedEdge, type: defaultConnectorStyle })}
-              className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-mono flex items-center gap-1 cursor-pointer transition-colors"
-              title={`Reset to standard default for ${diagramType.toUpperCase()} (${defaultConnectorStyle})`}
+              onClick={() => handleAddEdgeCorner(selectedEdge.id)}
+              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer ${
+                themeDef.isDark
+                  ? 'hover:bg-slate-800 text-sky-300'
+                  : 'hover:bg-slate-100 text-sky-700'
+              }`}
+              title="Add 2 extra 90° corners so you can route around busy tables"
             >
-              <RotateCcw className="w-3 h-3" />
-              <span>Default ({defaultConnectorStyle})</span>
+              <Plus className="w-3 h-3" />
+              <span>Corner</span>
             </button>
           )}
+
+          {/* Reset Routing (always available when an edge is selected) */}
+          <button
+            type="button"
+            onClick={() => handleResetEdgeRouting(selectedEdge.id)}
+            className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+            title={`Reset routing to clean ${defaultConnectorStyle} path with optimal facing anchors (or double-click connector)`}
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset Routing</span>
+          </button>
 
           {/* Quick Line Width Stepper */}
           {(() => {
@@ -1722,11 +1863,12 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                 onSelect={onSelectEdge}
                 onContextMenu={handleEdgeContextMenu}
                 onStartReconnectEdge={handleStartReconnectEdge}
-                onStartMoveSegment={handleStartMoveSegment}
-                onResetSegmentOffset={handleResetSegmentOffset}
+                onStartMoveWaypointSegment={handleStartMoveWaypointSegment}
+                onStartSplitSegment={handleStartSplitSegment}
+                onResetRouting={handleResetEdgeRouting}
                 temporaryStart={tempStart}
                 temporaryEnd={tempEnd}
-                temporaryMidOffset={movingEdgeSegment?.edgeId === edge.id ? tempSegmentOffset : undefined}
+                temporaryWaypoints={editingWaypoints?.edgeId === edge.id ? tempWaypoints : undefined}
               />
             );
           })}
@@ -1883,11 +2025,12 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                   onSelect={onSelectEdge}
                   onContextMenu={handleEdgeContextMenu}
                   onStartReconnectEdge={handleStartReconnectEdge}
-                  onStartMoveSegment={handleStartMoveSegment}
-                  onResetSegmentOffset={handleResetSegmentOffset}
+                  onStartMoveWaypointSegment={handleStartMoveWaypointSegment}
+                  onStartSplitSegment={handleStartSplitSegment}
+                  onResetRouting={handleResetEdgeRouting}
                   temporaryStart={tempStart}
                   temporaryEnd={tempEnd}
-                  temporaryMidOffset={movingEdgeSegment?.edgeId === edgeToRender.id ? tempSegmentOffset : undefined}
+                  temporaryWaypoints={editingWaypoints?.edgeId === edgeToRender.id ? tempWaypoints : undefined}
                 />
               );
             })()}
@@ -2028,6 +2171,8 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
             onOpenDoc={onOpenDoc}
             onDeleteEdge={edgeId => onDeleteEdge?.(edgeId)}
             onUpdateEdge={edge => onUpdateEdge?.(edge)}
+            onResetEdgeRouting={handleResetEdgeRouting}
+            onAddEdgeCorner={handleAddEdgeCorner}
             onResetZoom={() => {
               setZoom(1);
               setPan({ x: 0, y: 0 });

@@ -6,6 +6,13 @@
 import React from 'react';
 import { DiagramEdge, DiagramNode } from '../../types/diagram';
 import { getNodeAnchorCoords, isAnchorHorizontal } from '../../utils/diagramAnchors';
+import {
+  buildOrthogonalVertices,
+  getEditableSegments,
+  getPathMidpointLabelPos,
+  Point,
+  verticesToSvgPath,
+} from '../../utils/edgeRouting';
 
 interface EdgeRendererProps {
   edge: DiagramEdge;
@@ -17,10 +24,28 @@ interface EdgeRendererProps {
   onContextMenu?: (edgeId: string, e: React.MouseEvent) => void;
   onStartReconnectEdge?: (edgeId: string, endpoint: 'source' | 'target', e: React.MouseEvent) => void;
   onStartMoveSegment?: (edgeId: string, axis: 'x' | 'y', initialCoord: number, e: React.MouseEvent) => void;
+  onStartMoveWaypointSegment?: (
+    edgeId: string,
+    segIndex: number,
+    axis: 'x' | 'y',
+    initialCoord: number,
+    points: Point[],
+    e: React.MouseEvent
+  ) => void;
+  onStartSplitSegment?: (
+    edgeId: string,
+    segIndex: number,
+    axis: 'x' | 'y',
+    initialCoord: number,
+    points: Point[],
+    e: React.MouseEvent
+  ) => void;
   onResetSegmentOffset?: (edgeId: string) => void;
+  onResetRouting?: (edgeId: string) => void;
   temporaryStart?: { x: number; y: number } | null;
   temporaryEnd?: { x: number; y: number } | null;
   temporaryMidOffset?: number | null;
+  temporaryWaypoints?: Point[] | null;
 }
 
 export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
@@ -33,10 +58,14 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
   onContextMenu,
   onStartReconnectEdge,
   onStartMoveSegment,
+  onStartMoveWaypointSegment,
+  onStartSplitSegment,
   onResetSegmentOffset,
+  onResetRouting,
   temporaryStart,
   temporaryEnd,
   temporaryMidOffset,
+  temporaryWaypoints,
 }) => {
   if (!sourceNode || !targetNode) return null;
 
@@ -46,18 +75,16 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
   const start = temporaryStart || defaultStart;
   const end = temporaryEnd || defaultEnd;
 
-  // Generate SVG path string based on edge type
   let pathD = '';
   let midX = (start.x + end.x) / 2;
   let midY = (start.y + end.y) / 2;
-  let isSegmentVertical = false;
+  let orthogonalPoints: Point[] = [];
 
   const edgeType = edge.type || 'orthogonal';
 
   if (edgeType === 'straight') {
     pathD = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
   } else if (edgeType === 'curved') {
-    // Organic bezier curve (standard for Mind Map, Fishbone)
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const isHorizontal =
@@ -78,40 +105,41 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
       pathD = `M ${start.x} ${start.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${end.x} ${end.y}`;
     }
   } else {
-    // Orthogonal / Stepped path with 90° corners (standard for ERD, BPMN, Architecture)
-    // Allows moving the orthogonal line segments (horizontal or vertical middle step)
-    const effectiveOffset = temporaryMidOffset !== undefined && temporaryMidOffset !== null
-      ? temporaryMidOffset
-      : edge.midOffset;
+    const effectiveOffset =
+      temporaryMidOffset !== undefined && temporaryMidOffset !== null
+        ? temporaryMidOffset
+        : edge.midOffset;
+    const effectiveWaypoints =
+      temporaryWaypoints !== undefined && temporaryWaypoints !== null
+        ? temporaryWaypoints
+        : edge.waypoints;
 
-    if (isAnchorHorizontal(edge.sourceAnchor)) {
-      isSegmentVertical = true;
-      const defaultMidX = start.x + (end.x - start.x) / 2;
-      midX = effectiveOffset !== undefined ? effectiveOffset : defaultMidX;
-      midY = (start.y + end.y) / 2;
-      pathD = `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${end.y} L ${end.x} ${end.y}`;
-    } else {
-      isSegmentVertical = false;
-      const defaultMidY = start.y + (end.y - start.y) / 2;
-      midY = effectiveOffset !== undefined ? effectiveOffset : defaultMidY;
-      midX = (start.x + end.x) / 2;
-      pathD = `M ${start.x} ${start.y} L ${start.x} ${midY} L ${end.x} ${midY} L ${end.x} ${end.y}`;
-    }
+    orthogonalPoints = buildOrthogonalVertices(
+      start,
+      end,
+      edge.sourceAnchor,
+      edge.targetAnchor,
+      effectiveOffset,
+      effectiveWaypoints
+    );
+    pathD = verticesToSvgPath(orthogonalPoints);
+    const labelPos = getPathMidpointLabelPos(orthogonalPoints);
+    midX = labelPos.x;
+    midY = labelPos.y;
   }
 
-  // Helper to map edge marker type to SVG marker ID in DiagramCanvas (Change 2)
   const safeEdgeId = (edge.id || 'edge').replace(/[^a-zA-Z0-9_-]/g, '_');
   const customArrowMarkerId = edge.color ? `marker-arrow-${safeEdgeId}` : '';
 
   const getMarkerId = (marker?: string): string => {
     switch (marker) {
-      case 'crow-zero-many': return 'marker-crow-zero-many'; // 0..*
-      case 'crow-one-many': return 'marker-crow-one-many';   // 1..*
-      case 'crow-one-only': return 'marker-crow-one-only';   // 1..1
-      case 'crow-zero-one': return 'marker-crow-zero-one';   // 0..1
-      case 'crow-foot-many': return 'marker-crow-many';      // *
+      case 'crow-zero-many': return 'marker-crow-zero-many';
+      case 'crow-one-many': return 'marker-crow-one-many';
+      case 'crow-one-only': return 'marker-crow-one-only';
+      case 'crow-zero-one': return 'marker-crow-zero-one';
+      case 'crow-foot-many': return 'marker-crow-many';
       case 'crow-foot': return 'marker-crow-many';
-      case 'crow-foot-one': return 'marker-crow-one';        // 1
+      case 'crow-foot-one': return 'marker-crow-one';
       case 'diamond': return 'marker-diamond';
       case 'diamond-filled': return 'marker-diamond-filled';
       case 'circle': return 'marker-circle';
@@ -143,6 +171,9 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
       ? 'Straight'
       : 'Corners (Orthogonal)';
 
+  const editableSegments =
+    isSelected && edgeType === 'orthogonal' ? getEditableSegments(orthogonalPoints) : [];
+
   return (
     <g
       className="cursor-pointer group pointer-events-auto"
@@ -154,6 +185,14 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         e.stopPropagation();
         onSelect?.(edge.id);
       }}
+      onDoubleClick={e => {
+        e.stopPropagation();
+        if (onResetRouting) {
+          onResetRouting(edge.id);
+        } else {
+          onResetSegmentOffset?.(edge.id);
+        }
+      }}
       onContextMenu={e => {
         if (onContextMenu) {
           e.preventDefault();
@@ -162,7 +201,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         }
       }}
     >
-      <title>{`Connector: ${sourceNode.label} → ${targetNode.label} (${styleLabel}) - Click to select, drag endpoint handles to move connector, or drag line handle to reposition orthogonal corners`}</title>
+      <title>{`Connector: ${sourceNode.label} → ${targetNode.label} (${styleLabel}) — Click to select, drag segments or + handles to add corners, double-click to reset routing`}</title>
 
       {customArrowMarkerId &&
         (markerEndId === customArrowMarkerId || markerStartId === customArrowMarkerId) && (
@@ -205,7 +244,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         />
       )}
 
-      {/* Visible Path with Start and End Markers (Change 2) */}
+      {/* Visible Path with Start and End Markers */}
       <path
         d={pathD}
         fill="none"
@@ -218,7 +257,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         className="transition-colors group-hover:stroke-sky-400"
       />
 
-      {/* Edge Label (e.g. 1..*, has_many, etc.) */}
+      {/* Edge Label */}
       {edge.label && (
         <g transform={`translate(${midX}, ${midY})`} className="pointer-events-auto">
           <rect
@@ -245,84 +284,111 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
         </g>
       )}
 
-      {/* Movable Orthogonal Middle Segment Line Handle
-          Allows users to drag and reposition the cornered orthogonal line! */}
+      {/* Multi-Corner Orthogonal Segment Handles & Corner Split Knobs */}
       {isSelected && edgeType === 'orthogonal' && (
         <g className="pointer-events-auto">
-          {isSegmentVertical ? (
-            // Vertical line segment handle (drags horizontally)
-            <g
-              className="cursor-ew-resize group/segment"
-              transform={`translate(${midX}, ${midY})`}
-              onMouseDown={e => {
-                e.stopPropagation();
-                onStartMoveSegment?.(edge.id, 'x', midX, e);
-              }}
-              onDoubleClick={e => {
-                e.stopPropagation();
-                onResetSegmentOffset?.(edge.id);
-              }}
-            >
-              <title>Drag to move connector line horizontally (Double-click to reset)</title>
-              {/* Invisible wider grab hit area */}
-              <rect x={-10} y={-16} width={20} height={32} fill="transparent" />
-              {/* Segment grip pill */}
-              <rect
-                x={-4}
-                y={-12}
-                width={8}
-                height={24}
-                rx={4}
-                fill="#0284c7"
-                stroke="#ffffff"
-                strokeWidth={1.5}
-                className="shadow-md transition-transform [transform-box:fill-box] origin-center group-hover/segment:scale-125"
-              />
-              {/* Grip lines */}
-              <line x1={0} y1={-6} x2={0} y2={6} stroke="#ffffff" strokeWidth={1.5} />
-            </g>
-          ) : (
-            // Horizontal line segment handle (drags vertically)
-            <g
-              className="cursor-ns-resize group/segment"
-              transform={`translate(${midX}, ${midY})`}
-              onMouseDown={e => {
-                e.stopPropagation();
-                onStartMoveSegment?.(edge.id, 'y', midY, e);
-              }}
-              onDoubleClick={e => {
-                e.stopPropagation();
-                onResetSegmentOffset?.(edge.id);
-              }}
-            >
-              <title>Drag to move connector line vertically (Double-click to reset)</title>
-              {/* Invisible wider grab hit area */}
-              <rect x={-16} y={-10} width={32} height={20} fill="transparent" />
-              {/* Segment grip pill */}
-              <rect
-                x={-12}
-                y={-4}
-                width={24}
-                height={8}
-                rx={4}
-                fill="#0284c7"
-                stroke="#ffffff"
-                strokeWidth={1.5}
-                className="shadow-md transition-transform [transform-box:fill-box] origin-center group-hover/segment:scale-125"
-              />
-              {/* Grip lines */}
-              <line x1={-6} y1={0} x2={6} y2={0} stroke="#ffffff" strokeWidth={1.5} />
-            </g>
-          )}
+          {editableSegments.map(seg => {
+            const isVert = seg.orientation === 'v';
+            const moveAxis: 'x' | 'y' = isVert ? 'x' : 'y';
+            const moveCoord = isVert ? seg.x1 : seg.y1;
+            const splitAxis: 'x' | 'y' = isVert ? 'x' : 'y';
+            const splitCoord = isVert ? seg.x1 : seg.y1;
+
+            // Avoid sitting directly underneath the edge label pill
+            const labelCollision =
+              !!edge.label && Math.hypot(seg.midX - midX, seg.midY - midY) < 28;
+            const sliderX = labelCollision ? seg.x1 + (seg.x2 - seg.x1) * 0.78 : seg.midX;
+            const sliderY = labelCollision ? seg.y1 + (seg.y2 - seg.y1) * 0.78 : seg.midY;
+            const splitX = seg.isMovable
+              ? seg.x1 + (seg.x2 - seg.x1) * 0.24
+              : seg.midX;
+            const splitY = seg.isMovable
+              ? seg.y1 + (seg.y2 - seg.y1) * 0.24
+              : seg.midY;
+
+            return (
+              <React.Fragment key={`seg-${seg.index}`}>
+                {/* Segment slide handle on every interior segment */}
+                {seg.isMovable && (
+                  <g
+                    className={`${isVert ? 'cursor-ew-resize' : 'cursor-ns-resize'} group/segment`}
+                    transform={`translate(${sliderX}, ${sliderY})`}
+                    onMouseDown={e => {
+                      e.stopPropagation();
+                      if (onStartMoveWaypointSegment) {
+                        onStartMoveWaypointSegment(edge.id, seg.index, moveAxis, moveCoord, orthogonalPoints, e);
+                      } else {
+                        onStartMoveSegment?.(edge.id, moveAxis, moveCoord, e);
+                      }
+                    }}
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      if (onResetRouting) {
+                        onResetRouting(edge.id);
+                      } else {
+                        onResetSegmentOffset?.(edge.id);
+                      }
+                    }}
+                  >
+                    <title>Drag to slide this corner segment (Double-click to reset routing)</title>
+                    <rect
+                      x={isVert ? -10 : -16}
+                      y={isVert ? -16 : -10}
+                      width={isVert ? 20 : 32}
+                      height={isVert ? 32 : 20}
+                      fill="transparent"
+                    />
+                    <rect
+                      x={isVert ? -4 : -11}
+                      y={isVert ? -11 : -4}
+                      width={isVert ? 8 : 22}
+                      height={isVert ? 22 : 8}
+                      rx={4}
+                      fill="#0284c7"
+                      stroke="#ffffff"
+                      strokeWidth={1.5}
+                      className="shadow-md transition-transform [transform-box:fill-box] origin-center group-hover/segment:scale-125"
+                    />
+                    {isVert ? (
+                      <line x1={0} y1={-5} x2={0} y2={5} stroke="#ffffff" strokeWidth={1.4} />
+                    ) : (
+                      <line x1={-5} y1={0} x2={5} y2={0} stroke="#ffffff" strokeWidth={1.4} />
+                    )}
+                  </g>
+                )}
+
+                {/* "+" Corner Detour Split Handle on sufficiently long segments */}
+                {seg.canSplit && onStartSplitSegment && (!labelCollision || !seg.isMovable) && (
+                  <g
+                    className="cursor-crosshair group/split"
+                    transform={`translate(${splitX}, ${splitY})`}
+                    onMouseDown={e => {
+                      e.stopPropagation();
+                      onStartSplitSegment(edge.id, seg.index, splitAxis, splitCoord, orthogonalPoints, e);
+                    }}
+                  >
+                    <title>Click or drag to add 2 extra 90° corners on this segment</title>
+                    <circle r={12} fill="transparent" />
+                    <circle
+                      r={6.5}
+                      fill="#0f172a"
+                      stroke="#38bdf8"
+                      strokeWidth={1.5}
+                      className="transition-transform [transform-box:fill-box] origin-center group-hover/split:scale-125 group-hover/split:fill-sky-600"
+                    />
+                    <line x1={-3} y1={0} x2={3} y2={0} stroke="#e0f2fe" strokeWidth={1.4} />
+                    <line x1={0} y1={-3} x2={0} y2={3} stroke="#e0f2fe" strokeWidth={1.4} />
+                  </g>
+                )}
+              </React.Fragment>
+            );
+          })}
         </g>
       )}
 
-      {/* Selected Edge Endpoint Drag Handles
-          Allows dragging this specific connector endpoint from one anchor point to another,
-          leaving any other connections at the same anchor point untouched! */}
+      {/* Selected Edge Endpoint Drag Handles */}
       {isSelected && (
         <g className="pointer-events-auto">
-          {/* Source Endpoint Drag Handle (Start - Enormous 44px hit area - Change 3) */}
           <g
             className={`group/handle ${
               temporaryStart
@@ -336,9 +402,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
             }}
           >
             <title>{`Drag start point from "${sourceNode.label}" to another anchor point`}</title>
-            {/* Invisible large hit area (44px diameter) for easy grabbing */}
             <circle r={22} fill="transparent" className={temporaryStart ? 'pointer-events-none' : 'cursor-grab'} />
-            {/* Pulsing ring */}
             <circle
               r={13}
               fill="rgba(56, 189, 248, 0.25)"
@@ -346,7 +410,6 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               strokeWidth={1.5}
               className="animate-ping [transform-box:fill-box] origin-center pointer-events-none"
             />
-            {/* Outer handle ring */}
             <circle
               r={8.5}
               fill="#0284c7"
@@ -354,11 +417,9 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               strokeWidth={2.5}
               className="shadow-lg transition-transform [transform-box:fill-box] origin-center group-hover/handle:scale-130 pointer-events-none"
             />
-            {/* Inner dot */}
             <circle r={3} fill="#ffffff" className="pointer-events-none" />
           </g>
 
-          {/* Target Endpoint Drag Handle (End - Enormous 44px hit area - Change 3) */}
           <g
             className={`group/handle ${
               temporaryEnd
@@ -372,9 +433,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
             }}
           >
             <title>{`Drag end point from "${targetNode.label}" to another anchor point`}</title>
-            {/* Invisible large hit area (44px diameter) for easy grabbing */}
             <circle r={22} fill="transparent" className="cursor-grab" />
-            {/* Pulsing ring */}
             <circle
               r={13}
               fill="rgba(52, 211, 153, 0.25)"
@@ -382,7 +441,6 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               strokeWidth={1.5}
               className="animate-ping [transform-box:fill-box] origin-center pointer-events-none"
             />
-            {/* Outer handle ring */}
             <circle
               r={8.5}
               fill="#10b981"
@@ -390,7 +448,6 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({
               strokeWidth={2.5}
               className="shadow-lg transition-transform [transform-box:fill-box] origin-center group-hover/handle:scale-130 pointer-events-none"
             />
-            {/* Inner dot */}
             <circle r={3} fill="#ffffff" className="pointer-events-none" />
           </g>
         </g>

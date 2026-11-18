@@ -58,6 +58,8 @@ interface ContextMenuProps {
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge?: (edgeId: string) => void;
   onUpdateEdge?: (edge: DiagramEdge) => void;
+  onResetEdgeRouting?: (edgeId: string) => void;
+  onAddEdgeCorner?: (edgeId: string) => void;
   onDuplicateNode: (nodeId: string) => void;
   onBringToFront: (nodeId: string) => void;
   onSendToBack: (nodeId: string) => void;
@@ -98,6 +100,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onDeleteNode,
   onDeleteEdge,
   onUpdateEdge,
+  onResetEdgeRouting,
+  onAddEdgeCorner,
   onDuplicateNode,
   onBringToFront,
   onSendToBack,
@@ -811,11 +815,36 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
           <div className={`h-[1px] my-1 ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
 
-          {/* Reset to Diagram Default Button */}
-          {selectedEdge && onUpdateEdge && selectedEdge.type !== defaultRouting && (
+          {/* Add extra corner detour (+2 bends) */}
+          {selectedEdge && (selectedEdge.type || 'orthogonal') === 'orthogonal' && onAddEdgeCorner && (
             <button
               onClick={() => {
-                onUpdateEdge({ ...selectedEdge, type: defaultRouting });
+                onAddEdgeCorner(selectedEdge.id);
+                onClose();
+              }}
+              className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer text-[11px] ${
+                isDark ? 'hover:bg-slate-800 text-sky-300' : 'hover:bg-sky-50 text-sky-600'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Corner Detour (+2 bends)</span>
+            </button>
+          )}
+
+          {/* Reset Routing (clear custom corners, optimize anchors, restore default style) */}
+          {selectedEdge && (onResetEdgeRouting || onUpdateEdge) && (
+            <button
+              onClick={() => {
+                if (onResetEdgeRouting) {
+                  onResetEdgeRouting(selectedEdge.id);
+                } else if (onUpdateEdge) {
+                  onUpdateEdge({
+                    ...selectedEdge,
+                    type: defaultRouting,
+                    midOffset: undefined,
+                    waypoints: undefined,
+                  });
+                }
                 onClose();
               }}
               className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer text-[11px] ${
@@ -823,7 +852,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               }`}
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset to {diagramType.toUpperCase()} default ({defaultRouting})</span>
+              <span>Reset Connector Routing</span>
             </button>
           )}
 

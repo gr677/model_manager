@@ -35,7 +35,7 @@ import {
   SAMPLE_ERWIN_POSTGRES_SQL,
 } from '../../utils/erdSqlParser';
 
-export type ImportErdMode = 'replace' | 'append' | 'new_page' | 'update';
+export type ImportErdMode = 'replace' | 'append' | 'new_page';
 
 interface ImportSqlModalProps {
   isOpen: boolean;
@@ -85,18 +85,16 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
     }
   }, [isOpen]);
 
-  // Auto-select 'update' when SQL contains ALTER/DROP/COMMENT without CREATE TABLE and canvas has entities
+  // Auto-select 'append' when SQL contains ALTER/DROP/COMMENT or when appending to existing entities
   useEffect(() => {
     if (!sqlContent.trim() || hasManuallyPickedMode) return;
     const intent = detectSqlIntent(sqlContent);
-    if (existingErdCount > 0 && intent.hasAlterOrMutate && !intent.hasCreateTable) {
-      setImportMode('update');
-    } else if (intent.hasCreateTable && importMode === 'update' && !intent.hasAlterOrMutate) {
-      setImportMode(existingErdCount > 0 ? 'append' : 'replace');
+    if (existingErdCount > 0 && intent.hasAlterOrMutate) {
+      setImportMode('append');
     }
-  }, [sqlContent, existingErdCount, hasManuallyPickedMode, importMode]);
+  }, [sqlContent, existingErdCount, hasManuallyPickedMode]);
 
-  // Real-time parsed result (full schema mode)
+  // Real-time parsed result (full schema mode for Replace / New Page)
   const parseResult: ParseSqlResult | null = useMemo(() => {
     if (!sqlContent.trim()) return null;
     try {
@@ -107,16 +105,16 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
     }
   }, [sqlContent]);
 
-  // Real-time incremental diff result (Update Existing Entities / ALTER TABLE mode)
+  // Real-time incremental diff result (Append to Current Page: adds new tables & updates existing entities)
   const alterResult: ApplySqlChangesResult | null = useMemo(() => {
-    if (!sqlContent.trim() || existingErdCount === 0) return null;
+    if (!sqlContent.trim()) return null;
     try {
       return applySqlChangesToErd(sqlContent, existingNodes, existingEdges);
     } catch (err) {
-      console.error('SQL ALTER Parsing error:', err);
+      console.error('SQL Append/ALTER Parsing error:', err);
       return null;
     }
-  }, [sqlContent, existingNodes, existingEdges, existingErdCount]);
+  }, [sqlContent, existingNodes, existingEdges]);
 
   // Handle file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -183,7 +181,7 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
     setSqlContent(buildSampleAlterSql(existingNodes));
     setUploadedFileName('alter_entities_migration.sql');
     setHasManuallyPickedMode(false);
-    setImportMode('update');
+    setImportMode('append');
     setActiveTab('preview');
   };
 
@@ -196,23 +194,23 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
     setActiveTab('editor');
   };
 
-  const canApplyUpdate =
-    importMode === 'update' &&
+  const canApplyAppend =
+    importMode === 'append' &&
     !!alterResult &&
     (alterResult.stats.totalChangeCount > 0 ||
       alterResult.stats.edgeAddedCount > 0 ||
       alterResult.stats.edgeRemovedCount > 0);
 
   const canImportSchema =
-    importMode !== 'update' && !!parseResult && parseResult.nodes.length > 0;
+    importMode !== 'append' && !!parseResult && parseResult.nodes.length > 0;
 
-  const isReady = canApplyUpdate || canImportSchema;
+  const isReady = canApplyAppend || canImportSchema;
 
-  // Execute import or update
+  // Execute import or append/update
   const handleConfirmImport = () => {
-    if (importMode === 'update') {
-      if (!canApplyUpdate || !alterResult) return;
-      onImportErd(alterResult.nodes, alterResult.edges, 'update');
+    if (importMode === 'append') {
+      if (!canApplyAppend || !alterResult) return;
+      onImportErd(alterResult.nodes, alterResult.edges, 'append');
       onClose();
       return;
     }
@@ -303,7 +301,7 @@ export const ImportSqlModal: React.FC<ImportSqlModalProps> = ({
             >
               <Table className="w-3.5 h-3.5" />
               <span>Parsed Preview</span>
-              {importMode === 'update' && alterResult ? (
+              {importMode === 'append' && alterResult ? (
                 <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
                   {alterResult.entitySummaries.length}
                 </span>
@@ -450,7 +448,7 @@ ALTER TABLE customer
           ) : (
             /* Parsed Preview Tab */
             <div className="space-y-4">
-              {importMode === 'update' && alterResult ? (
+              {importMode === 'append' && alterResult ? (
                 alterResult.entitySummaries.length === 0 && alterResult.warnings.length === 0 ? (
                   <div className="p-8 text-center space-y-3">
                     <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
@@ -458,7 +456,7 @@ ALTER TABLE customer
                     </div>
                     <div className="text-sm font-semibold">No entity changes detected yet</div>
                     <p className={`text-xs max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Paste ALTER TABLE, DROP TABLE, CREATE TABLE, or COMMENT ON statements matching entities on &quot;{currentPageName}&quot;.
+                      Paste CREATE TABLE statements to add new tables, or ALTER TABLE, DROP TABLE, or COMMENT ON statements to update matching entities on &quot;{currentPageName}&quot;.
                     </p>
                   </div>
                 ) : (
@@ -578,7 +576,7 @@ ALTER TABLE customer
                   <div className="text-sm font-semibold">No ERD tables detected yet</div>
                   <p className={`text-xs max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                     {existingErdCount > 0
-                      ? 'Upload an SQL file or paste CREATE TABLE / ALTER TABLE statements. Switch to "Update Existing Entities" to apply ALTER TABLE changes to existing tables.'
+                      ? 'Upload an SQL file or paste CREATE TABLE / ALTER TABLE statements. Switch to "Append to Current Page" to add new tables or update existing entities.'
                       : 'Upload an SQL file or paste your CREATE TABLE statements in the editor tab to view the live parsed model.'}
                   </p>
                   <div className="flex items-center justify-center gap-2">
@@ -714,41 +712,7 @@ ALTER TABLE customer
                 <Layers className="w-3.5 h-3.5 text-sky-400" />
                 <span>Destination Placement</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-                {/* Update Existing Entities (ALTER TABLE) */}
-                <label
-                  className={`p-2.5 rounded-lg border flex items-start gap-2.5 transition-all ${
-                    existingErdCount === 0
-                      ? 'opacity-45 cursor-not-allowed border-slate-800 bg-slate-900/30'
-                      : importMode === 'update'
-                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/40 cursor-pointer'
-                      : isDark
-                      ? 'border-slate-800 hover:border-slate-700 bg-slate-900/60 cursor-pointer'
-                      : 'border-slate-200 hover:border-slate-300 bg-white cursor-pointer'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="importMode"
-                    value="update"
-                    disabled={existingErdCount === 0}
-                    checked={importMode === 'update'}
-                    onChange={() => {
-                      setHasManuallyPickedMode(true);
-                      setImportMode('update');
-                    }}
-                    className="mt-0.5 text-emerald-500"
-                  />
-                  <div>
-                    <div className="font-semibold text-xs">Update Existing Entities</div>
-                    <div className="text-[10px] opacity-75 mt-0.5">
-                      {existingErdCount > 0
-                        ? `Apply ALTER TABLE & DDL edits to ${existingErdCount} existing entities.`
-                        : 'Requires existing ERD entities on this page.'}
-                    </div>
-                  </div>
-                </label>
-
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 {/* Replace */}
                 <label
                   className={`p-2.5 rounded-lg border flex items-start gap-2.5 cursor-pointer transition-all ${
@@ -778,11 +742,11 @@ ALTER TABLE customer
                   </div>
                 </label>
 
-                {/* Append */}
+                {/* Append & Update Existing */}
                 <label
                   className={`p-2.5 rounded-lg border flex items-start gap-2.5 cursor-pointer transition-all ${
                     importMode === 'append'
-                      ? 'border-sky-500 bg-sky-500/10 text-sky-300 ring-1 ring-sky-500/40'
+                      ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/40'
                       : isDark
                       ? 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -797,12 +761,14 @@ ALTER TABLE customer
                       setHasManuallyPickedMode(true);
                       setImportMode('append');
                     }}
-                    className="mt-0.5 text-sky-500"
+                    className="mt-0.5 text-emerald-500"
                   />
                   <div>
                     <div className="font-semibold text-xs">Append to Current Page</div>
                     <div className="text-[10px] opacity-75 mt-0.5">
-                      Add new tables alongside current nodes without deleting anything.
+                      {existingErdCount > 0
+                        ? `Add new tables & apply ALTER TABLE / DDL updates to ${existingErdCount} existing entities.`
+                        : 'Add new tables alongside current nodes without deleting anything.'}
                     </div>
                   </div>
                 </label>
@@ -862,12 +828,12 @@ ALTER TABLE customer
           }`}
         >
           <div className="text-xs text-slate-400 flex items-center gap-1.5">
-            {importMode === 'update' && alterResult && canApplyUpdate ? (
+            {importMode === 'append' && alterResult && canApplyAppend ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Ready to apply {alterResult.stats.totalChangeCount} change(s) across {alterResult.entitySummaries.length} entities
+                Ready to apply {alterResult.stats.totalChangeCount} change(s) across {alterResult.entitySummaries.length} tables
               </span>
-            ) : importMode !== 'update' && parseResult && parseResult.stats.tableCount > 0 ? (
+            ) : importMode !== 'append' && parseResult && parseResult.stats.tableCount > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Ready to generate {parseResult.stats.tableCount} tables and {parseResult.edges.length} relationships
@@ -894,16 +860,16 @@ ALTER TABLE customer
               className={`px-5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-md ${
                 !isReady
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50'
-                  : importMode === 'update'
+                  : importMode === 'append'
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
                   : 'bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/30'
               }`}
             >
               <span>
-                {importMode === 'update'
-                  ? canApplyUpdate && alterResult
-                    ? `Apply Changes (${alterResult.entitySummaries.length} Entities)`
-                    : 'Apply ALTER Changes'
+                {importMode === 'append'
+                  ? canApplyAppend && alterResult
+                    ? `Append & Apply (${alterResult.entitySummaries.length} Tables)`
+                    : 'Append & Apply SQL'
                   : parseResult
                   ? `Import ${parseResult.stats.tableCount} Tables to ERD`
                   : 'Import SQL to ERD'}

@@ -69,7 +69,14 @@ import {
 import {
   NODE_ANCHOR_DEFINITIONS,
   NodeAnchor,
+  getNodeAnchorCoords,
 } from '../../utils/diagramAnchors';
+import {
+  buildOrthogonalVertices,
+  getEditableSegments,
+  getOptimalAnchors,
+  splitOrthogonalSegment,
+} from '../../utils/edgeRouting';
 
 interface NodeInspectorProps {
   selectedNode: DiagramNode | null;
@@ -616,9 +623,81 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             />
           </div>
 
-          {/* Delete Button */}
+          {/* Corner Routing & Reset Controls */}
           {!isReadOnly && (
-            <div className={`pt-3 border-t ${themeDef.isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+            <div className={`pt-3 border-t space-y-2 ${themeDef.isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+              <label className={`text-[10px] uppercase font-mono font-bold block ${themeDef.textMutedClass}`}>
+                Connector Routing {selectedEdge.waypoints?.length ? `(${selectedEdge.waypoints.length} waypoints)` : ''}
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(selectedEdge.type || 'orthogonal') === 'orthogonal' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const src = currentPage.nodes.find(n => n.id === selectedEdge.sourceNodeId);
+                      const tgt = currentPage.nodes.find(n => n.id === selectedEdge.targetNodeId);
+                      if (!src || !tgt) return;
+                      const start = getNodeAnchorCoords(src, selectedEdge.sourceAnchor);
+                      const end = getNodeAnchorCoords(tgt, selectedEdge.targetAnchor);
+                      const pts = buildOrthogonalVertices(
+                        start,
+                        end,
+                        selectedEdge.sourceAnchor,
+                        selectedEdge.targetAnchor,
+                        selectedEdge.midOffset,
+                        selectedEdge.waypoints
+                      );
+                      const segs = getEditableSegments(pts);
+                      const best =
+                        segs.filter(s => s.isMovable).sort((a, b) => b.length - a.length)[0] ||
+                        segs.sort((a, b) => b.length - a.length)[0];
+                      if (!best) return;
+                      const split = splitOrthogonalSegment(pts, best.index, undefined, 48);
+                      onUpdateEdge?.({
+                        ...selectedEdge,
+                        type: 'orthogonal',
+                        midOffset: undefined,
+                        waypoints: split.waypoints,
+                      });
+                    }}
+                    className={`py-1.5 px-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                      themeDef.isDark
+                        ? 'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border-sky-500/30'
+                        : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border-sky-200'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Corner</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const src = currentPage.nodes.find(n => n.id === selectedEdge.sourceNodeId);
+                    const tgt = currentPage.nodes.find(n => n.id === selectedEdge.targetNodeId);
+                    const optimal = src && tgt ? getOptimalAnchors(src, tgt) : null;
+                    onUpdateEdge?.({
+                      ...selectedEdge,
+                      type: defaultRouting,
+                      sourceAnchor: optimal ? optimal.sourceAnchor : selectedEdge.sourceAnchor,
+                      targetAnchor: optimal ? optimal.targetAnchor : selectedEdge.targetAnchor,
+                      midOffset: undefined,
+                      waypoints: undefined,
+                    });
+                  }}
+                  className={`py-1.5 px-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                    (selectedEdge.type || 'orthogonal') !== 'orthogonal' ? 'col-span-2' : ''
+                  } ${
+                    themeDef.isDark
+                      ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
+                  }`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Routing</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
