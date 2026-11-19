@@ -740,6 +740,71 @@ function processAlterTableStatement(stmt: string, ctx: AlterExecutionContext): b
   return true;
 }
 
+const SQL_QUALIFIED_IDENT =
+  '(?:"[^"]+"|`[^`]+`|\\[[^\\]]+\\]|[A-Za-z0-9_$]+)(?:\\.(?:"[^"]+"|`[^`]+`|\\[[^\\]]+\\]|[A-Za-z0-9_$]+))*';
+
+interface ExtractedCreateTable {
+  ifNotExists: boolean;
+  rawTableName: string;
+  body: string;
+  trailingClause: string;
+}
+
+/**
+ * Extracts a CREATE TABLE [IF NOT EXISTS] statement using balanced parenthesis matching
+ * so trailing table options (TABLESPACE, WITH (...), PARTITION BY (...), ENGINE=..., etc.)
+ * do not break matching or corrupt the column definition body.
+ */
+function extractCreateTableStatement(stmt: string): ExtractedCreateTable | null {
+  const headerRegex = new RegExp(
+    `CREATE\\s+(?:(?:GLOBAL\\s+|LOCAL\\s+)?(?:TEMP|TEMPORARY)\\s+|UNLOGGED\\s+)?TABLE(\\s+IF\\s+NOT\\s+EXISTS)?\\s+(${SQL_QUALIFIED_IDENT})\\s*\\(`,
+    'i'
+  );
+  const match = headerRegex.exec(stmt);
+  if (!match || match.index === undefined) return null;
+
+  const ifNotExists = !!match[1];
+  const rawTableName = match[2];
+  const bodyStart = match.index + match[0].length;
+
+  let depth = 1;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inBacktick = false;
+  let i = bodyStart;
+
+  while (i < stmt.length && depth > 0) {
+    const ch = stmt[i];
+    const next = stmt[i + 1];
+
+    if (ch === "'" && !inDoubleQuote && !inBacktick) {
+      if (inSingleQuote && next === "'") {
+        i += 2;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+    } else if (ch === '"' && !inSingleQuote && !inBacktick) {
+      if (inDoubleQuote && next === '"') {
+        i += 2;
+        continue;
+      }
+      inDoubleQuote = !inDoubleQuote;
+    } else if (ch === '`' && !inSingleQuote && !inDoubleQuote) {
+      inBacktick = !inBacktick;
+    } else if (!inSingleQuote && !inDoubleQuote && !inBacktick) {
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+    }
+    i++;
+  }
+
+  if (depth !== 0) return null;
+
+  const body = stmt.slice(bodyStart, i - 1);
+  const trailingClause = stmt.slice(i).trim();
+  return { ifNotExists, rawTableName, body, trailingClause };
+}
+
 /**
  * Core SQL DDL parser for ERwin-generated PostgreSQL SQL (CREATE TABLE + ALTER TABLE).
  */
@@ -757,15 +822,12 @@ export function parseErwinPostgresSql(sqlText: string): ParseSqlResult {
     if (!trimmed) continue;
 
     // 1. CREATE TABLE statement
-    const createTableMatch = trimmed.match(
-      /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)\s*\(([\s\S]+)\)/i
-    );
+    const extractedCreate = extractCreateTableStatement(trimmed);
 
-    if (createTableMatch) {
-      const rawTableName = createTableMatch[1];
+    if (extractedCreate) {
+      const { rawTableName, body } = extractedCreate;
       const tableName = cleanIdentifier(rawTableName);
       const schema = extractSchema(rawTableName);
-      const body = createTableMatch[2];
 
       const tableKey = tableName.toLowerCase();
       let table = tablesMap.get(tableKey);
@@ -1025,16 +1087,12 @@ export function applySqlChangesToErd(
     if (!trimmed) continue;
 
     // 1. CREATE TABLE [IF NOT EXISTS]
-    const createTableMatch = trimmed.match(
-      /^CREATE\s+TABLE(\s+IF\s+NOT\s+EXISTS)?\s+([A-Za-z0-9_."`\[\]]+)\s*\(([\s\S]+)\)$/i
-    );
-    if (createTableMatch) {
-      const ifNotExists = !!createTableMatch[1];
-      const rawTableName = createTableMatch[2];
+    const extractedCreate = extractCreateTableStatement(trimmed);
+    if (extractedCreate) {
+      const { ifNotExists, rawTableName, body } = extractedCreate;
       const tableName = cleanIdentifier(rawTableName);
       const schema = extractSchema(rawTableName);
       const key = tableName.toLowerCase();
-      const body = createTableMatch[3];
 
       const existingEnt = entityMap.get(key);
       if (existingEnt && ifNotExists) {

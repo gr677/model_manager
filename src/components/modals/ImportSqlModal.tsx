@@ -506,6 +506,11 @@ ALTER TABLE customer
                             <li key={idx}>{w}</li>
                           ))}
                         </ul>
+                        {alterResult.entitySummaries.length === 0 && (
+                          <p className="text-[11px] pt-1 opacity-85">
+                            No new tables or column updates were queued. Use &quot;Replace Current Page&quot; or remove <code>IF NOT EXISTS</code> if you want to overwrite matching entities.
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -832,6 +837,11 @@ ALTER TABLE customer
               <span className="text-emerald-400 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Ready to apply {alterResult.stats.totalChangeCount} change(s) across {alterResult.entitySummaries.length} tables
+              </span>
+            ) : importMode === 'append' && alterResult && alterResult.warnings.length > 0 ? (
+              <span className="text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>No new changes to append: {alterResult.warnings[0]}</span>
               </span>
             ) : importMode !== 'append' && parseResult && parseResult.stats.tableCount > 0 ? (
               <span className="text-emerald-400 flex items-center gap-1">
