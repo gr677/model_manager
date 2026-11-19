@@ -63,13 +63,15 @@ export function parseAggregationLines(
     diagramFilename: string;
     diagramTitle: string;
   },
-  workspaceId?: string
+  workspaceId?: string,
+  options?: { triggerScriptEval?: boolean }
 ): AggregatedItem[] {
   if (!rawText || typeof rawText !== 'string') return [];
 
   const items: AggregatedItem[] = [];
   const lines = rawText.split(/\r?\n/);
   const activeWsId = workspaceId || 'workspace1';
+  const triggerScriptEval = options?.triggerScriptEval === true;
 
   lines.forEach((line, lineIndex) => {
     const trimmed = line.trim();
@@ -92,13 +94,12 @@ export function parseAggregationLines(
     if (type === 'number') {
       if (scriptEvaluationService.isScriptExpression(rawValue)) {
         isScriptEvaluated = true;
-        const evalNum = scriptEvaluationService.getEvaluatedNumber(activeWsId, rawValue);
+        const evalNum = scriptEvaluationService.getEvaluatedNumber(activeWsId, rawValue, triggerScriptEval);
         if (evalNum !== null && typeof evalNum === 'number') {
           numericValue = evalNum;
           scriptFormatted = scriptEvaluationService.getFormattedResult(activeWsId, rawValue) || `£${evalNum.toFixed(2)}`;
         } else {
           numericValue = 0;
-          scriptEvaluationService.evaluateAsync(activeWsId, rawValue).catch(() => {});
         }
       } else {
         const cleaned = rawValue.replace(/[^0-9.-]/g, '');
@@ -203,7 +204,8 @@ function findWorkspaceDiagramEntry(
 export function collectAggregationsFromPageAndChildren(
   currentPage: DiagramPage,
   activeDocument: DiagramDocument,
-  workspace?: Workspace | null
+  workspace?: Workspace | null,
+  options?: { triggerScriptEval?: boolean }
 ): {
   groups: AggregationGroup[];
   totalSearchedPages: number;
@@ -278,15 +280,20 @@ export function collectAggregationsFromPageAndChildren(
 
       const combinedText = descTexts.join('\n');
       if (combinedText.includes('@')) {
-        const parsed = parseAggregationLines(combinedText, {
-          nodeId: node.id,
-          nodeLabel: node.label,
-          nodeType: node.type,
-          pageId: page.id,
-          pageTitle: page.title || 'Page',
-          diagramFilename,
-          diagramTitle,
-        }, workspace?.id);
+        const parsed = parseAggregationLines(
+          combinedText,
+          {
+            nodeId: node.id,
+            nodeLabel: node.label,
+            nodeType: node.type,
+            pageId: page.id,
+            pageTitle: page.title || 'Page',
+            diagramFilename,
+            diagramTitle,
+          },
+          workspace?.id,
+          { triggerScriptEval: options?.triggerScriptEval }
+        );
         allItems.push(...parsed);
       }
 
@@ -379,12 +386,14 @@ export function collectAggregationsFromPageAndChildren(
     return a.displayName.localeCompare(b.displayName);
   });
 
-  // Trigger batch evaluation for any script expressions that are pending
-  const scriptExprs = allItems
-    .filter(it => it.isScriptEvaluated && it.value)
-    .map(it => it.value);
-  if (scriptExprs.length > 0) {
-    scriptEvaluationService.evaluateBatch(workspace?.id || 'workspace1', scriptExprs).catch(() => {});
+  // Trigger batch evaluation only when explicitly requested on demand
+  if (options?.triggerScriptEval) {
+    const scriptExprs = allItems
+      .filter(it => it.isScriptEvaluated && it.value)
+      .map(it => it.value);
+    if (scriptExprs.length > 0) {
+      scriptEvaluationService.evaluateBatch(workspace?.id || 'workspace1', scriptExprs).catch(() => {});
+    }
   }
 
   return {

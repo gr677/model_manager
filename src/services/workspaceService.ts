@@ -185,8 +185,6 @@ class WorkspaceService {
         const data = await resp.json();
         if (Array.isArray(data)) {
           this.syncWithServerWorkspaces(data);
-          // Preload all diagram documents in the active workspace so child/grandchild aggregations work immediately
-          this.preloadAllDiagramsInWorkspace(this.store.activeWorkspaceId).catch(() => {});
           return data;
         }
       }
@@ -549,7 +547,6 @@ class WorkspaceService {
     if (this.store.workspaces[workspaceId]) {
       this.store.activeWorkspaceId = workspaceId;
       this.saveStore();
-      this.preloadAllDiagramsInWorkspace(workspaceId).catch(() => {});
       return this.store.workspaces[workspaceId];
     }
     return this.getActiveWorkspace();

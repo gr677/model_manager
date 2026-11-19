@@ -126,6 +126,7 @@ export default function App() {
   const [selectedAggregationFields, setSelectedAggregationFields] = useState<string[]>([]);
   const [showAggregationBadges, setShowAggregationBadges] = useState(true);
   const [aggregationCalcVersion, setAggregationCalcVersion] = useState(0);
+  const [hasEvaluatedAggregations, setHasEvaluatedAggregations] = useState(false);
   const [isRecalculatingAggregations, setIsRecalculatingAggregations] = useState(false);
   const [lastAggregationRecalcAt, setLastAggregationRecalcAt] = useState<Date | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<{
@@ -293,11 +294,21 @@ export default function App() {
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const selectedNodeId = selectedNodes.length === 1 ? selectedNodes[0].id : null;
 
-  // Aggregation results from current page & entire descendant tree
+  // Reset on-demand aggregation evaluation state when flipping workspaces, diagrams, or pages
+  useEffect(() => {
+    setHasEvaluatedAggregations(false);
+    setLastAggregationRecalcAt(null);
+  }, [activeWs?.id, activeWs?.activeDiagramFilename, currentPage?.id]);
+
+  // Aggregation results from current page & entire descendant tree (strictly on demand)
   const aggregationResult = React.useMemo(() => {
-    if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
-    return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
-  }, [currentPage, document, activeWs, scriptEvalVersion, aggregationCalcVersion]);
+    if (!currentPage || !hasEvaluatedAggregations) {
+      return { groups: [], totalSearchedPages: 0, totalItemsFound: 0 };
+    }
+    return collectAggregationsFromPageAndChildren(currentPage, document, activeWs, {
+      triggerScriptEval: false,
+    });
+  }, [currentPage, document, activeWs, hasEvaluatedAggregations, scriptEvalVersion, aggregationCalcVersion]);
 
   const activeSelectedAggregationFields = React.useMemo(() => {
     if (selectedAggregationFields.length === 0) return [];
@@ -378,7 +389,7 @@ export default function App() {
     });
   }, [activeSelectedAggregationFields.length, aggregationResult.groups]);
 
-  // Full recalculation: reload descendant diagrams, re-evaluate all script expressions, and recompute tree totals
+  // On-demand evaluation & recalculation: reload descendant diagrams, evaluate script expressions, and compute tree totals
   const handleRecalculateAggregations = useCallback(async () => {
     if (!currentPage) return;
     setIsRecalculatingAggregations(true);
@@ -402,7 +413,8 @@ export default function App() {
       const freshScan = collectAggregationsFromPageAndChildren(
         refreshedPage,
         documentRef.current,
-        refreshedWs
+        refreshedWs,
+        { triggerScriptEval: false }
       );
 
       const scriptExprs = freshScan.groups
@@ -413,63 +425,17 @@ export default function App() {
       await scriptEvaluationService.refreshAllRates(wsId, scriptExprs);
 
       setActiveWs({ ...refreshedWs });
+      setHasEvaluatedAggregations(true);
       setAggregationCalcVersion(v => v + 1);
       setLastAggregationRecalcAt(new Date());
+
+      if (selectedAggregationFields.length === 0 && freshScan.groups.length > 0) {
+        setSelectedAggregationFields([freshScan.groups[0].name]);
+      }
     } finally {
       setIsRecalculatingAggregations(false);
     }
-  }, [currentPage, activeWs?.id, activeWs?.activeDiagramFilename]);
-
-  // Ensure all child/grandchild diagrams in the active workspace are loaded so tree aggregations are complete
-  useEffect(() => {
-    if (!offlineSyncService.isOnline()) return;
-    const wsId = activeWs?.id;
-    if (!wsId) return;
-
-    const missingEntry = Object.values(activeWs.diagrams || {}).some(
-      entry => !entry?.document || !Array.isArray(entry.document.pages)
-    );
-    const referencedChildFiles: string[] = [];
-    for (const page of document.pages || []) {
-      for (const node of page.nodes || []) {
-        for (const ref of getNodeChildDiagrams(node)) {
-          if (ref.filename) referencedChildFiles.push(ref.filename);
-        }
-        if (typeof node.data?.legacyTargetPage === 'string' && node.data.legacyTargetPage.trim()) {
-          const raw = node.data.legacyTargetPage.trim().toLowerCase();
-          referencedChildFiles.push(raw.endsWith('.json') ? raw : `${raw}.json`);
-        }
-      }
-    }
-    const missingReferenced = referencedChildFiles.some(fn => {
-      const lower = fn.toLowerCase();
-      const match = Object.entries(activeWs.diagrams || {}).find(
-        ([key]) => key.toLowerCase() === lower
-      );
-      return !match || !match[1]?.document || !Array.isArray(match[1].document.pages);
-    });
-
-    if (missingEntry || missingReferenced) {
-      workspaceService
-        .preloadAllDiagramsInWorkspace(wsId, {
-          skipFilename: activeWs.activeDiagramFilename || 'root.json',
-        })
-        .catch(() => {});
-    }
-  }, [activeWs?.id, activeWs?.activeDiagramFilename, activeWs?.diagrams, document]);
-
-  // Refresh descendant diagrams on disk whenever the Aggregations panel opens
-  useEffect(() => {
-    if (!isAggregationsOpen || !offlineSyncService.isOnline()) return;
-    const wsId = activeWorkspaceIdRef.current || activeWs?.id;
-    if (!wsId) return;
-    workspaceService
-      .preloadAllDiagramsInWorkspace(wsId, {
-        forceRefresh: true,
-        skipFilename: activeDiagramFilenameRef.current || activeWs?.activeDiagramFilename || 'root.json',
-      })
-      .catch(() => {});
-  }, [isAggregationsOpen, activeWs?.id]);
+  }, [currentPage, activeWs?.id, activeWs?.activeDiagramFilename, selectedAggregationFields.length]);
 
   // Subscribe to offline sync & collaboration services
   useEffect(() => {
@@ -2087,6 +2053,7 @@ export default function App() {
         onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
         onRecalculateAggregations={handleRecalculateAggregations}
         isRecalculatingAggregations={isRecalculatingAggregations}
+        hasEvaluatedAggregations={hasEvaluatedAggregations}
       />
 
       {/* Main Studio Body: Sidebar + Canvas + Inspector */}
@@ -2228,6 +2195,7 @@ export default function App() {
               totalItemsFound={aggregationResult.totalItemsFound}
               onRecalculate={handleRecalculateAggregations}
               isRecalculating={isRecalculatingAggregations}
+              hasEvaluated={hasEvaluatedAggregations}
               lastRecalculatedAt={lastAggregationRecalcAt}
               theme={settings.theme}
               showValuesOnCanvas={showAggregationBadges}

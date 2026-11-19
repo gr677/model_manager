@@ -2943,7 +2943,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                     const labelPart = m.slice(7, colonIdx).trim();
                     const expr = m.slice(colonIdx + 1).trim();
                     const formatted = scriptEvaluationService.getFormattedResult(activeWs.id, expr);
-                    const numVal = scriptEvaluationService.getEvaluatedNumber(activeWs.id, expr);
+                    const numVal = scriptEvaluationService.getEvaluatedNumber(activeWs.id, expr, false);
 
                     return (
                       <div key={idx} className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-slate-800/40">
@@ -2954,9 +2954,16 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                               {formatted || `£${numVal.toFixed(2)}`}
                             </span>
                           ) : (
-                            <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 animate-pulse text-[10px]">
-                              calculating...
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                scriptEvaluationService.evaluateAsync(activeWs.id, expr).catch(() => {});
+                              }}
+                              className="px-1.5 py-0.2 rounded bg-slate-800 hover:bg-emerald-900/60 text-slate-300 hover:text-emerald-300 border border-slate-700 text-[10px] cursor-pointer transition-colors"
+                              title="Evaluate this script expression now"
+                            >
+                              Evaluate
+                            </button>
                           )}
                         </div>
                       </div>

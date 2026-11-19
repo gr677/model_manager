@@ -73,14 +73,19 @@ class ScriptEvaluationService {
     return /^[a-zA-Z0-9_-]+\s*\([\s\S]*\)$/.test(trimmed);
   }
 
-  public getEvaluatedNumber(workspaceId: string, expression: string): number | null {
+  public getEvaluatedNumber(
+    workspaceId: string,
+    expression: string,
+    triggerAsync: boolean = false
+  ): number | null {
     const key = this.makeKey(workspaceId, expression);
     const entry = this.cache.get(key);
     if (entry && typeof entry.result === 'number') {
       return entry.result;
     }
-    // If not in flight and not cached, enqueue background evaluation
-    this.evaluateAsync(workspaceId, expression).catch(() => {});
+    if (triggerAsync) {
+      this.evaluateAsync(workspaceId, expression).catch(() => {});
+    }
     return null;
   }
 

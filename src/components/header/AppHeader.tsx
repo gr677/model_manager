@@ -96,6 +96,7 @@ interface AppHeaderProps {
   onToggleShowValuesOnCanvas?: () => void;
   onRecalculateAggregations?: () => Promise<void> | void;
   isRecalculatingAggregations?: boolean;
+  hasEvaluatedAggregations?: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -142,6 +143,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleShowValuesOnCanvas,
   onRecalculateAggregations,
   isRecalculatingAggregations = false,
+  hasEvaluatedAggregations = true,
 }) => {
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
@@ -646,7 +648,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                 <span>Aggregations</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  {activeSelectedGroups.length > 0
+                  {isRecalculatingAggregations
+                    ? '...'
+                    : !hasEvaluatedAggregations
+                    ? 'On-demand'
+                    : activeSelectedGroups.length > 0
                     ? `${activeSelectedGroups.length}/${aggregationGroups.length}`
                     : aggregationGroups.length}
                 </span>
@@ -662,8 +668,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                   <div className={`px-2 py-1 text-[10px] font-mono uppercase border-b mb-1 flex items-center justify-between ${
                     isDark ? 'text-slate-400 border-slate-800' : 'text-slate-500 border-slate-200'
                   }`}>
-                    <span>Aggregated Fields ({aggregationGroups.length})</span>
-                    {activeSelectedType ? (
+                    <span>
+                      {hasEvaluatedAggregations
+                        ? `Aggregated Fields (${aggregationGroups.length})`
+                        : 'Aggregations (On-Demand)'}
+                    </span>
+                    {activeSelectedType && hasEvaluatedAggregations ? (
                       <div className="flex items-center gap-1.5">
                         {onSelectAllAggregationType && (
                           <button
@@ -694,7 +704,47 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     )}
                   </div>
 
-                  {aggregationGroups.length === 0 ? (
+                  {!hasEvaluatedAggregations ? (
+                    <div className="p-2.5 space-y-2.5">
+                      <div className={`p-2 rounded-lg flex items-center justify-between gap-2 border ${
+                        isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-100 border-slate-200'
+                      }`}>
+                        <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={showValuesOnCanvas}
+                            onChange={onToggleShowValuesOnCanvas}
+                            className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 cursor-pointer shrink-0"
+                          />
+                          <span className={`text-[11px] font-medium truncate ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                            Show badges on canvas nodes
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className={`p-3 rounded-lg border text-center space-y-2 ${
+                        isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <p className={`text-[11px] font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                          Not evaluated yet
+                        </p>
+                        <p className="text-[10px] leading-relaxed text-slate-400">
+                          Aggregations are evaluated only on demand so flipping workspaces stays fast.
+                        </p>
+                        {onRecalculateAggregations && (
+                          <button
+                            type="button"
+                            disabled={isRecalculatingAggregations}
+                            onClick={() => onRecalculateAggregations()}
+                            className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait shadow-sm"
+                          >
+                            <RotateCw className={`w-3.5 h-3.5 ${isRecalculatingAggregations ? 'animate-spin' : ''}`} />
+                            <span>{isRecalculatingAggregations ? 'Evaluating...' : 'Evaluate Aggregations'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : aggregationGroups.length === 0 ? (
                     <div className="p-3 text-center text-slate-400 space-y-1.5">
                       <p className="text-[11px] font-semibold text-slate-300">No aggregation tags found</p>
                       <p className="text-[10px] leading-relaxed text-slate-400">

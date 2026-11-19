@@ -43,6 +43,7 @@ interface AggregationsPanelProps {
   onFocusNode?: (nodeId: string, item?: AggregatedItem) => void;
   onRecalculate?: () => Promise<void> | void;
   isRecalculating?: boolean;
+  hasEvaluated?: boolean;
   lastRecalculatedAt?: Date | null;
   theme?: AppTheme;
   showValuesOnCanvas?: boolean;
@@ -62,6 +63,7 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   onFocusNode,
   onRecalculate,
   isRecalculating = false,
+  hasEvaluated = true,
   lastRecalculatedAt = null,
   theme = 'dark',
   showValuesOnCanvas = true,
@@ -297,11 +299,13 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
             <div className="flex items-center gap-1.5">
               <h2 className="text-xs font-bold uppercase tracking-wider">Aggregations</h2>
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                {groups.length} Fields
+                {hasEvaluated ? `${groups.length} Fields` : 'On-Demand'}
               </span>
             </div>
             <p className="text-[10px] text-slate-400 truncate">
-              Tree from current page &amp; all descendants ({totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'})
+              {hasEvaluated
+                ? `Tree from current page & all descendants (${totalSearchedPages} page${totalSearchedPages === 1 ? '' : 's'})`
+                : 'Not evaluated yet for this page'}
             </p>
           </div>
         </div>
@@ -316,10 +320,18 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                 ? 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-700/60'
                 : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
             }`}
-            title="Reload descendant diagrams, re-evaluate script expressions/live rates, and recalculate all aggregation totals"
+            title="Load descendant diagrams, evaluate script expressions/live rates, and calculate all aggregation totals"
           >
             <RotateCw className={`w-3 h-3 ${isRecalcBusy ? 'animate-spin' : ''}`} />
-            <span>{isRecalcBusy ? 'Recalculating...' : 'Recalculate'}</span>
+            <span>
+              {isRecalcBusy
+                ? hasEvaluated
+                  ? 'Recalculating...'
+                  : 'Evaluating...'
+                : hasEvaluated
+                ? 'Recalculate'
+                : 'Evaluate'}
+            </span>
           </button>
 
           <button
@@ -381,19 +393,21 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
         <div ref={fieldDropdownRef} className="relative">
           <button
             type="button"
-            disabled={groups.length === 0}
+            disabled={!hasEvaluated || groups.length === 0}
             onClick={() => setIsFieldDropdownOpen(v => !v)}
             className={`w-full pl-8 pr-8 py-2 rounded-xl text-xs font-semibold border text-left transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between ${
               isDark
                 ? 'bg-slate-950 border-slate-700 text-slate-100 hover:border-slate-600'
                 : 'bg-slate-100 border-slate-300 text-slate-800 hover:border-slate-400'
-            } ${groups.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+            } ${!hasEvaluated || groups.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
               {activeType ? getTypeIcon(activeType) : <Layers className="w-3.5 h-3.5 text-slate-400" />}
             </div>
             <span className="truncate">
-              {groups.length === 0
+              {!hasEvaluated
+                ? 'Click Evaluate to scan tags...'
+                : groups.length === 0
                 ? 'No special @type tags found'
                 : selectedGroups.length === 0
                 ? 'Select one or more fields...'
@@ -524,7 +538,35 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
 
       {/* Main Panel Content */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
-        {groups.length === 0 ? (
+        {!hasEvaluated ? (
+          <div className="p-4 text-center space-y-3.5 mt-6">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-600/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400">
+              <RotateCw className={`w-6 h-6 ${isRecalcBusy ? 'animate-spin' : ''}`} />
+            </div>
+            <div>
+              <h3 className={`text-xs font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                Aggregations Not Evaluated Yet
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                To keep flipping between workspaces fast, descendant diagram scanning and script/live-rate calculations only run when you request them.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={isRecalcBusy}
+              onClick={handleRecalculate}
+              className="w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/25 disabled:opacity-60 disabled:cursor-wait"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isRecalcBusy ? 'animate-spin' : ''}`} />
+              <span>{isRecalcBusy ? 'Evaluating Aggregations...' : 'Evaluate Aggregations'}</span>
+            </button>
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-left font-mono text-[10px] space-y-1 text-slate-300">
+              <div className="text-sky-300">@text todo: wash the car</div>
+              <div className="text-emerald-300">@number share: 345</div>
+              <div className="text-amber-300">@date due: 2027-10-25</div>
+            </div>
+          </div>
+        ) : groups.length === 0 ? (
           <div className="p-4 text-center space-y-3 mt-6">
             <div className="w-12 h-12 rounded-2xl bg-slate-800/60 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
               <Layers className="w-6 h-6 text-slate-400" />
@@ -879,7 +921,9 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
           </span>
         </span>
         <span className="font-mono text-[9px] text-slate-500 shrink-0">
-          {totalItemsFound} tag{totalItemsFound === 1 ? '' : 's'} across {totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'}
+          {hasEvaluated
+            ? `${totalItemsFound} tag${totalItemsFound === 1 ? '' : 's'} across ${totalSearchedPages} page${totalSearchedPages === 1 ? '' : 's'}`
+            : 'Not evaluated yet'}
         </span>
       </div>
     </aside>
