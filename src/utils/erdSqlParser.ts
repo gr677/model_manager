@@ -1192,7 +1192,7 @@ export function applySqlChangesToErd(
             }
             if (
               droppedCol &&
-              edge.sourceNodeId === ent.nodeId &&
+              (edge.targetNodeId === ent.nodeId || edge.sourceNodeId === ent.nodeId) &&
               edge.label?.toLowerCase().startsWith(`${droppedCol.toLowerCase()} ➔`)
             ) {
               return false;
@@ -1206,7 +1206,7 @@ export function applySqlChangesToErd(
           if (!ent) return;
           workingEdges = workingEdges.map(edge => {
             if (
-              edge.sourceNodeId === ent.nodeId &&
+              (edge.targetNodeId === ent.nodeId || edge.sourceNodeId === ent.nodeId) &&
               edge.label?.toLowerCase().startsWith(`${oldCol.toLowerCase()} ➔`)
             ) {
               return { ...edge, label: edge.label.replace(new RegExp(`^${oldCol}`, 'i'), newCol) };
@@ -1382,7 +1382,10 @@ export function applySqlChangesToErd(
   }
 
   // Create edges for newly added FKs
-  const rawNewEdges = createErdEdges(newForeignKeys, tablePositions, new Map());
+  const activeTablesMap = new Map<string, ParsedTable>(
+    allEntities.filter(e => !e.isDropped).map(e => [e.table.name.toLowerCase(), e.table])
+  );
+  const rawNewEdges = createErdEdges(newForeignKeys, tablePositions, activeTablesMap);
   let edgeAddedCount = 0;
   for (const ne of rawNewEdges) {
     const duplicate = workingEdges.some(
@@ -1600,46 +1603,54 @@ function createErdEdges(
   const edgeKeySet = new Set<string>();
 
   for (const fk of foreignKeys) {
-    const sourcePos = tablePositions.get(fk.sourceTable.toLowerCase());
-    const targetPos = tablePositions.get(fk.targetTable.toLowerCase());
+    // In SQL, fk.sourceTable holds the Foreign Key (child / MANY side)
+    // and fk.targetTable holds the Primary Key (parent / ONE side).
+    const childPos = tablePositions.get(fk.sourceTable.toLowerCase());
+    const parentPos = tablePositions.get(fk.targetTable.toLowerCase());
 
-    if (!sourcePos || !targetPos) {
+    if (!childPos || !parentPos) {
       continue;
     }
 
-    // Skip self-referencing duplicates or duplicate lines between same two tables
-    const uniqueKey = `${sourcePos.nodeId}->${targetPos.nodeId}:${fk.sourceColumns.join(',')}`;
+    // Skip duplicate FK lines between the same child/parent columns
+    const uniqueKey = `${parentPos.nodeId}->${childPos.nodeId}:${fk.sourceColumns.join(',')}`;
     if (edgeKeySet.has(uniqueKey)) continue;
     edgeKeySet.add(uniqueKey);
 
-    // Pick best anchors based on relative position
+    // Pick best anchors from Parent (PK, 1 side) -> Child (FK, Many side)
     let sourceAnchor = 'right';
     let targetAnchor = 'left';
 
-    const dx = targetPos.x - sourcePos.x;
-    const dy = targetPos.y - sourcePos.y;
+    const dx = childPos.x - parentPos.x;
+    const dy = childPos.y - parentPos.y;
 
     if (Math.abs(dx) >= Math.abs(dy)) {
       if (dx > 0) {
-        // Target is to the right
+        // Child is to the right of Parent
         sourceAnchor = 'right';
         targetAnchor = 'left';
       } else {
-        // Target is to the left
+        // Child is to the left of Parent
         sourceAnchor = 'left';
         targetAnchor = 'right';
       }
     } else {
       if (dy > 0) {
-        // Target is below
+        // Child is below Parent
         sourceAnchor = 'bottom';
         targetAnchor = 'top';
       } else {
-        // Target is above
+        // Child is above Parent
         sourceAnchor = 'top';
         targetAnchor = 'bottom';
       }
     }
+
+    const childTable = tablesMap.get(fk.sourceTable.toLowerCase());
+    const fkCols = fk.sourceColumns
+      .map(colName => childTable?.columns.find(c => c.name.toLowerCase() === colName.toLowerCase()))
+      .filter((c): c is ParsedColumn => !!c);
+    const hasNullableFk = fkCols.length > 0 && fkCols.some(c => c.isNullable !== false);
 
     const labelText = fk.constraintName
       ? fk.constraintName
@@ -1648,19 +1659,19 @@ function createErdEdges(
       : 'FK';
 
     const edge: DiagramEdge = {
-      id: `edge_${sourcePos.nodeId}_${targetPos.nodeId}_${Math.random().toString(36).substring(2, 6)}`,
-      sourceNodeId: sourcePos.nodeId,
-      targetNodeId: targetPos.nodeId,
+      id: `edge_${parentPos.nodeId}_${childPos.nodeId}_${Math.random().toString(36).substring(2, 6)}`,
+      sourceNodeId: parentPos.nodeId, // Parent / PK table (1 side)
+      targetNodeId: childPos.nodeId,  // Child / FK table (Many side)
       sourceAnchor,
       targetAnchor,
       label: labelText,
       type: 'orthogonal',
       lineStyle: 'solid',
-      markerStart: 'none',
-      markerEnd: 'crow-foot-many', // ERD standard: child table has foreign keys, points to 1 parent
+      markerStart: hasNullableFk ? 'crow-zero-one' : 'crow-one-only',
+      markerEnd: 'crow-zero-many', // Crow's foot on the child (FK) table end
       cardinality: {
-        source: '0..*',
-        target: '1',
+        source: hasNullableFk ? '0..1' : '1',
+        target: '0..*',
       },
       color: '#0284c7',
       strokeWidth: 2,

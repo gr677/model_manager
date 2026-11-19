@@ -177,15 +177,22 @@ class ScriptEvaluationService {
     }
   }
 
-  public async refreshAllRates(workspaceId: string): Promise<void> {
-    // Clear in-memory cache and re-fetch all expressions
-    const keysToRefresh = Array.from(this.cache.keys()).filter(k => k.startsWith(`${workspaceId}:`));
-    const expressionsToRefresh = keysToRefresh.map(k => this.cache.get(k)!.expression);
+  public async refreshAllRates(workspaceId: string, extraExpressions: string[] = []): Promise<void> {
+    const wsId = workspaceId || 'workspace1';
+    // Clear in-memory cache and re-fetch all cached + discovered script expressions
+    const keysToRefresh = Array.from(this.cache.keys()).filter(k => k.startsWith(`${wsId}:`));
+    const cachedExpressions = keysToRefresh.map(k => this.cache.get(k)!.expression);
+    const expressionsToRefresh = Array.from(
+      new Set([
+        ...cachedExpressions,
+        ...extraExpressions.filter(expr => this.isScriptExpression(expr)),
+      ])
+    );
     keysToRefresh.forEach(k => this.cache.delete(k));
     this.saveToStorage();
     this.notify();
     if (expressionsToRefresh.length > 0) {
-      await this.evaluateBatch(workspaceId, expressionsToRefresh);
+      await this.evaluateBatch(wsId, expressionsToRefresh);
     }
   }
 }

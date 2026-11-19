@@ -41,6 +41,9 @@ interface AggregationsPanelProps {
   totalSearchedPages: number;
   totalItemsFound: number;
   onFocusNode?: (nodeId: string, item?: AggregatedItem) => void;
+  onRecalculate?: () => Promise<void> | void;
+  isRecalculating?: boolean;
+  lastRecalculatedAt?: Date | null;
   theme?: AppTheme;
   showValuesOnCanvas?: boolean;
   onToggleShowValuesOnCanvas?: () => void;
@@ -57,6 +60,9 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   totalSearchedPages,
   totalItemsFound,
   onFocusNode,
+  onRecalculate,
+  isRecalculating = false,
+  lastRecalculatedAt = null,
   theme = 'dark',
   showValuesOnCanvas = true,
   onToggleShowValuesOnCanvas,
@@ -64,19 +70,26 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
   const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
   const [searchFilter, setSearchFilter] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
-  const [isRefreshingRates, setIsRefreshingRates] = useState(false);
+  const [localRecalculating, setLocalRecalculating] = useState(false);
   const [isFieldDropdownOpen, setIsFieldDropdownOpen] = useState(false);
   const fieldDropdownRef = React.useRef<HTMLDivElement>(null);
   const lastSelectionKeyRef = React.useRef<string>('');
   const knownItemIdsRef = React.useRef<Set<string>>(new Set());
 
-  const handleRefreshRates = async () => {
-    setIsRefreshingRates(true);
+  const isRecalcBusy = isRecalculating || localRecalculating;
+
+  const handleRecalculate = async () => {
+    if (isRecalcBusy) return;
+    setLocalRecalculating(true);
     try {
-      const ws = workspaceService.getActiveWorkspace();
-      await scriptEvaluationService.refreshAllRates(ws.id);
+      if (onRecalculate) {
+        await onRecalculate();
+      } else {
+        const ws = workspaceService.getActiveWorkspace();
+        await scriptEvaluationService.refreshAllRates(ws.id);
+      }
     } finally {
-      setIsRefreshingRates(false);
+      setLocalRecalculating(false);
     }
   };
 
@@ -293,16 +306,33 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
-          }`}
-          title="Close aggregations panel"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            disabled={isRecalcBusy}
+            onClick={handleRecalculate}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10.5px] font-semibold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait ${
+              isDark
+                ? 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-700/60'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+            }`}
+            title="Reload descendant diagrams, re-evaluate script expressions/live rates, and recalculate all aggregation totals"
+          >
+            <RotateCw className={`w-3 h-3 ${isRecalcBusy ? 'animate-spin' : ''}`} />
+            <span>{isRecalcBusy ? 'Recalculating...' : 'Recalculate'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
+            }`}
+            title="Close aggregations panel"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Canvas Value Badges Tickbox Control */}
@@ -591,17 +621,17 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
                     <div className="flex items-center gap-1.5 text-[10px] font-mono">
                       <button
                         type="button"
-                        disabled={isRefreshingRates}
-                        onClick={handleRefreshRates}
-                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono border transition-all cursor-pointer ${
+                        disabled={isRecalcBusy}
+                        onClick={handleRecalculate}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-mono border transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait ${
                           isDark
                             ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800/60'
                             : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-medium'
                         }`}
-                        title="Re-run Python stock & crypto evaluation scripts to fetch live market rates"
+                        title="Re-run script evaluations, refresh descendant diagrams, and recalculate totals"
                       >
-                        <RotateCw className={`w-2.5 h-2.5 ${isRefreshingRates ? 'animate-spin' : ''}`} />
-                        <span>{isRefreshingRates ? 'Updating...' : 'Live Rates'}</span>
+                        <RotateCw className={`w-2.5 h-2.5 ${isRecalcBusy ? 'animate-spin' : ''}`} />
+                        <span>{isRecalcBusy ? 'Recalculating...' : 'Recalculate'}</span>
                       </button>
                       <span className="text-slate-600">|</span>
                       <button
@@ -839,12 +869,16 @@ export const AggregationsPanel: React.FC<AggregationsPanelProps> = ({
       </div>
 
       {/* Footer Info / Syntax Hint */}
-      <div className={`p-2.5 border-t text-[10px] flex items-center justify-between text-slate-400 ${isDark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-100'}`}>
-        <span className="flex items-center gap-1 font-mono">
-          <Info className="w-3 h-3 text-sky-400" />
-          <span>Pattern: @type name: value</span>
+      <div className={`p-2.5 border-t text-[10px] flex items-center justify-between gap-2 text-slate-400 ${isDark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-100'}`}>
+        <span className="flex items-center gap-1 font-mono truncate">
+          <Info className="w-3 h-3 text-sky-400 shrink-0" />
+          <span>
+            {lastRecalculatedAt
+              ? `Updated ${lastRecalculatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+              : 'Pattern: @type name: value'}
+          </span>
         </span>
-        <span className="font-mono text-[9px] text-slate-500">
+        <span className="font-mono text-[9px] text-slate-500 shrink-0">
           {totalItemsFound} tag{totalItemsFound === 1 ? '' : 's'} across {totalSearchedPages} page{totalSearchedPages === 1 ? '' : 's'}
         </span>
       </div>

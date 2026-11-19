@@ -46,6 +46,7 @@ import {
   FileJson,
   Upload,
   Fish,
+  RotateCw,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { workspaceService } from '../../services/workspaceService';
@@ -93,6 +94,8 @@ interface AppHeaderProps {
   onClearAggregationFields?: () => void;
   showValuesOnCanvas?: boolean;
   onToggleShowValuesOnCanvas?: () => void;
+  onRecalculateAggregations?: () => Promise<void> | void;
+  isRecalculatingAggregations?: boolean;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -137,6 +140,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onClearAggregationFields,
   showValuesOnCanvas = true,
   onToggleShowValuesOnCanvas,
+  onRecalculateAggregations,
+  isRecalculatingAggregations = false,
 }) => {
   const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState(false);
   const [isRoleSubmenuOpen, setIsRoleSubmenuOpen] = useState(false);
@@ -703,21 +708,37 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-72 overflow-y-auto py-1">
-                      {/* Canvas Value Badges Tickbox Control */}
-                      <div className={`p-2 rounded-lg mb-1.5 flex items-center justify-between border ${
+                      {/* Canvas Value Badges Tickbox & Recalculate Control */}
+                      <div className={`p-2 rounded-lg mb-1.5 flex items-center justify-between gap-2 border ${
                         isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-100 border-slate-200'
                       }`}>
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
                           <input
                             type="checkbox"
                             checked={showValuesOnCanvas}
                             onChange={onToggleShowValuesOnCanvas}
-                            className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 cursor-pointer"
+                            className="w-3.5 h-3.5 rounded border-slate-600 text-blue-600 accent-blue-600 cursor-pointer shrink-0"
                           />
-                          <span className={`text-[11px] font-medium ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          <span className={`text-[11px] font-medium truncate ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                             Show badges on canvas nodes
                           </span>
                         </label>
+                        {onRecalculateAggregations && (
+                          <button
+                            type="button"
+                            disabled={isRecalculatingAggregations}
+                            onClick={() => onRecalculateAggregations()}
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer shrink-0 disabled:opacity-60 disabled:cursor-wait ${
+                              isDark
+                                ? 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-700/60'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                            }`}
+                            title="Reload descendant diagrams, re-evaluate script expressions/live rates, and recalculate all aggregation totals"
+                          >
+                            <RotateCw className={`w-2.5 h-2.5 ${isRecalculatingAggregations ? 'animate-spin' : ''}`} />
+                            <span>{isRecalculatingAggregations ? 'Updating...' : 'Recalculate'}</span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="px-2 py-0.5 text-[9px] font-mono uppercase text-slate-400 flex items-center justify-between">

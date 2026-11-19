@@ -54,6 +54,8 @@ import {
   Target,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
+import { workspaceService } from '../../services/workspaceService';
+import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
 import { NodeAnchor, NODE_ANCHOR_DEFINITIONS, getNodeAnchorRelativeCoords } from '../../utils/diagramAnchors';
 
@@ -117,18 +119,33 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   const [isHovered, setIsHovered] = React.useState(false);
   const [mouseEntryPos, setMouseEntryPos] = React.useState<{ x: number; y: number } | null>(null);
 
+  const [scriptBadgeTick, setScriptBadgeTick] = React.useState(0);
+
+  React.useEffect(() => {
+    const desc = node.documentation?.description;
+    if (!showAggregationBadges || !desc || !desc.includes('@')) return;
+    return scriptEvaluationService.subscribe(() => {
+      setScriptBadgeTick(t => t + 1);
+    });
+  }, [showAggregationBadges, node.documentation?.description]);
+
   // Parse special instruction tags (@type name: value) on this node
   const nodeAggregationItems = React.useMemo(() => {
     if (!showAggregationBadges || !node.documentation?.description) return [];
-    return parseAggregationLines(node.documentation.description, {
-      nodeId: node.id,
-      nodeLabel: node.label,
-      pageId: '',
-      pageTitle: '',
-      diagramFilename: '',
-      diagramTitle: '',
-    });
-  }, [showAggregationBadges, node.documentation?.description, node.id, node.label]);
+    const wsId = workspaceService.getActiveWorkspace()?.id || 'workspace1';
+    return parseAggregationLines(
+      node.documentation.description,
+      {
+        nodeId: node.id,
+        nodeLabel: node.label,
+        pageId: '',
+        pageTitle: '',
+        diagramFilename: '',
+        diagramTitle: '',
+      },
+      wsId
+    );
+  }, [showAggregationBadges, node.documentation?.description, node.id, node.label, scriptBadgeTick]);
   const [showChildQuickMenu, setShowChildQuickMenu] = React.useState(false);
   const activeCollaborator = collaborators.find(c => c.selectedNodeId === node.id);
 
@@ -2379,12 +2396,18 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                   ? 'bg-amber-950/95 text-amber-300 border-amber-600/70 shadow-amber-950/40'
                   : 'bg-sky-950/95 text-sky-300 border-sky-600/70 shadow-sky-950/40'
               }`}
-              title={`@${item.type} ${item.displayName}: ${item.value}`}
+              title={
+                item.isScriptEvaluated && item.scriptFormatted
+                  ? `@${item.type} ${item.displayName}: ${item.scriptFormatted} (${item.value})`
+                  : `@${item.type} ${item.displayName}: ${item.value}`
+              }
             >
               {item.type === 'number' && <Hash className="w-2.5 h-2.5 shrink-0 text-emerald-400" />}
               {item.type === 'date' && <Calendar className="w-2.5 h-2.5 shrink-0 text-amber-400" />}
               {item.type === 'text' && <FileText className="w-2.5 h-2.5 shrink-0 text-sky-400" />}
-              <span className="truncate max-w-[90px]">{item.displayName}: {item.value}</span>
+              <span className="truncate max-w-[110px]">
+                {item.displayName}: {item.isScriptEvaluated && item.scriptFormatted ? item.scriptFormatted : item.value}
+              </span>
             </span>
           ))}
         </div>

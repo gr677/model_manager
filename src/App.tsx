@@ -125,6 +125,9 @@ export default function App() {
   const [isAggregationsOpen, setIsAggregationsOpen] = useState(false);
   const [selectedAggregationFields, setSelectedAggregationFields] = useState<string[]>([]);
   const [showAggregationBadges, setShowAggregationBadges] = useState(true);
+  const [aggregationCalcVersion, setAggregationCalcVersion] = useState(0);
+  const [isRecalculatingAggregations, setIsRecalculatingAggregations] = useState(false);
+  const [lastAggregationRecalcAt, setLastAggregationRecalcAt] = useState<Date | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<{
     action: () => void | Promise<void>;
     targetName?: string;
@@ -294,7 +297,7 @@ export default function App() {
   const aggregationResult = React.useMemo(() => {
     if (!currentPage) return { groups: [], totalSearchedPages: 1, totalItemsFound: 0 };
     return collectAggregationsFromPageAndChildren(currentPage, document, activeWs);
-  }, [currentPage, document, activeWs, scriptEvalVersion]);
+  }, [currentPage, document, activeWs, scriptEvalVersion, aggregationCalcVersion]);
 
   const activeSelectedAggregationFields = React.useMemo(() => {
     if (selectedAggregationFields.length === 0) return [];
@@ -374,6 +377,48 @@ export default function App() {
       return next;
     });
   }, [activeSelectedAggregationFields.length, aggregationResult.groups]);
+
+  // Full recalculation: reload descendant diagrams, re-evaluate all script expressions, and recompute tree totals
+  const handleRecalculateAggregations = useCallback(async () => {
+    if (!currentPage) return;
+    setIsRecalculatingAggregations(true);
+    try {
+      const wsId = activeWorkspaceIdRef.current || activeWs?.id || 'workspace1';
+      const currentFn =
+        activeDiagramFilenameRef.current || activeWs?.activeDiagramFilename || 'root.json';
+
+      if (offlineSyncService.isOnline()) {
+        await workspaceService
+          .preloadAllDiagramsInWorkspace(wsId, {
+            forceRefresh: true,
+            skipFilename: currentFn,
+          })
+          .catch(() => {});
+      }
+
+      const refreshedWs = workspaceService.getActiveWorkspace();
+      const refreshedPage =
+        documentRef.current.pages.find(p => p.id === currentPage.id) || currentPage;
+      const freshScan = collectAggregationsFromPageAndChildren(
+        refreshedPage,
+        documentRef.current,
+        refreshedWs
+      );
+
+      const scriptExprs = freshScan.groups
+        .flatMap(g => g.items)
+        .filter(item => item.isScriptEvaluated && item.value)
+        .map(item => item.value);
+
+      await scriptEvaluationService.refreshAllRates(wsId, scriptExprs);
+
+      setActiveWs({ ...refreshedWs });
+      setAggregationCalcVersion(v => v + 1);
+      setLastAggregationRecalcAt(new Date());
+    } finally {
+      setIsRecalculatingAggregations(false);
+    }
+  }, [currentPage, activeWs?.id, activeWs?.activeDiagramFilename]);
 
   // Ensure all child/grandchild diagrams in the active workspace are loaded so tree aggregations are complete
   useEffect(() => {
@@ -2040,6 +2085,8 @@ export default function App() {
         onClearAggregationFields={handleClearAggregationFields}
         showValuesOnCanvas={showAggregationBadges}
         onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
+        onRecalculateAggregations={handleRecalculateAggregations}
+        isRecalculatingAggregations={isRecalculatingAggregations}
       />
 
       {/* Main Studio Body: Sidebar + Canvas + Inspector */}
@@ -2179,6 +2226,9 @@ export default function App() {
               onClearFieldNames={handleClearAggregationFields}
               totalSearchedPages={aggregationResult.totalSearchedPages}
               totalItemsFound={aggregationResult.totalItemsFound}
+              onRecalculate={handleRecalculateAggregations}
+              isRecalculating={isRecalculatingAggregations}
+              lastRecalculatedAt={lastAggregationRecalcAt}
               theme={settings.theme}
               showValuesOnCanvas={showAggregationBadges}
               onToggleShowValuesOnCanvas={() => setShowAggregationBadges(prev => !prev)}
