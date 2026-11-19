@@ -213,7 +213,13 @@ export function collectAggregationsFromPageAndChildren(
 } {
   const allItems: AggregatedItem[] = [];
   const visitedPageKeys = new Set<string>();
+  const visitedNodeKeys = new Set<string>();
   const visitedDiagramFilenames = new Set<string>();
+
+  const normalizeDiagramKey = (fn: string): string => {
+    const lower = (fn || 'root.json').trim().toLowerCase();
+    return lower.endsWith('.json') ? lower : `${lower}.json`;
+  };
 
   // Queue of pages to process: { page, diagramFilename, diagramTitle, doc }
   const queue: Array<{
@@ -227,7 +233,7 @@ export function collectAggregationsFromPageAndChildren(
   const currentFilename = workspace?.activeDiagramFilename || 'root.json';
 
   // Seed with current page as the root of the tree; prevent circular jumps back into unrelated sibling pages of current file
-  visitedDiagramFilenames.add(currentFilename.toLowerCase());
+  visitedDiagramFilenames.add(normalizeDiagramKey(currentFilename));
   queue.push({
     page: currentPage,
     diagramFilename: currentFilename,
@@ -265,13 +271,22 @@ export function collectAggregationsFromPageAndChildren(
     // 2. Scan all nodes in this page
     const nodes = page.nodes || [];
     for (const node of nodes) {
+      const nodeVisitKey = `${pageKey}::${node.id}`;
+      if (visitedNodeKeys.has(nodeVisitKey)) continue;
+      visitedNodeKeys.add(nodeVisitKey);
+
       // 2a. Gather all description & notes text on this node
+      // Treat documentation.description as authoritative once defined so stale legacy data.description never double-counts an edited node.
       const descTexts: string[] = [];
-      if (node.documentation?.description) descTexts.push(node.documentation.description);
-      if (node.data?.description && node.data.description !== node.documentation?.description) {
+      const hasDocDescription = typeof node.documentation?.description === 'string';
+      if (node.documentation?.description) {
+        descTexts.push(node.documentation.description);
+      } else if (!hasDocDescription && node.data?.description) {
         descTexts.push(node.data.description);
       }
-      if (node.data?.notes) descTexts.push(node.data.notes);
+      if (node.data?.notes && node.data.notes !== node.documentation?.description) {
+        descTexts.push(node.data.notes);
+      }
       if (node.stickyNotes && Array.isArray(node.stickyNotes)) {
         node.stickyNotes.forEach(sn => {
           if (sn.text) descTexts.push(sn.text);
@@ -316,7 +331,7 @@ export function collectAggregationsFromPageAndChildren(
         const resolved = findWorkspaceDiagramEntry(workspace, rawChildFilename);
         if (!resolved) continue;
 
-        const lowerResolved = resolved.filename.toLowerCase();
+        const lowerResolved = normalizeDiagramKey(resolved.filename);
         if (visitedDiagramFilenames.has(lowerResolved)) continue;
         visitedDiagramFilenames.add(lowerResolved);
 

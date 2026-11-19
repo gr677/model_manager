@@ -1164,8 +1164,13 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
       tags: [],
       status: 'draft',
     };
+    const nextData =
+      partial.description !== undefined && selectedNode.data?.description !== undefined
+        ? { ...selectedNode.data, description: partial.description }
+        : selectedNode.data;
     onUpdateNode({
       ...selectedNode,
+      ...(nextData !== selectedNode.data ? { data: nextData } : {}),
       documentation: {
         ...currentDocs,
         ...partial,
@@ -1399,8 +1404,13 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                       tags: ['Notes'],
                       status: 'draft',
                     };
+                    const nextData =
+                      selectedNode.data?.description !== undefined
+                        ? { ...selectedNode.data, description: desc }
+                        : selectedNode.data;
                     onUpdateNode({
                       ...selectedNode,
+                      ...(nextData !== selectedNode.data ? { data: nextData } : {}),
                       documentation: { ...currentDocs, description: desc },
                     });
                   }}
