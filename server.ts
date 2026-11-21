@@ -3874,7 +3874,7 @@ CRITICAL FORMATTING & CODE QUALITY RULES:
 1. Write proper multi-line Python 3.12 with standard 4-space indentation and real newlines. NEVER join statements onto one line with semicolons (;).
 2. Use consistent package imports matching the file paths above (e.g. "from app.schemas import ..." or relative imports inside app/).
 3. Implement real working logic—no TODO stubs or placeholders. If building a web GUI with FastAPI, serve clean self-contained interactive HTML/CSS/JS via HTMLResponse from GET "/" (do NOT rely on missing templates/ or static/ folders on disk unless you also emit those files).
-4. Ensure every file compiles cleanly under Python 3.12 and matches the entry command (${String(parsed.entryCommand || 'uvicorn app.main:app')}).
+4. Ensure every file compiles cleanly under Python 3.12 and matches the entry command (${String(parsed.entryCommand || 'uvicorn app.main:app')}). If entryCommand uses "uvicorn <module>:<attr>" (for example "uvicorn app.main:app"), that exact file (e.g. app/main.py) MUST be non-empty and define "<attr>" at module top level (e.g. "app = FastAPI(...)" or "app = create_app()"), NEVER only inside a function or __main__ block.
 5. Wrap EVERY file strictly using these exact delimiters (no markdown triple backticks around file bodies):
 
 ===FILE: path/to/file.py===
@@ -3894,14 +3894,15 @@ CRITICAL FORMATTING & CODE QUALITY RULES:
       });
 
       const codeText = String(phase2Response.text || '');
-      const fileBlockRegex = /===FILE:\s*([^\r\n=]+?)\s*===\r?\n([\s\S]*?)===ENDFILE===/g;
+      const fileBlockRegex = /===FILE:\s*([^\r\n=]+?)\s*===\r?\n([\s\S]*?)(?:===ENDFILE===|(?=\r?\n===FILE:\s*[^\r\n=]+?\s*===)|$)/g;
       let match: RegExpExecArray | null;
       while ((match = fileBlockRegex.exec(codeText)) !== null) {
         const fp = match[1].trim().replace(/^\/+/, '').replace(/\\/g, '/');
         const cleanedBody = match[2]
+          .replace(/\r?\n?===ENDFILE===\s*$/i, '')
           .trimEnd()
-          .replace(/^```(?:python|py|html|txt|md)?\r?\n/i, '')
-          .replace(/\r?\n```$/, '');
+          .replace(/^\s*```(?:python|py|html|txt|md)?\r?\n/i, '')
+          .replace(/\r?\n```\s*$/, '');
         if (fp) {
           generatedCodeByPath.set(fp, cleanedBody);
         }
@@ -3918,7 +3919,7 @@ CRITICAL FORMATTING & CODE QUALITY RULES:
       .replace(/^_+|_+$/g, '');
     const projectSlug = rawSlug || `c4_python_${stamp}`;
     const summary = String(parsed.summary || prompt.trim()).trim();
-    const entryCommand = String(parsed.entryCommand || 'python -m app.main').trim();
+    let entryCommand = String(parsed.entryCommand || 'python -m app.main').trim();
     const requirements: string[] = Array.isArray(parsed.requirements)
       ? parsed.requirements.map((r: any) => String(r).trim()).filter(Boolean)
       : [];
@@ -4547,7 +4548,7 @@ CRITICAL FORMATTING & CODE QUALITY RULES:
         .replace(/^```[a-zA-Z0-9_-]*\s*/i, '')
         .replace(/\s*```$/, '')
         .trim();
-      if (fp && !fileMap.has(fp)) {
+      if (fp && !fileMap.has(fp) && (cleanContent || fp.endsWith('__init__.py'))) {
         fileMap.set(fp, {
           filePath: fp,
           purpose: String(sf.purpose || 'Project file'),
@@ -4564,6 +4565,136 @@ CRITICAL FORMATTING & CODE QUALITY RULES:
           purpose: supportPurposeByPath.get(fp) || 'Generated Python module',
           content: content.trimEnd() ? content.trimEnd() + '\n' : '',
         });
+      }
+    }
+
+    // Ensure Uvicorn ASGI entrypoint exists and exposes its module-level app attribute
+    const normalizeModuleForFile = (fp: string): string =>
+      fp.replace(/\.py$/i, '').replace(/\/__init__$/, '').replace(/\//g, '.');
+
+    const hasTopLevelSymbol = (code: string, sym: string): boolean => {
+      const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return (
+        new RegExp(`^${esc}\\s*(?::[^=\\n]+)?=`, 'm').test(code) ||
+        new RegExp(`^from\\s+[^\\n]+\\s+import\\s+[^\\n]*\\b${esc}\\b`, 'm').test(code) ||
+        new RegExp(`^def\\s+${esc}\\s*\\(`, 'm').test(code)
+      );
+    };
+
+    const uvicornMatch = entryCommand.match(/\buvicorn\s+([a-zA-Z0-9_.]+):([a-zA-Z0-9_]+)/);
+    if (uvicornMatch) {
+      const targetModule = uvicornMatch[1];
+      const targetAttr = uvicornMatch[2];
+      const targetFilePath = `${targetModule.replace(/\./g, '/')}.py`;
+      const altInitPath = `${targetModule.replace(/\./g, '/')}/__init__.py`;
+      const resolvedPath = fileMap.has(targetFilePath)
+        ? targetFilePath
+        : fileMap.has(altInitPath)
+          ? altInitPath
+          : targetFilePath;
+
+      const existingEntry = fileMap.get(resolvedPath);
+      const existingCode = existingEntry?.content || '';
+
+      if (!existingCode.trim() || !hasTopLevelSymbol(existingCode, targetAttr)) {
+        let repairedCode = existingCode.trimEnd();
+        let repaired = false;
+
+        if (repairedCode) {
+          const factoryMatch = repairedCode.match(/^def\s+(create_app|build_app|make_app|get_app)\s*\(\s*\)/m);
+          if (factoryMatch) {
+            repairedCode = `${repairedCode}\n\n${targetAttr} = ${factoryMatch[1]}()\n`;
+            repaired = true;
+          } else {
+            const otherVarMatch = repairedCode.match(
+              /^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=\n]+)?=\s*(?:FastAPI|Starlette|Litestar)\s*\(/m
+            );
+            if (otherVarMatch && otherVarMatch[1] !== targetAttr) {
+              repairedCode = `${repairedCode}\n\n${targetAttr} = ${otherVarMatch[1]}\n`;
+              repaired = true;
+            }
+          }
+        }
+
+        if (!repaired) {
+          for (const [otherPath, otherFile] of fileMap.entries()) {
+            if (!otherPath.endsWith('.py') || otherPath === resolvedPath) continue;
+            const code = otherFile.content || '';
+            const directMatch = code.match(
+              /^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=\n]+)?=\s*(?:FastAPI|Starlette|Litestar)\s*\(/m
+            );
+            const otherFactory = code.match(/^def\s+(create_app|build_app|make_app|get_app)\s*\(\s*\)/m);
+
+            if (directMatch) {
+              const foundVar = directMatch[1];
+              const modName = normalizeModuleForFile(otherPath);
+              const importLine =
+                foundVar === targetAttr
+                  ? `from ${modName} import ${foundVar}`
+                  : `from ${modName} import ${foundVar} as ${targetAttr}`;
+              repairedCode = repairedCode ? `${repairedCode}\n\n${importLine}\n` : `${importLine}\n`;
+              repaired = true;
+              break;
+            }
+            if (otherFactory) {
+              const fnName = otherFactory[1];
+              const modName = normalizeModuleForFile(otherPath);
+              const bridge = `from ${modName} import ${fnName}\n\n${targetAttr} = ${fnName}()\n`;
+              repairedCode = repairedCode ? `${repairedCode}\n\n${bridge}` : bridge;
+              repaired = true;
+              break;
+            }
+          }
+        }
+
+        if (!repaired) {
+          const allPyFiles = Array.from(fileMap.entries()).filter(([fp]) => fp.endsWith('.py'));
+          const streamlitFile = allPyFiles.find(([, f]) => /^\s*(?:import|from)\s+streamlit\b/m.test(f.content));
+          if (streamlitFile) {
+            entryCommand = `streamlit run ${streamlitFile[0]}`;
+          } else {
+            const routerFiles = allPyFiles.filter(([, f]) => /\bAPIRouter\s*\(/.test(f.content));
+            if (routerFiles.length > 0) {
+              const lines: string[] = ['from fastapi import FastAPI'];
+              const includes: string[] = [];
+              routerFiles.forEach(([fp, f], idx) => {
+                const rMatch = f.content.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=\n]+)?=\s*APIRouter\s*\(/m);
+                const rVar = rMatch ? rMatch[1] : 'router';
+                const alias = routerFiles.length === 1 ? 'api_router' : `api_router_${idx + 1}`;
+                lines.push(`from ${normalizeModuleForFile(fp)} import ${rVar} as ${alias}`);
+                includes.push(`${targetAttr}.include_router(${alias})`);
+              });
+              lines.push('', `${targetAttr} = FastAPI(title=${JSON.stringify(projectName)})`, ...includes, '');
+              repairedCode = (repairedCode ? `${repairedCode}\n\n` : '') + lines.join('\n');
+              repaired = true;
+            } else if (!repairedCode) {
+              repairedCode = `from fastapi import FastAPI\n\n${targetAttr} = FastAPI(title=${JSON.stringify(projectName)})\n\n\n@${targetAttr}.get("/")\ndef read_root():\n    return {"app": ${JSON.stringify(projectName)}, "status": "ok"}\n`;
+              repaired = true;
+            } else if (
+              allPyFiles.some(([, f]) => /\btyper\b/.test(f.content)) ||
+              /def\s+main\s*\(/.test(repairedCode)
+            ) {
+              entryCommand = `python -m ${targetModule}`;
+            }
+          }
+        }
+
+        if (repaired) {
+          const finalContent = repairedCode.endsWith('\n') ? repairedCode : `${repairedCode}\n`;
+          fileMap.set(resolvedPath, {
+            filePath: resolvedPath,
+            purpose: existingEntry?.purpose || 'FastAPI ASGI application entrypoint',
+            content: finalContent,
+            componentName: existingEntry?.componentName,
+          });
+          for (const page of pages) {
+            for (const node of page.nodes) {
+              if (node.data?.filePath === resolvedPath) {
+                node.data.pythonCode = finalContent.trim();
+              }
+            }
+          }
+        }
       }
     }
 
