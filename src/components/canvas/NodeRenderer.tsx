@@ -1781,20 +1781,29 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
               <span className="truncate font-semibold">
                 {isExternal ? '[External System]' : '[L1 · Software System]'}
               </span>
-              {node.drilldownPageId && (
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
-                  }}
-                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
-                  title="Drill down into Level 2 Containers"
-                >
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                  <span>L2</span>
-                </button>
-              )}
+              {(() => {
+                const c4Children = getNodeChildDiagrams(node);
+                const hasTarget = Boolean(node.drilldownPageId) || c4Children.length > 0;
+                if (!hasTarget) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (node.drilldownPageId) {
+                        onDrillDown?.(node.drilldownPageId);
+                      } else if (c4Children.length > 0) {
+                        onNavigateChildDiagram?.(c4Children[0].filename);
+                      }
+                    }}
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
+                    title="Drill down into Level 2 Containers"
+                  >
+                    <ArrowUpRight className="w-2.5 h-2.5" />
+                    <span>L2</span>
+                  </button>
+                );
+              })()}
             </div>
             <div className="font-bold text-xs leading-snug line-clamp-2 px-1">
               {titleLine}
@@ -1832,20 +1841,29 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
               <span className="truncate font-semibold opacity-90">
                 L2 · Container: {tech}
               </span>
-              {node.drilldownPageId && (
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
-                  }}
-                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-sky-500/30 hover:bg-sky-500 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
-                  title="Drill down into Level 3 Components"
-                >
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                  <span>L3</span>
-                </button>
-              )}
+              {(() => {
+                const c4Children = getNodeChildDiagrams(node);
+                const hasTarget = Boolean(node.drilldownPageId) || c4Children.length > 0;
+                if (!hasTarget) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (node.drilldownPageId) {
+                        onDrillDown?.(node.drilldownPageId);
+                      } else if (c4Children.length > 0) {
+                        onNavigateChildDiagram?.(c4Children[0].filename);
+                      }
+                    }}
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-sky-500/30 hover:bg-sky-500 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
+                    title="Drill down into Level 3 Components"
+                  >
+                    <ArrowUpRight className="w-2.5 h-2.5" />
+                    <span>L3</span>
+                  </button>
+                );
+              })()}
             </div>
             <div className="px-2.5 py-1 flex-1 flex flex-col justify-center">
               <div className="font-bold text-xs leading-snug line-clamp-2">
@@ -2002,20 +2020,29 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                       .py
                     </span>
                   )}
-                  {node.drilldownPageId && (
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
-                      }}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer transition-colors"
-                      title="Drill down into Level 4 Code"
-                    >
-                      <ArrowUpRight className="w-2.5 h-2.5" />
-                      <span>L4</span>
-                    </button>
-                  )}
+                  {(() => {
+                    const c4Children = getNodeChildDiagrams(node);
+                    const hasTarget = Boolean(node.drilldownPageId) || c4Children.length > 0;
+                    if (!hasTarget) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (node.drilldownPageId) {
+                            onDrillDown?.(node.drilldownPageId);
+                          } else if (c4Children.length > 0) {
+                            onNavigateChildDiagram?.(c4Children[0].filename);
+                          }
+                        }}
+                        className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer transition-colors"
+                        title="Drill down into Level 4 Code"
+                      >
+                        <ArrowUpRight className="w-2.5 h-2.5" />
+                        <span>L4</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="font-bold text-xs leading-snug line-clamp-1">

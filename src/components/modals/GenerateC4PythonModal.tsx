@@ -289,7 +289,7 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
               </h2>
               <p className={`text-xs truncate ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                 {generatedResult
-                  ? `Created ${generatedResult.pages.length} linked C4 pages and ${generatedResult.files.length} Python project files.`
+                  ? `Created L1 Context + ${Math.max(0, generatedResult.pages.length - 1)} linked C4 child diagram(s) and ${generatedResult.files.length} Python project files.`
                   : 'Designs C4 Context (L1), Containers (L2), Components (L3) & generates runnable Python modules.'}
               </p>
             </div>

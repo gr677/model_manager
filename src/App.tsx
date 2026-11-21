@@ -2521,41 +2521,197 @@ export default function App() {
         workspaceId={activeWs.id || 'workspace1'}
         currentPageName={currentPage.title}
         hasExistingNodes={currentPage.nodes.length > 0}
-        onC4ProjectGenerated={(result: GeneratedC4ProjectResult) => {
+        onC4ProjectGenerated={async (result: GeneratedC4ProjectResult) => {
           if (!result.pages || result.pages.length === 0) return;
-          const [l1Page, ...childPages] = result.pages;
-          const remappedChildren = childPages.map(cp => ({
-            ...cp,
-            parentId: cp.parentId === l1Page.id ? activePageId : cp.parentId,
-          }));
+          const wsId = activeWorkspaceIdRef.current || activeWs.id || 'workspace1';
+          const currentFilename = activeDiagramFilenameRef.current || activeWs.activeDiagramFilename || 'root.json';
+          const nowIso = new Date().toISOString();
+          const slug = (result.projectSlug || 'c4_project').replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+
+          const [l1Raw, l2Raw, l3Raw, l4Raw] = result.pages;
+          const childSaves: Array<{ filename: string; doc: DiagramDocument }> = [];
+
+          // 1. Optional L4 Code Child Diagram
+          let l4Filename: string | undefined;
+          if (l4Raw) {
+            l4Filename = workspaceService.getUniqueFilename(`${slug}_l4_code.json`, wsId);
+            const l4PageClean: DiagramPage = {
+              ...l4Raw,
+              parentId: undefined,
+            };
+            const l4Doc: DiagramDocument = {
+              id: `doc-${slug}-l4-${Date.now()}`,
+              name: `${result.projectName} — L4 Code`,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+              activePageId: l4PageClean.id,
+              settings: document.settings || { gridSnap: true, showGrid: true, theme: settings.theme, showMinimap: true },
+              versions: [],
+              pages: [l4PageClean],
+            };
+            childSaves.push({ filename: l4Filename, doc: l4Doc });
+          }
+
+          // 2. L3 Components Child Diagram (linked from primary L2 Container, links to L4 if present)
+          let l3Filename: string | undefined;
+          if (l3Raw) {
+            l3Filename = workspaceService.getUniqueFilename(`${slug}_l3_components.json`, wsId);
+            let l4Linked = false;
+            const l3Nodes = l3Raw.nodes.map(n => {
+              if (!l4Linked && l4Filename && n.type === 'c4-component') {
+                l4Linked = true;
+                const ref: ChildDiagramRef = {
+                  id: `child_l4_${Date.now()}`,
+                  filename: l4Filename,
+                  title: 'L4 Code',
+                  diagramType: 'c4',
+                  createdAt: nowIso,
+                };
+                return {
+                  ...n,
+                  drilldownPageId: undefined,
+                  childDiagrams: [ref],
+                  childDiagramFilename: l4Filename,
+                  childDiagramTitle: 'L4 Code',
+                  childDiagramType: 'c4' as DiagramType,
+                };
+              }
+              return { ...n, drilldownPageId: undefined };
+            });
+            const l3PageClean: DiagramPage = {
+              ...l3Raw,
+              parentId: undefined,
+              nodes: l3Nodes,
+            };
+            const l3Doc: DiagramDocument = {
+              id: `doc-${slug}-l3-${Date.now()}`,
+              name: `${result.projectName} — L3 Components`,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+              activePageId: l3PageClean.id,
+              settings: document.settings || { gridSnap: true, showGrid: true, theme: settings.theme, showMinimap: true },
+              versions: [],
+              pages: [l3PageClean],
+            };
+            childSaves.push({ filename: l3Filename, doc: l3Doc });
+          }
+
+          // 3. L2 Containers Child Diagram (linked from L1 System, links to L3)
+          let l2Filename: string | undefined;
+          if (l2Raw) {
+            l2Filename = workspaceService.getUniqueFilename(`${slug}_l2_containers.json`, wsId);
+            let l3Linked = false;
+            const l2Nodes = l2Raw.nodes.map(n => {
+              if (!l3Linked && l3Filename && n.type === 'c4-container') {
+                l3Linked = true;
+                const ref: ChildDiagramRef = {
+                  id: `child_l3_${Date.now()}`,
+                  filename: l3Filename,
+                  title: 'L3 Components',
+                  diagramType: 'c4',
+                  createdAt: nowIso,
+                };
+                return {
+                  ...n,
+                  drilldownPageId: undefined,
+                  childDiagrams: [ref],
+                  childDiagramFilename: l3Filename,
+                  childDiagramTitle: 'L3 Components',
+                  childDiagramType: 'c4' as DiagramType,
+                };
+              }
+              return { ...n, drilldownPageId: undefined };
+            });
+            const l2PageClean: DiagramPage = {
+              ...l2Raw,
+              parentId: undefined,
+              nodes: l2Nodes,
+            };
+            const l2Doc: DiagramDocument = {
+              id: `doc-${slug}-l2-${Date.now()}`,
+              name: `${result.projectName} — L2 Containers`,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+              activePageId: l2PageClean.id,
+              settings: document.settings || { gridSnap: true, showGrid: true, theme: settings.theme, showMinimap: true },
+              versions: [],
+              pages: [l2PageClean],
+            };
+            childSaves.push({ filename: l2Filename, doc: l2Doc });
+          }
+
+          // 4. Populate current L1 Context Page and link main c4-system node -> L2 Child Diagram
+          let l2Linked = false;
+          const l1Nodes = l1Raw.nodes.map(n => {
+            if (!l2Linked && l2Filename && n.type === 'c4-system' && !n.data?.isExternal) {
+              l2Linked = true;
+              const ref: ChildDiagramRef = {
+                id: `child_l2_${Date.now()}`,
+                filename: l2Filename,
+                title: 'L2 Containers',
+                diagramType: 'c4',
+                createdAt: nowIso,
+              };
+              return {
+                ...n,
+                drilldownPageId: undefined,
+                childDiagrams: [ref],
+                childDiagramFilename: l2Filename,
+                childDiagramTitle: 'L2 Containers',
+                childDiagramType: 'c4' as DiagramType,
+              };
+            }
+            return { ...n, drilldownPageId: undefined };
+          });
 
           const updatedPages = document.pages.map(page => {
             if (page.id !== activePageId) return page;
             return {
               ...page,
-              title: l1Page.title || result.projectName,
+              title: l1Raw.title || `${result.projectName} — L1 Context`,
               diagramType: 'c4' as DiagramType,
-              nodes: l1Page.nodes,
-              edges: l1Page.edges,
+              nodes: l1Nodes,
+              edges: l1Raw.edges,
             };
           });
 
-          const existingPageIds = new Set(updatedPages.map(p => p.id));
-          const pagesToAppend = remappedChildren.filter(cp => !existingPageIds.has(cp.id));
-
           const updatedDoc: DiagramDocument = {
             ...document,
-            pages: [...updatedPages, ...pagesToAppend],
-            updatedAt: new Date().toISOString(),
+            name:
+              document.name === 'Untitled Diagram' || document.name === 'Root Architecture Model'
+                ? result.projectName
+                : document.name,
+            pages: updatedPages,
+            updatedAt: nowIso,
           };
 
+          // Persist child diagram files to local store & server disk
+          for (const item of childSaves) {
+            workspaceService.saveCurrentDiagram(item.doc, item.filename, wsId);
+            workspaceService.updateLocalDiagramCache(item.filename, item.doc, wsId);
+          }
+
           persistDocument(updatedDoc);
-          setSaveStatus('unsaved');
-          setSelectedNodeIds(l1Page.nodes.map(n => n.id));
+          workspaceService.saveCurrentDiagram(updatedDoc, currentFilename, wsId);
+          workspaceService.updateLocalDiagramCache(currentFilename, updatedDoc, wsId);
+          setActiveWs({ ...workspaceService.getActiveWorkspace() });
+
+          // Persist parent & child JSON files to disk in parallel
+          try {
+            await Promise.all([
+              workspaceService.saveCurrentDiagramToServer(updatedDoc, currentFilename, wsId),
+              ...childSaves.map(item => workspaceService.saveCurrentDiagramToServer(item.doc, item.filename, wsId)),
+            ]);
+            saveStatusRef.current = 'saved';
+            setSaveStatus('saved');
+          } catch {
+            // already cached locally; keep unsaved indicator if disk write failed
+          }
+          setSelectedNodeIds(l1Nodes.map(n => n.id));
           setSelectedEdgeId(null);
           setImageNotice({
             type: 'success',
-            message: `Generated ${result.pages.length} C4 layer pages & ${result.files.length} Python files for "${result.projectName}"! Click "L2" on the system node to drill down.`,
+            message: `Created L1 Context + ${childSaves.length} linked child diagram(s) & ${result.files.length} Python files! Click "L2 Containers →" on the system node or open them in the left sidebar.`,
           });
         }}
       />
