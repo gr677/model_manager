@@ -73,6 +73,7 @@ interface AppHeaderProps {
   onOpenImportLegacyJsonModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
   onOpenGenerateFlowchartModal?: () => void;
+  onOpenGenerateC4Modal?: () => void;
   onInsertFishboneTemplate?: () => void;
   onManualSave: () => void;
   onSelectPage: (pageId: string) => void;
@@ -118,6 +119,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenImportLegacyJsonModal,
   onOpenGenerateMindmapModal,
   onOpenGenerateFlowchartModal,
+  onOpenGenerateC4Modal,
   onInsertFishboneTemplate,
   onManualSave,
   onSelectPage,
@@ -607,6 +609,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           >
             <Workflow className="w-3.5 h-3.5 text-emerald-200" />
             <span>AI Flowchart</span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
+          </button>
+        )}
+
+        {/* Dedicated C4 Architecture + Python Gemini AI Generator Button */}
+        {currentPage.diagramType === 'c4' && onOpenGenerateC4Modal && (
+          <button
+            onClick={onOpenGenerateC4Modal}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md shadow-sky-600/30 whitespace-nowrap shrink-0 animate-in fade-in"
+            title="Design C4 layers (L1 Context -> L2 Container -> L3 Component) and generate runnable Python files with Gemini AI"
+          >
+            <Layers className="w-3.5 h-3.5 text-sky-100" />
+            <span>AI C4 + Python</span>
             <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/25">Gemini</span>
           </button>
         )}

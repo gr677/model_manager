@@ -1675,37 +1675,431 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         );
       }
 
-      // 23. C4 Architecture Person
+      // 23. C4 Architecture Person (True Simon Brown Head + Rounded Torso Silhouette)
       case 'c4-person': {
-        const fill = node.style?.fill || '#08427b';
-        const stroke = node.style?.stroke || '#5599ff';
+        const isExternal = Boolean(node.data?.isExternal);
+        const fill = node.style?.fill || (isExternal ? '#52525b' : '#08427b');
+        const stroke = node.style?.stroke || (isExternal ? '#a1a1aa' : '#38bdf8');
         const strokeWidth = node.style?.strokeWidth ?? 2;
         const textColor = node.style?.textColor || '#ffffff';
-        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, '#08427b');
+        const w = Math.max(120, node.width || 170);
+        const h = Math.max(110, node.height || 155);
+        const headR = Math.min(26, Math.max(16, Math.round(h * 0.175)));
+        const headCx = w / 2;
+        const headCy = headR + strokeWidth + 2;
+        const torsoTop = headCy + headR - 4;
+        const pad = Math.max(strokeWidth, 2);
+        const rawLines = (node.label || 'User').split('\n').map(s => s.trim()).filter(Boolean);
+        const titleLine = rawLines[0] || 'User';
+        const fallbackRole = rawLines.length > 1 ? rawLines.slice(1).join(' ') : '';
+        const roleText =
+          node.data?.role ||
+          node.data?.description ||
+          fallbackRole ||
+          (isExternal ? 'External user or actor' : 'Primary system user');
+
+        return (
+          <div className="relative w-full h-full flex flex-col items-center justify-end overflow-visible select-none">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-lg"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              {/* Torso / Shoulders */}
+              <rect
+                x={pad}
+                y={torsoTop}
+                width={w - pad * 2}
+                height={Math.max(40, h - torsoTop - pad)}
+                rx={24}
+                ry={24}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+              />
+              {/* Head */}
+              <circle
+                cx={headCx}
+                cy={headCy}
+                r={headR}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+              />
+            </svg>
+            <div
+              className="relative z-10 w-full flex flex-col items-center justify-center text-center px-3 pb-2.5 pointer-events-none"
+              style={{
+                height: `${Math.max(40, h - torsoTop - pad)}px`,
+                color: textColor,
+              }}
+            >
+              <span className="text-[9px] font-mono tracking-wide opacity-80">
+                {isExternal ? '[External Person]' : '[Person]'}
+              </span>
+              <div className="font-bold text-xs leading-tight line-clamp-2 mt-0.5">
+                {titleLine}
+              </div>
+              {roleText && (
+                <div className="text-[10px] leading-snug opacity-80 line-clamp-2 mt-1">
+                  {roleText}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // 23b. C4 Software System (Level 1 Context)
+      case 'c4-system': {
+        const isExternal = Boolean(node.data?.isExternal);
+        const fill = node.style?.fill || (isExternal ? '#475569' : '#1168bd');
+        const stroke = node.style?.stroke || (isExternal ? '#94a3b8' : '#60a5fa');
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#ffffff';
+        const rounded = node.style?.rounded !== undefined ? `${node.style.rounded}px` : '10px';
+        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, fill);
+        const rawLines = (node.label || 'Software System').split('\n').map(s => s.trim()).filter(Boolean);
+        const titleLine = rawLines[0] || 'Software System';
+        const descText =
+          node.data?.description ||
+          (rawLines.length > 1 ? rawLines.slice(1).join(' ') : '') ||
+          node.documentation?.description ||
+          '';
 
         return (
           <div
-            className="flex flex-col justify-between h-full p-2.5 rounded-2xl shadow-xl text-center border-2 transition-all overflow-hidden"
+            className="flex flex-col justify-between h-full p-2.5 shadow-xl border-2 text-center transition-all overflow-hidden"
             style={{
               ...bgStyle,
               borderColor: stroke,
               borderWidth: `${strokeWidth}px`,
+              borderRadius: rounded,
               color: textColor,
             }}
           >
-            <div className="flex items-center justify-center gap-1.5 pt-0.5">
-              <div className="w-5 h-5 rounded-full bg-blue-500/30 flex items-center justify-center border border-blue-400/50">
-                <Users className="w-3 h-3 text-blue-200" />
-              </div>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-blue-200 font-semibold">
-                [Person]
+            <div className="flex items-center justify-between gap-1 text-[9px] font-mono opacity-90">
+              <span className="truncate font-semibold">
+                {isExternal ? '[External System]' : '[L1 · Software System]'}
               </span>
+              {node.drilldownPageId && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
+                  }}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
+                  title="Drill down into Level 2 Containers"
+                >
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                  <span>L2</span>
+                </button>
+              )}
             </div>
-            <div className="font-bold text-xs leading-snug px-1 my-1">
-              {node.label}
+            <div className="font-bold text-xs leading-snug line-clamp-2 px-1">
+              {titleLine}
             </div>
-            <div className="text-[10px] text-blue-200/80 font-sans border-t border-blue-400/30 pt-1 line-clamp-2">
-              {node.data?.description || node.data?.role || 'User / Actor'}
+            <div className="text-[10px] leading-snug opacity-85 line-clamp-2 border-t border-white/15 pt-1">
+              {descText || (isExternal ? 'External dependency' : 'Primary system scope')}
+            </div>
+          </div>
+        );
+      }
+
+      // 23c. C4 Container (Level 2 Container: Web App, API, CLI, Worker)
+      case 'c4-container': {
+        const fill = node.style?.fill || '#1d4ed8';
+        const stroke = node.style?.stroke || '#60a5fa';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#eff6ff';
+        const rounded = node.style?.rounded !== undefined ? `${node.style.rounded}px` : '8px';
+        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, '#1d4ed8');
+        const tech = node.data?.technology || 'Python Runtime';
+        const descText = node.data?.description || node.documentation?.description || '';
+
+        return (
+          <div
+            className="flex flex-col justify-between h-full shadow-xl border-2 text-center transition-all overflow-hidden"
+            style={{
+              ...bgStyle,
+              borderColor: stroke,
+              borderWidth: `${strokeWidth}px`,
+              borderRadius: rounded,
+              color: textColor,
+            }}
+          >
+            <div className="px-2.5 py-1 bg-black/25 border-b border-white/15 flex items-center justify-between gap-1 text-[9px] font-mono">
+              <span className="truncate font-semibold opacity-90">
+                L2 · Container: {tech}
+              </span>
+              {node.drilldownPageId && (
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
+                  }}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-sky-500/30 hover:bg-sky-500 text-white text-[9px] font-semibold cursor-pointer shrink-0 transition-colors"
+                  title="Drill down into Level 3 Components"
+                >
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                  <span>L3</span>
+                </button>
+              )}
+            </div>
+            <div className="px-2.5 py-1 flex-1 flex flex-col justify-center">
+              <div className="font-bold text-xs leading-snug line-clamp-2">
+                {node.label}
+              </div>
+              {node.data?.filePath && (
+                <div className="text-[9px] font-mono opacity-75 truncate mt-0.5">
+                  {node.data.filePath}
+                </div>
+              )}
+            </div>
+            {descText && (
+              <div className="px-2.5 pb-1.5 text-[10px] leading-snug opacity-85 line-clamp-2">
+                {descText}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // 23d. C4 Database Store (Level 2 Cylinder)
+      case 'c4-database': {
+        const fill = node.style?.fill || '#1e3a8a';
+        const stroke = node.style?.stroke || '#38bdf8';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#e0f2fe';
+        const w = Math.max(120, node.width || 185);
+        const h = Math.max(90, node.height || 125);
+        const pad = Math.max(strokeWidth, 2);
+        const rx = (w - pad * 2) / 2;
+        const ry = Math.min(15, h * 0.15);
+        const cx = w / 2;
+        const topY = pad + ry;
+        const botY = h - pad - ry;
+        const bodyPath = `M ${pad} ${topY} L ${pad} ${botY} A ${rx} ${ry} 0 0 0 ${w - pad} ${botY} L ${w - pad} ${topY} Z`;
+        const tech = node.data?.technology || 'Database';
+        const descText = node.data?.description || node.documentation?.description || '';
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path d={bodyPath} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />
+              <ellipse cx={cx} cy={topY} rx={rx} ry={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+            </svg>
+            <div
+              className="relative z-10 text-center px-3 pt-5 pb-2 max-w-[92%] pointer-events-none select-none flex flex-col items-center justify-center"
+              style={{ color: textColor }}
+            >
+              <span className="text-[9px] font-mono opacity-80 truncate max-w-full">
+                L2 · {tech}
+              </span>
+              <span className="font-bold text-xs leading-tight line-clamp-2 mt-0.5">
+                {node.label}
+              </span>
+              {descText && (
+                <span className="text-[9.5px] opacity-80 line-clamp-2 mt-1 leading-snug">
+                  {descText}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // 23e. C4 Message Queue / Event Bus (Level 2 Horizontal Cylinder)
+      case 'c4-queue': {
+        const fill = node.style?.fill || '#0f766e';
+        const stroke = node.style?.stroke || '#2dd4bf';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#f0fdfa';
+        const w = Math.max(130, node.width || 205);
+        const h = Math.max(76, node.height || 105);
+        const pad = Math.max(strokeWidth, 2);
+        const rx = Math.min(16, w * 0.12);
+        const ry = (h - pad * 2) / 2;
+        const cy = h / 2;
+        const leftX = pad + rx;
+        const rightX = w - pad - rx;
+        const pipePath = `M ${leftX} ${pad} L ${rightX} ${pad} A ${rx} ${ry} 0 0 1 ${rightX} ${h - pad} L ${leftX} ${h - pad} Z`;
+        const tech = node.data?.technology || 'Message Queue';
+
+        return (
+          <div className="relative w-full h-full flex items-center justify-center overflow-visible">
+            <svg
+              className="absolute inset-0 w-full h-full overflow-visible pointer-events-none drop-shadow-md"
+              viewBox={`0 0 ${w} ${h}`}
+            >
+              <path d={pipePath} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />
+              <ellipse cx={leftX} cy={cy} rx={rx} ry={ry} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
+            </svg>
+            <div
+              className="relative z-10 text-center pl-6 pr-5 max-w-[88%] pointer-events-none select-none flex flex-col items-center justify-center"
+              style={{ color: textColor }}
+            >
+              <span className="text-[9px] font-mono opacity-80 truncate max-w-full">
+                L2 · {tech}
+              </span>
+              <span className="font-bold text-xs leading-tight line-clamp-2 mt-0.5">
+                {node.label}
+              </span>
+              {node.data?.description && (
+                <span className="text-[9.5px] opacity-80 line-clamp-1 mt-0.5">
+                  {node.data.description}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // 23f. C4 Component (Level 3 Component with UML/C4 Left Port Notches)
+      case 'c4-component': {
+        const fill = node.style?.fill || '#0e7490';
+        const stroke = node.style?.stroke || '#67e8f9';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#ecfeff';
+        const rounded = node.style?.rounded !== undefined ? `${node.style.rounded}px` : '8px';
+        const bgStyle = getNodeBackgroundStyle(fill, node.style?.gradient, '#0e7490');
+        const tech = node.data?.technology || 'Python Module';
+        const filePath = node.data?.filePath;
+        const descText = node.data?.description || node.documentation?.description || '';
+
+        return (
+          <div className="relative w-full h-full pl-2.5 overflow-visible select-none">
+            {/* Two signature C4 / UML component port tabs on the left edge */}
+            <div
+              className="absolute left-0 top-[22%] w-4 h-3 rounded-xs border-2 z-20"
+              style={{ backgroundColor: fill, borderColor: stroke }}
+            />
+            <div
+              className="absolute left-0 top-[58%] w-4 h-3 rounded-xs border-2 z-20"
+              style={{ backgroundColor: fill, borderColor: stroke }}
+            />
+            <div
+              className="flex flex-col justify-between h-full pl-3.5 pr-2.5 py-2 shadow-xl border-2 text-left transition-all overflow-hidden"
+              style={{
+                ...bgStyle,
+                borderColor: stroke,
+                borderWidth: `${strokeWidth}px`,
+                borderRadius: rounded,
+                color: textColor,
+              }}
+            >
+              <div className="flex items-center justify-between gap-1 text-[9px] font-mono opacity-90">
+                <span className="truncate font-semibold">
+                  L3 · {tech}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {node.data?.pythonCode && (
+                    <span className="text-[8.5px] px-1 rounded bg-black/25 font-mono">
+                      .py
+                    </span>
+                  )}
+                  {node.drilldownPageId && (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (node.drilldownPageId) onDrillDown?.(node.drilldownPageId);
+                      }}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/45 text-white text-[9px] font-semibold cursor-pointer transition-colors"
+                      title="Drill down into Level 4 Code"
+                    >
+                      <ArrowUpRight className="w-2.5 h-2.5" />
+                      <span>L4</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="font-bold text-xs leading-snug line-clamp-1">
+                {node.label}
+              </div>
+              {filePath && (
+                <div className="text-[9.5px] font-mono opacity-80 truncate">
+                  {filePath}
+                </div>
+              )}
+              {descText && (
+                <div className="text-[9.5px] opacity-85 line-clamp-2 leading-snug border-t border-white/15 pt-1">
+                  {descText}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // 23g. C4 Code Element (Level 4 Code Module / Classes & Functions)
+      case 'c4-code': {
+        const fill = node.style?.fill || '#0f172a';
+        const stroke = node.style?.stroke || '#7dd3fc';
+        const strokeWidth = node.style?.strokeWidth ?? 2;
+        const textColor = node.style?.textColor || '#e0f2fe';
+        const rounded = node.style?.rounded !== undefined ? `${node.style.rounded}px` : '8px';
+        const symbols: string[] = Array.isArray(node.data?.symbols) ? node.data.symbols : [];
+        const filePath = node.data?.filePath || 'module.py';
+
+        return (
+          <div
+            className="flex flex-col h-full shadow-xl border-2 text-left transition-all overflow-hidden"
+            style={{
+              backgroundColor: fill,
+              borderColor: stroke,
+              borderWidth: `${strokeWidth}px`,
+              borderRadius: rounded,
+              color: textColor,
+            }}
+          >
+            <div className="px-2.5 py-1 bg-sky-950/80 border-b border-sky-400/25 flex items-center justify-between gap-1 text-[9px] font-mono">
+              <span className="truncate font-semibold text-sky-300">L4 · {filePath}</span>
+              <span className="opacity-75 shrink-0">Python</span>
+            </div>
+            <div className="px-2.5 py-1.5 border-b border-white/10">
+              <div className="font-bold text-xs truncate">{node.label}</div>
+            </div>
+            <div className="flex-1 px-2.5 py-1.5 font-mono text-[10px] space-y-0.5 overflow-y-auto opacity-90">
+              {symbols.length > 0 ? (
+                symbols.slice(0, 6).map((sym, idx) => (
+                  <div key={idx} className="truncate text-sky-200">{sym}</div>
+                ))
+              ) : (
+                <div className="text-[10px] opacity-75 line-clamp-3">
+                  {node.data?.description || node.documentation?.description || 'Code-level implementation module'}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // 23h. C4 System / Container Boundary (Dashed Grouping Scope)
+      case 'c4-boundary': {
+        const stroke = node.style?.stroke || '#64748b';
+        const fill = node.style?.fill || 'rgba(15, 23, 42, 0.22)';
+        const textColor = node.style?.textColor || '#cbd5e1';
+        const boundaryKind = node.data?.boundaryKind || 'Software System';
+
+        return (
+          <div
+            className="flex flex-col justify-between h-full rounded-xl p-3 pointer-events-auto"
+            style={{
+              backgroundColor: fill,
+              borderColor: stroke,
+              borderWidth: '2px',
+              borderStyle: 'dashed',
+              color: textColor,
+            }}
+          >
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span>{node.label}</span>
+              <span className="text-[10px] font-mono opacity-75">[{boundaryKind}]</span>
             </div>
           </div>
         );

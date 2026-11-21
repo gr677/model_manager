@@ -28,6 +28,7 @@ import {
   Upload,
   Sparkles,
   Workflow,
+  Layers,
 } from 'lucide-react';
 
 import { ContextMenu, ContextMenuPosition } from './ContextMenu';
@@ -86,6 +87,7 @@ interface DiagramCanvasProps {
   onOpenImportSqlModal?: () => void;
   onOpenGenerateMindmapModal?: () => void;
   onOpenGenerateFlowchartModal?: () => void;
+  onOpenGenerateC4Modal?: () => void;
   onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
 }
 
@@ -125,6 +127,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onOpenImportSqlModal,
   onOpenGenerateMindmapModal,
   onOpenGenerateFlowchartModal,
+  onOpenGenerateC4Modal,
   onOpenImageLightbox,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2117,6 +2120,31 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
                   <Upload className="w-4 h-4" />
                   <span>Upload ERwin / Postgres SQL</span>
                 </button>
+              </>
+            ) : diagramType === 'c4' ? (
+              <>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-sky-500/25">
+                  <Layers className="w-7 h-7 text-white" />
+                </div>
+                <h3 className="text-lg font-bold mb-1.5">
+                  Empty C4 Architecture Diagram
+                </h3>
+                <p className="text-xs text-slate-400 mb-5 leading-relaxed">
+                  Describe a Python application and let Gemini architect the C4 layers (L1 Context, L2 Containers, L3 Components, and optional L4 Code) with complete runnable Python modules.
+                </p>
+                {onOpenGenerateC4Modal && (
+                  <button
+                    type="button"
+                    onClick={onOpenGenerateC4Modal}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-md shadow-sky-600/30 hover:shadow-lg active:scale-[0.98]"
+                  >
+                    <Sparkles className="w-4 h-4 text-sky-100" />
+                    <span>Generate Python &amp; C4 Layers with Gemini AI</span>
+                  </button>
+                )}
+                <div className="mt-3 text-[11px] text-slate-500">
+                  Or drag C4 Person, System, Container, Database &amp; Component shapes from the left palette
+                </div>
               </>
             ) : (
               <>

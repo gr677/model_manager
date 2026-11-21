@@ -41,6 +41,7 @@ import { ImportErdMode, ImportSqlModal } from './components/modals/ImportSqlModa
 import { ImportLegacyJsonModal, LegacyImportPayload } from './components/modals/ImportLegacyJsonModal';
 import { GenerateMindmapModal } from './components/modals/GenerateMindmapModal';
 import { GenerateFlowchartModal } from './components/modals/GenerateFlowchartModal';
+import { GenerateC4PythonModal, GeneratedC4ProjectResult } from './components/modals/GenerateC4PythonModal';
 import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { ImageLightboxModal } from './components/modals/ImageLightboxModal';
 import { NodeImageAttachment } from './types/diagram';
@@ -119,6 +120,7 @@ export default function App() {
   const [isImportLegacyJsonModalOpen, setIsImportLegacyJsonModalOpen] = useState(false);
   const [isGenerateMindmapModalOpen, setIsGenerateMindmapModalOpen] = useState(false);
   const [isGenerateFlowchartModalOpen, setIsGenerateFlowchartModalOpen] = useState(false);
+  const [isGenerateC4ModalOpen, setIsGenerateC4ModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'unsaved'>('idle');
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
   // Aggregations Down Right Side State
@@ -2037,6 +2039,7 @@ export default function App() {
         onOpenImportLegacyJsonModal={() => setIsImportLegacyJsonModalOpen(true)}
         onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
         onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
+        onOpenGenerateC4Modal={() => setIsGenerateC4ModalOpen(true)}
         onInsertFishboneTemplate={handleInsertFishboneTemplate}
         onChangeRole={setUserRole}
         onToggleTheme={handleToggleTheme}
@@ -2146,6 +2149,7 @@ export default function App() {
           onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
           onOpenGenerateMindmapModal={() => setIsGenerateMindmapModalOpen(true)}
           onOpenGenerateFlowchartModal={() => setIsGenerateFlowchartModalOpen(true)}
+          onOpenGenerateC4Modal={() => setIsGenerateC4ModalOpen(true)}
           onOpenImageLightbox={handleOpenImageLightbox}
           onUpdateNodeLabel={(nodeId, label) => {
             const targetNode = currentPage.nodes.find(n => n.id === nodeId);
@@ -2507,6 +2511,52 @@ export default function App() {
               message: `Generated flowchart with ${genNodes.length} symbol steps and ${genEdges.length} connectors!`,
             });
           }
+        }}
+      />
+
+      <GenerateC4PythonModal
+        isOpen={isGenerateC4ModalOpen}
+        onClose={() => setIsGenerateC4ModalOpen(false)}
+        theme={settings.theme}
+        workspaceId={activeWs.id || 'workspace1'}
+        currentPageName={currentPage.title}
+        hasExistingNodes={currentPage.nodes.length > 0}
+        onC4ProjectGenerated={(result: GeneratedC4ProjectResult) => {
+          if (!result.pages || result.pages.length === 0) return;
+          const [l1Page, ...childPages] = result.pages;
+          const remappedChildren = childPages.map(cp => ({
+            ...cp,
+            parentId: cp.parentId === l1Page.id ? activePageId : cp.parentId,
+          }));
+
+          const updatedPages = document.pages.map(page => {
+            if (page.id !== activePageId) return page;
+            return {
+              ...page,
+              title: l1Page.title || result.projectName,
+              diagramType: 'c4' as DiagramType,
+              nodes: l1Page.nodes,
+              edges: l1Page.edges,
+            };
+          });
+
+          const existingPageIds = new Set(updatedPages.map(p => p.id));
+          const pagesToAppend = remappedChildren.filter(cp => !existingPageIds.has(cp.id));
+
+          const updatedDoc: DiagramDocument = {
+            ...document,
+            pages: [...updatedPages, ...pagesToAppend],
+            updatedAt: new Date().toISOString(),
+          };
+
+          persistDocument(updatedDoc);
+          setSaveStatus('unsaved');
+          setSelectedNodeIds(l1Page.nodes.map(n => n.id));
+          setSelectedEdgeId(null);
+          setImageNotice({
+            type: 'success',
+            message: `Generated ${result.pages.length} C4 layer pages & ${result.files.length} Python files for "${result.projectName}"! Click "L2" on the system node to drill down.`,
+          });
         }}
       />
 

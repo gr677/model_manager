@@ -3598,6 +3598,991 @@ INSTRUCTIONS:
   }
 });
 
+// 11. AI C4 Architecture + Python Code Generator using Gemini API
+app.post('/api/ai/generate-c4-python', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  try {
+    const { prompt, pythonStack = 'auto', includeLayer4Code = false } = req.body || {};
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a clear description of the Python application you want to design and generate.',
+      });
+    }
+
+    let apiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '').trim();
+    if (!apiKey) {
+      try {
+        const envPath = path.join(process.cwd(), '.env');
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf-8');
+          const match = envContent.match(/GEMINI_API_KEY\s*=\s*([^\r\n]+)/);
+          if (match && match[1]) {
+            apiKey = match[1].trim().replace(/^["']|["']$/g, '').trim();
+          }
+        }
+      } catch (err) {
+        logDebug('warn', 'GEMINI_AI', 'Could not read .env fallback for C4+Python generation', err);
+      }
+    }
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'GEMINI_API_KEY is not configured on the server. Please add GEMINI_API_KEY=your_key to your .env file or server environment.',
+      });
+    }
+
+    const wantL4 = Boolean(includeLayer4Code);
+    const stackLabel =
+      pythonStack && pythonStack !== 'auto'
+        ? String(pythonStack)
+        : 'Best-fit modern Python 3.12 stack (FastAPI, Typer CLI, SQLite/SQLAlchemy, or Asyncio worker)';
+
+    const c4Schema: any = {
+      type: Type.OBJECT,
+      properties: {
+        projectName: { type: Type.STRING, description: 'Clear human-readable project name, e.g. Inventory & Orders Service' },
+        projectSlug: { type: Type.STRING, description: 'Lowercase snake_case folder slug, e.g. inventory_orders_service' },
+        summary: { type: Type.STRING, description: '2-3 sentence architectural summary of the Python application.' },
+        entryCommand: { type: Type.STRING, description: 'Command to run the project locally, e.g. uvicorn app.main:app --reload' },
+        requirements: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Pip package requirements (e.g. fastapi>=0.115.0, pydantic>=2.9.0, pytest>=8.0.0)',
+        },
+        mainSystem: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            description: { type: Type.STRING },
+          },
+          required: ['name', 'description'],
+        },
+        actors: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              name: { type: Type.STRING },
+              role: { type: Type.STRING },
+              isExternal: { type: Type.BOOLEAN },
+            },
+            required: ['id', 'name', 'role'],
+          },
+        },
+        externalSystems: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              technology: { type: Type.STRING },
+            },
+            required: ['id', 'name', 'description'],
+          },
+        },
+        contextRelationships: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              fromId: { type: Type.STRING, description: 'Actor id, external id, or "main"' },
+              toId: { type: Type.STRING, description: 'Actor id, external id, or "main"' },
+              label: { type: Type.STRING },
+            },
+            required: ['fromId', 'toId', 'label'],
+          },
+        },
+        containers: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              name: { type: Type.STRING },
+              kind: { type: Type.STRING, description: 'One of: container, database, queue' },
+              technology: { type: Type.STRING },
+              description: { type: Type.STRING },
+              filePath: { type: Type.STRING },
+            },
+            required: ['id', 'name', 'kind', 'technology', 'description'],
+          },
+        },
+        containerRelationships: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              fromId: { type: Type.STRING },
+              toId: { type: Type.STRING },
+              label: { type: Type.STRING },
+            },
+            required: ['fromId', 'toId', 'label'],
+          },
+        },
+        components: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              name: { type: Type.STRING },
+              technology: { type: Type.STRING },
+              filePath: { type: Type.STRING, description: 'Relative Python file path like app/routes/orders.py' },
+              description: { type: Type.STRING },
+              symbols: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Key Python classes/functions defined in this component, e.g. ["class OrderService", "def create_order()"]',
+              },
+              pythonCode: {
+                type: Type.STRING,
+                description: 'Complete, clean, runnable Python 3.12 source code for this file without markdown backticks.',
+              },
+            },
+            required: ['id', 'name', 'technology', 'filePath', 'description', 'symbols', 'pythonCode'],
+          },
+        },
+        componentRelationships: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              fromId: { type: Type.STRING },
+              toId: { type: Type.STRING },
+              label: { type: Type.STRING },
+            },
+            required: ['fromId', 'toId', 'label'],
+          },
+        },
+        supportFiles: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              filePath: { type: Type.STRING, description: 'Relative path such as app/main.py, app/__init__.py, tests/test_app.py' },
+              purpose: { type: Type.STRING },
+              content: { type: Type.STRING, description: 'Complete raw file content without markdown backticks.' },
+            },
+            required: ['filePath', 'purpose', 'content'],
+          },
+        },
+      },
+      required: [
+        'projectName',
+        'projectSlug',
+        'summary',
+        'entryCommand',
+        'requirements',
+        'mainSystem',
+        'actors',
+        'externalSystems',
+        'contextRelationships',
+        'containers',
+        'containerRelationships',
+        'components',
+        'componentRelationships',
+        'supportFiles',
+      ],
+    };
+
+    const fullPrompt = `You are a Principal Python Architect specializing in Simon Brown's C4 Model (Context, Container, Component, Code).
+
+Design and generate a clean, modular, working Python 3.12 application matching the user's request below, AND document its architecture across C4 Layers:
+- User Request: "${prompt.trim()}"
+- Preferred Stack: ${stackLabel}
+
+Strict Rules:
+1. L1 Context: 1-3 Actors (actors), 1 mainSystem, and 1-3 External Systems (externalSystems) if appropriate, connected via contextRelationships using "main" for mainSystem.
+2. L2 Containers: 2-5 Containers inside the system boundary. Include at least one primary Python runtime container (kind: "container"), plus database (kind: "database") or queue (kind: "queue") containers as appropriate. Connect actors -> containers -> databases/queues/externalSystems in containerRelationships.
+3. L3 Components: Break the primary Python container into 3-6 coherent Python modules (components). Every component MUST have:
+   - valid relative filePath (e.g. "app/models.py", "app/repository.py", "app/service.py", "app/main.py")
+   - technology (e.g. "FastAPI Router", "SQLite Repository", "Domain Service", "Pydantic Schemas")
+   - symbols array listing exact classes & functions implemented in that file
+   - complete, syntactically valid, well-typed Python 3.12 pythonCode (no TODO stubs, no markdown fences).
+4. Keep relative imports consistent across generated Python files so the project runs cleanly. Include app/__init__.py (if using app/ package), README.md or tests/test_app.py in supportFiles.
+5. Output ONLY structured JSON conforming to the schema.`;
+
+    const controller = new AbortController();
+    req.on('close', () => {
+      if (!res.writableEnded) controller.abort();
+    });
+
+    const response = await generateWithGeminiFallback({
+      apiKey,
+      models: [
+        { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 45000 },
+        { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 45000 },
+      ],
+      contents: fullPrompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: c4Schema,
+      },
+      contextLabel: 'C4+Python Generator',
+      abortSignal: controller.signal,
+    });
+
+    const rawJson = (response.text || '{}').trim();
+    const parsed = JSON.parse(rawJson);
+
+    const stamp = Date.now();
+    const projectName = String(parsed.projectName || 'Python C4 System').trim();
+    const rawSlug = String(parsed.projectSlug || projectName)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const projectSlug = rawSlug || `c4_python_${stamp}`;
+    const summary = String(parsed.summary || prompt.trim()).trim();
+    const entryCommand = String(parsed.entryCommand || 'python -m app.main').trim();
+    const requirements: string[] = Array.isArray(parsed.requirements)
+      ? parsed.requirements.map((r: any) => String(r).trim()).filter(Boolean)
+      : [];
+
+    const contextPageId = `c4-l1-${stamp}`;
+    const containerPageId = `c4-l2-${stamp}`;
+    const componentPageId = `c4-l3-${stamp}`;
+    const codePageId = wantL4 ? `c4-l4-${stamp}` : undefined;
+
+    const actors: any[] = Array.isArray(parsed.actors) && parsed.actors.length > 0
+      ? parsed.actors
+      : [{ id: 'actor_user', name: 'End User', role: 'Interacts with the Python application', isExternal: false }];
+    const externalSystems: any[] = Array.isArray(parsed.externalSystems) ? parsed.externalSystems : [];
+    const containers: any[] = Array.isArray(parsed.containers) && parsed.containers.length > 0
+      ? parsed.containers
+      : [{ id: 'cont_api', name: `${projectName} App`, kind: 'container', technology: 'Python 3.12', description: summary }];
+    const components: any[] = Array.isArray(parsed.components) ? parsed.components : [];
+
+    // -------------------------------------------------------------------------
+    // Page 1: C4 Level 1 — System Context
+    // -------------------------------------------------------------------------
+    const l1Nodes: DiagramNode[] = [];
+    const l1Edges: DiagramEdge[] = [];
+    const l1IdMap = new Map<string, string>();
+
+    const actorGapY = 185;
+    const actorStartY = Math.max(80, 220 - ((actors.length - 1) * actorGapY) / 2);
+    actors.forEach((act, idx) => {
+      const nid = `c4-l1-act-${stamp}-${idx}`;
+      l1IdMap.set(String(act.id), nid);
+      const isExt = Boolean(act.isExternal);
+      l1Nodes.push({
+        id: nid,
+        type: 'c4-person',
+        label: String(act.name || 'User'),
+        x: 70,
+        y: actorStartY + idx * actorGapY,
+        width: 175,
+        height: 155,
+        style: {
+          fill: isExt ? '#52525b' : '#08427b',
+          stroke: isExt ? '#a1a1aa' : '#38bdf8',
+          strokeWidth: 2,
+          textColor: '#ffffff',
+        },
+        data: {
+          c4Type: 'person',
+          c4Level: 'context',
+          isExternal: isExt,
+          role: String(act.role || ''),
+        },
+        documentation: {
+          description: String(act.role || ''),
+          tags: ['c4', 'person'],
+          status: 'draft',
+        },
+      });
+    });
+
+    const mainNodeId = `c4-l1-main-${stamp}`;
+    l1IdMap.set('main', mainNodeId);
+    l1Nodes.push({
+      id: mainNodeId,
+      type: 'c4-system',
+      label: String(parsed.mainSystem?.name || projectName),
+      x: 410,
+      y: 195,
+      width: 260,
+      height: 140,
+      drilldownPageId: containerPageId,
+      style: {
+        fill: '#1168bd',
+        stroke: '#60a5fa',
+        strokeWidth: 2,
+        textColor: '#ffffff',
+        rounded: 10,
+      },
+      data: {
+        c4Type: 'system',
+        c4Level: 'context',
+        isExternal: false,
+        technology: 'Python 3.12 System',
+        description: String(parsed.mainSystem?.description || summary),
+      },
+      documentation: {
+        description: String(parsed.mainSystem?.description || summary),
+        tags: ['c4', 'system'],
+        status: 'draft',
+      },
+    });
+
+    const extGapY = 155;
+    const extStartY = Math.max(80, 210 - ((Math.max(1, externalSystems.length) - 1) * extGapY) / 2);
+    externalSystems.forEach((ext, idx) => {
+      const nid = `c4-l1-ext-${stamp}-${idx}`;
+      l1IdMap.set(String(ext.id), nid);
+      l1Nodes.push({
+        id: nid,
+        type: 'c4-system',
+        label: String(ext.name || 'External System'),
+        x: 820,
+        y: extStartY + idx * extGapY,
+        width: 225,
+        height: 120,
+        style: {
+          fill: '#475569',
+          stroke: '#94a3b8',
+          strokeWidth: 2,
+          textColor: '#f8fafc',
+          rounded: 10,
+        },
+        data: {
+          c4Type: 'system',
+          c4Level: 'context',
+          isExternal: true,
+          technology: String(ext.technology || 'External System'),
+          description: String(ext.description || ''),
+        },
+        documentation: {
+          description: String(ext.description || ''),
+          tags: ['c4', 'external'],
+          status: 'draft',
+        },
+      });
+    });
+
+    const l1NodeLookup = new Map(l1Nodes.map(n => [n.id, n]));
+    (Array.isArray(parsed.contextRelationships) ? parsed.contextRelationships : []).forEach((rel: any, idx: number) => {
+      const fromNodeId = l1IdMap.get(String(rel.fromId || ''));
+      const toNodeId = l1IdMap.get(String(rel.toId || ''));
+      if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+      const src = l1NodeLookup.get(fromNodeId)!;
+      const tgt = l1NodeLookup.get(toNodeId)!;
+      const dx = tgt.x - src.x;
+      l1Edges.push({
+        id: `c4-l1-e-${stamp}-${idx}`,
+        sourceNodeId: fromNodeId,
+        targetNodeId: toNodeId,
+        sourceAnchor: Math.abs(dx) > 60 ? (dx >= 0 ? 'right' : 'left') : tgt.y >= src.y ? 'bottom' : 'top',
+        targetAnchor: Math.abs(dx) > 60 ? (dx >= 0 ? 'left' : 'right') : tgt.y >= src.y ? 'top' : 'bottom',
+        type: 'orthogonal',
+        lineStyle: 'solid',
+        markerStart: 'none',
+        markerEnd: 'arrow',
+        label: rel.label ? String(rel.label).slice(0, 42) : undefined,
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Page 2: C4 Level 2 — Containers
+    // -------------------------------------------------------------------------
+    const l2Nodes: DiagramNode[] = [];
+    const l2Edges: DiagramEdge[] = [];
+    const l2IdMap = new Map<string, string>();
+
+    actors.forEach((act, idx) => {
+      const nid = `c4-l2-act-${stamp}-${idx}`;
+      l2IdMap.set(String(act.id), nid);
+      const isExt = Boolean(act.isExternal);
+      l2Nodes.push({
+        id: nid,
+        type: 'c4-person',
+        label: String(act.name || 'User'),
+        x: 60,
+        y: 120 + idx * 185,
+        width: 170,
+        height: 150,
+        style: {
+          fill: isExt ? '#52525b' : '#08427b',
+          stroke: isExt ? '#a1a1aa' : '#38bdf8',
+          strokeWidth: 2,
+          textColor: '#ffffff',
+        },
+        data: {
+          c4Type: 'person',
+          c4Level: 'container',
+          isExternal: isExt,
+          role: String(act.role || ''),
+        },
+      });
+    });
+
+    const appContainers = containers.filter(c => String(c.kind || 'container').toLowerCase() === 'container');
+    const dataContainers = containers.filter(c => String(c.kind || '').toLowerCase() !== 'container');
+    const primaryAppContainers = appContainers.length > 0 ? appContainers : containers.slice(0, 1);
+    const secondaryDataContainers = appContainers.length > 0 ? dataContainers : containers.slice(1);
+
+    const rowsInBoundary = Math.max(primaryAppContainers.length, secondaryDataContainers.length, 1);
+    const boundaryX = 310;
+    const boundaryY = 65;
+    const boundaryW = secondaryDataContainers.length > 0 ? 590 : 340;
+    const boundaryH = Math.max(360, rowsInBoundary * 175 + 90);
+    const l2BoundaryId = `c4-l2-bnd-${stamp}`;
+
+    l2Nodes.push({
+      id: l2BoundaryId,
+      type: 'c4-boundary',
+      label: `${projectName} (System Boundary)`,
+      x: boundaryX,
+      y: boundaryY,
+      width: boundaryW,
+      height: boundaryH,
+      isGroup: true,
+      style: {
+        fill: 'rgba(15, 23, 42, 0.25)',
+        stroke: '#64748b',
+        strokeWidth: 2,
+        strokeDasharray: '6 4',
+        textColor: '#cbd5e1',
+        rounded: 12,
+      },
+      data: {
+        c4Type: 'boundary',
+        c4Level: 'container',
+        boundaryKind: 'Software System',
+      },
+    });
+
+    let primaryContainerAssigned = false;
+    primaryAppContainers.forEach((cont, idx) => {
+      const nid = `c4-l2-cont-${stamp}-${idx}`;
+      l2IdMap.set(String(cont.id), nid);
+      const isPrimary = !primaryContainerAssigned;
+      if (isPrimary) primaryContainerAssigned = true;
+
+      l2Nodes.push({
+        id: nid,
+        type: 'c4-container',
+        label: String(cont.name || 'Python Service'),
+        x: boundaryX + 40,
+        y: boundaryY + 60 + idx * 170,
+        width: 240,
+        height: 130,
+        parentId: l2BoundaryId,
+        drilldownPageId: isPrimary ? componentPageId : undefined,
+        style: {
+          fill: '#1d4ed8',
+          stroke: '#60a5fa',
+          strokeWidth: 2,
+          textColor: '#eff6ff',
+          rounded: 8,
+        },
+        data: {
+          c4Type: 'container',
+          c4Level: 'container',
+          technology: String(cont.technology || 'Python 3.12'),
+          description: String(cont.description || ''),
+          filePath: cont.filePath ? String(cont.filePath) : undefined,
+        },
+        documentation: {
+          description: String(cont.description || ''),
+          tags: ['c4', 'container'],
+          status: 'draft',
+        },
+      });
+    });
+
+    secondaryDataContainers.forEach((cont, idx) => {
+      const kind = String(cont.kind || 'database').toLowerCase();
+      const isQueue = kind === 'queue';
+      const nid = `c4-l2-data-${stamp}-${idx}`;
+      l2IdMap.set(String(cont.id), nid);
+      l2Nodes.push({
+        id: nid,
+        type: isQueue ? 'c4-queue' : 'c4-database',
+        label: String(cont.name || (isQueue ? 'Event Queue' : 'Database')),
+        x: boundaryX + 345,
+        y: boundaryY + 65 + idx * 165,
+        width: isQueue ? 210 : 195,
+        height: isQueue ? 110 : 125,
+        parentId: l2BoundaryId,
+        style: isQueue
+          ? { fill: '#0f766e', stroke: '#2dd4bf', strokeWidth: 2, textColor: '#f0fdfa' }
+          : { fill: '#1e3a8a', stroke: '#38bdf8', strokeWidth: 2, textColor: '#e0f2fe' },
+        data: {
+          c4Type: isQueue ? 'queue' : 'database',
+          c4Level: 'container',
+          technology: String(cont.technology || (isQueue ? 'Queue / Broker' : 'SQLite / Postgres')),
+          description: String(cont.description || ''),
+        },
+        documentation: {
+          description: String(cont.description || ''),
+          tags: ['c4', isQueue ? 'queue' : 'database'],
+          status: 'draft',
+        },
+      });
+    });
+
+    externalSystems.forEach((ext, idx) => {
+      const nid = `c4-l2-ext-${stamp}-${idx}`;
+      l2IdMap.set(String(ext.id), nid);
+      l2Nodes.push({
+        id: nid,
+        type: 'c4-system',
+        label: String(ext.name || 'External System'),
+        x: boundaryX + boundaryW + 70,
+        y: boundaryY + 55 + idx * 155,
+        width: 215,
+        height: 115,
+        style: {
+          fill: '#475569',
+          stroke: '#94a3b8',
+          strokeWidth: 2,
+          textColor: '#f8fafc',
+          rounded: 10,
+        },
+        data: {
+          c4Type: 'system',
+          c4Level: 'container',
+          isExternal: true,
+          technology: String(ext.technology || 'External System'),
+          description: String(ext.description || ''),
+        },
+      });
+    });
+
+    const l2NodeLookup = new Map(l2Nodes.map(n => [n.id, n]));
+    (Array.isArray(parsed.containerRelationships) ? parsed.containerRelationships : []).forEach((rel: any, idx: number) => {
+      const fromNodeId = l2IdMap.get(String(rel.fromId || ''));
+      const toNodeId = l2IdMap.get(String(rel.toId || ''));
+      if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+      const src = l2NodeLookup.get(fromNodeId)!;
+      const tgt = l2NodeLookup.get(toNodeId)!;
+      const dx = tgt.x - src.x;
+      const dy = tgt.y - src.y;
+      l2Edges.push({
+        id: `c4-l2-e-${stamp}-${idx}`,
+        sourceNodeId: fromNodeId,
+        targetNodeId: toNodeId,
+        sourceAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'bottom' : 'top',
+        targetAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left' : 'right') : dy >= 0 ? 'top' : 'bottom',
+        type: 'orthogonal',
+        lineStyle: 'solid',
+        markerStart: 'none',
+        markerEnd: 'arrow',
+        label: rel.label ? String(rel.label).slice(0, 42) : undefined,
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Page 3: C4 Level 3 — Components (carrying generated Python modules)
+    // -------------------------------------------------------------------------
+    const l3Nodes: DiagramNode[] = [];
+    const l3Edges: DiagramEdge[] = [];
+    const l3IdMap = new Map<string, string>();
+
+    const primaryContainerLabel = primaryAppContainers[0]?.name || `${projectName} App`;
+    const compCols = components.length > 2 ? 2 : 1;
+    const compRows = Math.max(1, Math.ceil(components.length / compCols));
+    const l3BoundaryX = 80;
+    const l3BoundaryY = 60;
+    const l3BoundaryW = compCols === 2 ? 640 : 340;
+    const l3BoundaryH = Math.max(320, compRows * 185 + 90);
+    const l3BoundaryId = `c4-l3-bnd-${stamp}`;
+
+    l3Nodes.push({
+      id: l3BoundaryId,
+      type: 'c4-boundary',
+      label: `${primaryContainerLabel} (Container Boundary)`,
+      x: l3BoundaryX,
+      y: l3BoundaryY,
+      width: l3BoundaryW,
+      height: l3BoundaryH,
+      isGroup: true,
+      style: {
+        fill: 'rgba(15, 23, 42, 0.25)',
+        stroke: '#38bdf8',
+        strokeWidth: 2,
+        strokeDasharray: '6 4',
+        textColor: '#bae6fd',
+        rounded: 12,
+      },
+      data: {
+        c4Type: 'boundary',
+        c4Level: 'component',
+        boundaryKind: 'Python Container',
+      },
+    });
+
+    components.forEach((comp, idx) => {
+      const col = idx % compCols;
+      const row = Math.floor(idx / compCols);
+      const nid = `c4-l3-comp-${stamp}-${idx}`;
+      l3IdMap.set(String(comp.id), nid);
+      const symbols: string[] = Array.isArray(comp.symbols) ? comp.symbols.map((s: any) => String(s)) : [];
+      const cleanCode = String(comp.pythonCode || '')
+        .replace(/^```(?:python|py)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      const docSummary = [
+        String(comp.description || '').trim(),
+        comp.filePath ? `File: ${comp.filePath}` : '',
+        symbols.length > 0 ? `Symbols: ${symbols.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      l3Nodes.push({
+        id: nid,
+        type: 'c4-component',
+        label: String(comp.name || `Component ${idx + 1}`),
+        x: l3BoundaryX + 40 + col * 300,
+        y: l3BoundaryY + 60 + row * 180,
+        width: 245,
+        height: 135,
+        parentId: l3BoundaryId,
+        drilldownPageId: idx === 0 && codePageId ? codePageId : undefined,
+        style: {
+          fill: '#0e7490',
+          stroke: '#67e8f9',
+          strokeWidth: 2,
+          textColor: '#ecfeff',
+          rounded: 8,
+        },
+        data: {
+          c4Type: 'component',
+          c4Level: 'component',
+          technology: String(comp.technology || 'Python Module'),
+          filePath: String(comp.filePath || `app/module_${idx + 1}.py`),
+          description: String(comp.description || ''),
+          symbols,
+          pythonCode: cleanCode,
+        },
+        documentation: {
+          description: docSummary,
+          tags: ['c4', 'component', 'python'],
+          status: 'draft',
+        },
+      });
+    });
+
+    // External/data stubs on right of L3 boundary if referenced by componentRelationships
+    secondaryDataContainers.forEach((cont, idx) => {
+      const kind = String(cont.kind || 'database').toLowerCase();
+      const isQueue = kind === 'queue';
+      const nid = `c4-l3-extdata-${stamp}-${idx}`;
+      l3IdMap.set(String(cont.id), nid);
+      l3Nodes.push({
+        id: nid,
+        type: isQueue ? 'c4-queue' : 'c4-database',
+        label: String(cont.name || 'Store'),
+        x: l3BoundaryX + l3BoundaryW + 75,
+        y: l3BoundaryY + 60 + idx * 165,
+        width: isQueue ? 205 : 190,
+        height: isQueue ? 105 : 125,
+        style: isQueue
+          ? { fill: '#0f766e', stroke: '#2dd4bf', strokeWidth: 2, textColor: '#f0fdfa' }
+          : { fill: '#1e3a8a', stroke: '#38bdf8', strokeWidth: 2, textColor: '#e0f2fe' },
+        data: {
+          c4Type: isQueue ? 'queue' : 'database',
+          c4Level: 'container',
+          technology: String(cont.technology || ''),
+          description: String(cont.description || ''),
+        },
+      });
+    });
+
+    const l3NodeLookup = new Map(l3Nodes.map(n => [n.id, n]));
+    (Array.isArray(parsed.componentRelationships) ? parsed.componentRelationships : []).forEach((rel: any, idx: number) => {
+      const fromNodeId = l3IdMap.get(String(rel.fromId || ''));
+      const toNodeId = l3IdMap.get(String(rel.toId || ''));
+      if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+      const src = l3NodeLookup.get(fromNodeId)!;
+      const tgt = l3NodeLookup.get(toNodeId)!;
+      const dx = tgt.x - src.x;
+      const dy = tgt.y - src.y;
+      l3Edges.push({
+        id: `c4-l3-e-${stamp}-${idx}`,
+        sourceNodeId: fromNodeId,
+        targetNodeId: toNodeId,
+        sourceAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'bottom' : 'top',
+        targetAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left' : 'right') : dy >= 0 ? 'top' : 'bottom',
+        type: 'orthogonal',
+        lineStyle: 'solid',
+        markerStart: 'none',
+        markerEnd: 'arrow',
+        label: rel.label ? String(rel.label).slice(0, 42) : undefined,
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Optional Page 4: C4 Level 4 — Code Elements
+    // -------------------------------------------------------------------------
+    const pages: DiagramPage[] = [
+      {
+        id: contextPageId,
+        title: `${projectName} — L1 Context`,
+        diagramType: 'c4',
+        nodes: l1Nodes,
+        edges: l1Edges,
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+      {
+        id: containerPageId,
+        title: `${projectName} — L2 Containers`,
+        diagramType: 'c4',
+        parentId: contextPageId,
+        nodes: l2Nodes,
+        edges: l2Edges,
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+      {
+        id: componentPageId,
+        title: `${projectName} — L3 Components`,
+        diagramType: 'c4',
+        parentId: containerPageId,
+        nodes: l3Nodes,
+        edges: l3Edges,
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+    ];
+
+    if (wantL4 && codePageId) {
+      const l4Nodes: DiagramNode[] = [];
+      const l4Edges: DiagramEdge[] = [];
+      const l4IdMap = new Map<string, string>();
+      const cols = components.length > 2 ? 2 : 1;
+
+      components.forEach((comp, idx) => {
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const nid = `c4-l4-code-${stamp}-${idx}`;
+        l4IdMap.set(String(comp.id), nid);
+        const cleanCode = String(comp.pythonCode || '')
+          .replace(/^```(?:python|py)?\s*/i, '')
+          .replace(/\s*```$/, '')
+          .trim();
+        const symbols: string[] = Array.isArray(comp.symbols) ? comp.symbols.map((s: any) => String(s)) : [];
+        l4Nodes.push({
+          id: nid,
+          type: 'c4-code',
+          label: symbols[0] || String(comp.name || `Module ${idx + 1}`),
+          x: 90 + col * 310,
+          y: 75 + row * 195,
+          width: 250,
+          height: 150,
+          style: {
+            fill: '#0f172a',
+            stroke: '#7dd3fc',
+            strokeWidth: 2,
+            textColor: '#e0f2fe',
+            rounded: 8,
+          },
+          data: {
+            c4Type: 'code',
+            c4Level: 'code',
+            technology: 'Python 3.12',
+            filePath: String(comp.filePath || `app/module_${idx + 1}.py`),
+            symbols,
+            description: String(comp.description || ''),
+            pythonCode: cleanCode,
+          },
+          documentation: {
+            description: String(comp.description || ''),
+            tags: ['c4', 'code', 'python'],
+            status: 'draft',
+          },
+        });
+      });
+
+      const l4NodeLookup = new Map(l4Nodes.map(n => [n.id, n]));
+      (Array.isArray(parsed.componentRelationships) ? parsed.componentRelationships : []).forEach((rel: any, idx: number) => {
+        const fromNodeId = l4IdMap.get(String(rel.fromId || ''));
+        const toNodeId = l4IdMap.get(String(rel.toId || ''));
+        if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+        const src = l4NodeLookup.get(fromNodeId)!;
+        const tgt = l4NodeLookup.get(toNodeId)!;
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        l4Edges.push({
+          id: `c4-l4-e-${stamp}-${idx}`,
+          sourceNodeId: fromNodeId,
+          targetNodeId: toNodeId,
+          sourceAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'bottom' : 'top',
+          targetAnchor: Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left' : 'right') : dy >= 0 ? 'top' : 'bottom',
+          type: 'orthogonal',
+          lineStyle: 'dashed',
+          markerStart: 'none',
+          markerEnd: 'arrow',
+          label: rel.label ? String(rel.label).slice(0, 36) : 'imports',
+        });
+      });
+
+      pages.push({
+        id: codePageId,
+        title: `${projectName} — L4 Code`,
+        diagramType: 'c4',
+        parentId: componentPageId,
+        nodes: l4Nodes,
+        edges: l4Edges,
+        viewport: { x: 0, y: 0, zoom: 1 },
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Assemble Deduplicated Generated Python & Project Files
+    // -------------------------------------------------------------------------
+    const fileMap = new Map<string, { filePath: string; purpose: string; content: string; componentName?: string }>();
+    components.forEach((comp: any, idx: number) => {
+      const fp = String(comp.filePath || `app/module_${idx + 1}.py`).replace(/^\/+/, '').replace(/\\/g, '/');
+      const cleanCode = String(comp.pythonCode || '')
+        .replace(/^```(?:python|py)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      if (fp && cleanCode) {
+        fileMap.set(fp, {
+          filePath: fp,
+          purpose: String(comp.description || comp.name || 'C4 Level 3 Component'),
+          content: cleanCode + '\n',
+          componentName: String(comp.name || fp),
+        });
+      }
+    });
+
+    (Array.isArray(parsed.supportFiles) ? parsed.supportFiles : []).forEach((sf: any) => {
+      const fp = String(sf.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/');
+      const cleanContent = String(sf.content || '')
+        .replace(/^```[a-zA-Z0-9_-]*\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      if (fp && !fileMap.has(fp)) {
+        fileMap.set(fp, {
+          filePath: fp,
+          purpose: String(sf.purpose || 'Project file'),
+          content: cleanContent ? cleanContent + '\n' : '',
+        });
+      }
+    });
+
+    if (!fileMap.has('requirements.txt') && requirements.length > 0) {
+      fileMap.set('requirements.txt', {
+        filePath: 'requirements.txt',
+        purpose: 'Python package dependencies',
+        content: requirements.join('\n') + '\n',
+      });
+    }
+
+    if (!fileMap.has('README.md')) {
+      const readmeLines = [
+        `# ${projectName}`,
+        '',
+        summary,
+        '',
+        '## C4 Architecture Layers',
+        `- **L1 Context:** ${actors.map((a: any) => a.name).join(', ')} -> **${projectName}**`,
+        `- **L2 Containers:** ${containers.map((c: any) => `${c.name} (${c.technology})`).join(', ')}`,
+        `- **L3 Components:** ${components.map((c: any) => `${c.name} (\`${c.filePath}\`)`).join(', ')}`,
+        '',
+        '## Quick Start',
+        '```bash',
+        'python -m venv .venv',
+        'pip install -r requirements.txt',
+        entryCommand,
+        '```',
+      ];
+      fileMap.set('README.md', {
+        filePath: 'README.md',
+        purpose: 'C4 architecture & run instructions',
+        content: readmeLines.join('\n') + '\n',
+      });
+    }
+
+    const files = Array.from(fileMap.values());
+    const durationMs = Date.now() - startTime;
+
+    logDebug(
+      'success',
+      'GEMINI_AI',
+      `Generated C4+Python project "${projectName}" (${pages.length} C4 pages, ${files.length} files) in ${durationMs}ms`
+    );
+
+    res.json({
+      success: true,
+      projectName,
+      projectSlug,
+      summary,
+      entryCommand,
+      requirements,
+      files,
+      pages,
+      contextPageId,
+      containerPageId,
+      componentPageId,
+      codePageId,
+      durationMs,
+    });
+  } catch (err: any) {
+    const rawMsg = String(err?.message || 'Failed to generate C4 & Python project with Gemini AI');
+    logDebug('error', 'GEMINI_AI', `Failed C4+Python generation: ${rawMsg}`, err?.stack);
+    res.status(500).json({
+      success: false,
+      error: rawMsg,
+    });
+  }
+});
+
+// 12. Save generated Python files into workspace/scripts/generated_c4/<projectSlug>/
+app.post('/api/workspaces/:workspaceId/python-export', async (req: Request, res: Response) => {
+  try {
+    const { workspaceId } = req.params;
+    const { projectSlug, files } = req.body || {};
+
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ success: false, error: 'files array is required' });
+    }
+
+    const storageDir = getPhysicalStorageDir();
+    const safeWs = sanitizeName(workspaceId) || 'workspace1';
+    const safeSlug = sanitizeName(String(projectSlug || `c4_python_${Date.now()}`)) || 'c4_python_app';
+    const targetRoot = path.resolve(storageDir, safeWs, 'scripts', 'generated_c4', safeSlug);
+    await fsp.mkdir(targetRoot, { recursive: true });
+
+    const savedFiles: string[] = [];
+    for (const file of files) {
+      if (!file || typeof file.filePath !== 'string') continue;
+      const relPosix = file.filePath
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter((seg: string) => seg && seg !== '.' && seg !== '..')
+        .join('/');
+      if (!relPosix) continue;
+
+      const destPath = path.resolve(targetRoot, relPosix);
+      if (!destPath.startsWith(targetRoot + path.sep) && destPath !== targetRoot) {
+        continue;
+      }
+
+      await fsp.mkdir(path.dirname(destPath), { recursive: true });
+      await fsp.writeFile(destPath, String(file.content ?? ''), 'utf-8');
+      savedFiles.push(relPosix);
+    }
+
+    res.json({
+      success: true,
+      outputDir: targetRoot,
+      savedFiles,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to export Python files' });
+  }
+});
+
 // Dev vs Production Vite Setup
 async function startServer() {
   initNodeSystemCertificates();

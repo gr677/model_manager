@@ -56,6 +56,9 @@ import {
   Loader2,
   Coins,
   TrendingUp,
+  Copy,
+  Download,
+  FileCode2,
 } from 'lucide-react';
 import { workspaceService } from '../../services/workspaceService';
 import { scriptEvaluationService } from '../../services/scriptEvaluationService';
@@ -2479,6 +2482,233 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               )}
             </div>
           </div>
+
+          {/* Specialized C4 Architecture Element & Embedded Python Editor */}
+          {(selectedNode.type.startsWith('c4-') || Boolean(selectedNode.data?.c4Type)) && (
+            <div className="pt-2 border-t border-slate-800 space-y-2.5">
+              <label className="text-[10px] uppercase font-mono text-sky-400 font-bold flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" />
+                C4 Architecture Element
+              </label>
+
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1">C4 Shape &amp; Layer</span>
+                <select
+                  disabled={isReadOnly}
+                  value={selectedNode.type}
+                  onChange={e => {
+                    const nextType = e.target.value;
+                    const levelMap: Record<string, string> = {
+                      'c4-person': 'context',
+                      'c4-system': 'context',
+                      'c4-container': 'container',
+                      'c4-database': 'container',
+                      'c4-queue': 'container',
+                      'c4-component': 'component',
+                      'c4-code': 'code',
+                      'c4-boundary': 'container',
+                    };
+                    const typeMap: Record<string, string> = {
+                      'c4-person': 'person',
+                      'c4-system': 'system',
+                      'c4-container': 'container',
+                      'c4-database': 'database',
+                      'c4-queue': 'queue',
+                      'c4-component': 'component',
+                      'c4-code': 'code',
+                      'c4-boundary': 'boundary',
+                    };
+                    const colorMap: Record<string, { fill: string; stroke: string; textColor: string }> = {
+                      'c4-person': { fill: '#08427b', stroke: '#38bdf8', textColor: '#ffffff' },
+                      'c4-system': { fill: '#1168bd', stroke: '#60a5fa', textColor: '#ffffff' },
+                      'c4-container': { fill: '#1d4ed8', stroke: '#60a5fa', textColor: '#eff6ff' },
+                      'c4-database': { fill: '#1e3a8a', stroke: '#38bdf8', textColor: '#e0f2fe' },
+                      'c4-queue': { fill: '#0f766e', stroke: '#2dd4bf', textColor: '#f0fdfa' },
+                      'c4-component': { fill: '#0e7490', stroke: '#67e8f9', textColor: '#ecfeff' },
+                      'c4-code': { fill: '#0f172a', stroke: '#7dd3fc', textColor: '#e0f2fe' },
+                      'c4-boundary': { fill: 'rgba(15, 23, 42, 0.25)', stroke: '#64748b', textColor: '#cbd5e1' },
+                    };
+                    const palette = colorMap[nextType] || colorMap['c4-system'];
+                    onUpdateNode({
+                      ...selectedNode,
+                      type: nextType,
+                      isGroup: nextType === 'c4-boundary' ? true : selectedNode.isGroup,
+                      style: {
+                        ...selectedNode.style,
+                        fill: palette.fill,
+                        stroke: palette.stroke,
+                        textColor: palette.textColor,
+                      },
+                      data: {
+                        ...selectedNode.data,
+                        c4Type: typeMap[nextType] || 'system',
+                        c4Level: levelMap[nextType] || 'context',
+                      },
+                    });
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-slate-100 text-xs focus:outline-none focus:border-sky-500"
+                >
+                  <option value="c4-person">[L1/L2] Person (Actor Silhouette)</option>
+                  <option value="c4-system">[L1] Software System</option>
+                  <option value="c4-container">[L2] Container (App / API / CLI)</option>
+                  <option value="c4-database">[L2] Database Store</option>
+                  <option value="c4-queue">[L2] Message Queue / Bus</option>
+                  <option value="c4-component">[L3] Component (Module / Port Tabs)</option>
+                  <option value="c4-code">[L4] Code Element (Class / Module)</option>
+                  <option value="c4-boundary">[Scope] C4 Boundary Box</option>
+                </select>
+              </div>
+
+              {(selectedNode.type === 'c4-person' || selectedNode.type === 'c4-system') && (
+                <label className="flex items-center gap-2 pt-0.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    disabled={isReadOnly}
+                    checked={Boolean(selectedNode.data?.isExternal)}
+                    onChange={e => {
+                      const isExt = e.target.checked;
+                      const fill =
+                        selectedNode.type === 'c4-person'
+                          ? isExt
+                            ? '#52525b'
+                            : '#08427b'
+                          : isExt
+                          ? '#475569'
+                          : '#1168bd';
+                      const stroke =
+                        selectedNode.type === 'c4-person'
+                          ? isExt
+                            ? '#a1a1aa'
+                            : '#38bdf8'
+                          : isExt
+                          ? '#94a3b8'
+                          : '#60a5fa';
+                      onUpdateNode({
+                        ...selectedNode,
+                        style: { ...selectedNode.style, fill, stroke },
+                        data: { ...selectedNode.data, isExternal: isExt },
+                      });
+                    }}
+                    className="rounded text-sky-500 focus:ring-0"
+                  />
+                  <span className="text-xs text-slate-300">
+                    External {selectedNode.type === 'c4-person' ? 'Person / User' : 'Third-Party System'}
+                  </span>
+                </label>
+              )}
+
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1">
+                  {selectedNode.type === 'c4-person' ? 'Actor Role / Responsibility' : 'Technology / Runtime'}
+                </span>
+                <input
+                  type="text"
+                  disabled={isReadOnly}
+                  value={
+                    selectedNode.type === 'c4-person'
+                      ? selectedNode.data?.role || ''
+                      : selectedNode.data?.technology || ''
+                  }
+                  placeholder={selectedNode.type === 'c4-person' ? 'e.g. Operations Analyst' : 'e.g. Python 3.12 · FastAPI'}
+                  onChange={e =>
+                    onUpdateNode({
+                      ...selectedNode,
+                      data: {
+                        ...selectedNode.data,
+                        ...(selectedNode.type === 'c4-person'
+                          ? { role: e.target.value }
+                          : { technology: e.target.value }),
+                      },
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-slate-100 text-xs focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1">C4 Subtitle / Summary</span>
+                <input
+                  type="text"
+                  disabled={isReadOnly}
+                  value={selectedNode.data?.description || ''}
+                  placeholder="Short architectural responsibility..."
+                  onChange={e =>
+                    onUpdateNode({
+                      ...selectedNode,
+                      data: { ...selectedNode.data, description: e.target.value },
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-slate-100 text-xs focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {(selectedNode.type === 'c4-container' ||
+                selectedNode.type === 'c4-component' ||
+                selectedNode.type === 'c4-code') && (
+                <div>
+                  <span className="text-[10px] text-slate-400 block mb-1">Python File Path</span>
+                  <input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={selectedNode.data?.filePath || ''}
+                    placeholder="e.g. app/services/order_service.py"
+                    onChange={e =>
+                      onUpdateNode({
+                        ...selectedNode,
+                        data: { ...selectedNode.data, filePath: e.target.value },
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-slate-100 font-mono text-xs focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              )}
+
+              {selectedNode.data?.pythonCode && (
+                <div className="rounded-lg border border-sky-500/30 bg-slate-950 overflow-hidden">
+                  <div className="px-2.5 py-1.5 bg-sky-950/50 border-b border-sky-500/20 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-mono font-semibold text-sky-300 flex items-center gap-1 truncate">
+                      <FileCode2 className="w-3 h-3 shrink-0" />
+                      {selectedNode.data.filePath || 'module.py'}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(String(selectedNode.data?.pythonCode || '')).catch(() => {});
+                        }}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                        title="Copy Python code"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const codeStr = String(selectedNode.data?.pythonCode || '');
+                          const blob = new Blob([codeStr], { type: 'text/plain;charset=utf-8' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = String(selectedNode.data?.filePath || 'module.py').split('/').pop() || 'module.py';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="p-1 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                        title="Download .py file"
+                      >
+                        <Download className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="p-2.5 max-h-56 overflow-auto font-mono text-[10px] leading-relaxed text-slate-200">
+                    <code>{selectedNode.data.pythonCode}</code>
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Specialized PERT Analysis */}
           {selectedNode.type === 'pert-activity' && (
