@@ -85,6 +85,8 @@ const PRESET_PROMPTS = [
 const STACK_OPTIONS = [
   'auto',
   'FastAPI Web API',
+  'Web GUI (FastAPI + HTML)',
+  'Desktop GUI (Tkinter)',
   'CLI (Typer / Argparse)',
   'SQLite + Domain Service',
   'Async Worker',
@@ -138,7 +140,7 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
     setExportStatus(null);
 
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 150000);
 
     try {
       const res = await fetch('/api/ai/generate-c4-python', {

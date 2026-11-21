@@ -3808,25 +3808,33 @@ Strict Rules:
 4. Keep relative imports consistent across generated Python files so the project runs cleanly. Include app/__init__.py (if using app/ package), README.md or tests/test_app.py in supportFiles.
 5. Output ONLY structured JSON conforming to the schema.`;
 
-    const controller = new AbortController();
-    req.on('close', () => {
-      if (!res.writableEnded) controller.abort();
-    });
+    const clientAbortController = new AbortController();
+    const onClientClose = () => {
+      if (!res.writableFinished) {
+        clientAbortController.abort();
+      }
+    };
+    res.on('close', onClientClose);
 
-    const response = await generateWithGeminiFallback({
-      apiKey,
-      models: [
-        { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 45000 },
-        { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 45000 },
-      ],
-      contents: fullPrompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: c4Schema,
-      },
-      contextLabel: 'C4+Python Generator',
-      abortSignal: controller.signal,
-    });
+    let response: any;
+    try {
+      response = await generateWithGeminiFallback({
+        apiKey,
+        models: [
+          { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 65000 },
+          { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 65000 },
+        ],
+        contents: fullPrompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: c4Schema,
+        },
+        contextLabel: 'C4+Python Generator',
+        abortSignal: clientAbortController.signal,
+      });
+    } finally {
+      res.off('close', onClientClose);
+    }
 
     const rawJson = (response.text || '{}').trim();
     const parsed = JSON.parse(rawJson);
