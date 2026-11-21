@@ -43,6 +43,7 @@ export interface GeneratedC4ProjectResult {
   componentPageId: string;
   codePageId?: string;
   durationMs?: number;
+  outputDir?: string;
 }
 
 interface GenerateC4PythonModalProps {
@@ -180,6 +181,28 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
         codePageId: data.codePageId,
         durationMs: data.durationMs,
       };
+
+      // Automatically save generated Python files to workspace/scripts/generated_c4/<slug>
+      try {
+        const exportRes = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/python-export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectSlug: result.projectSlug,
+            files: result.files,
+          }),
+        });
+        const exportData = await exportRes.json().catch(() => null);
+        if (exportRes.ok && exportData?.success && exportData.outputDir) {
+          result.outputDir = exportData.outputDir;
+          setExportStatus({
+            dir: exportData.outputDir,
+            count: Array.isArray(exportData.savedFiles) ? exportData.savedFiles.length : result.files.length,
+          });
+        }
+      } catch {
+        // Best-effort auto-export; manual Save All button remains available
+      }
 
       setGeneratedResult(result);
       setSelectedFileIndex(0);

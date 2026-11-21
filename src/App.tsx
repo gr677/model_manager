@@ -2642,7 +2642,7 @@ export default function App() {
 
           // 4. Populate current L1 Context Page and link main c4-system node -> L2 Child Diagram
           let l2Linked = false;
-          const l1Nodes = l1Raw.nodes.map(n => {
+          const l1BaseNodes = l1Raw.nodes.map(n => {
             if (!l2Linked && l2Filename && n.type === 'c4-system' && !n.data?.isExternal) {
               l2Linked = true;
               const ref: ChildDiagramRef = {
@@ -2663,6 +2663,62 @@ export default function App() {
             }
             return { ...n, drilldownPageId: undefined };
           });
+
+          // 4b. Add a visible Sticky Note on the L1 Context diagram explaining where files live & how to build/run them
+          const filesFolder =
+            result.outputDir ||
+            workspaceService
+              .getFullPath(wsId, 'root.json')
+              .replace(/[/\\]data[/\\]root\.json$/i, `/scripts/generated_c4/${slug}`);
+          const fileNamesList = (result.files || [])
+            .map(f => `• ${f.filePath}`)
+            .slice(0, 8)
+            .join('\n');
+          const moreCount = Math.max(0, (result.files || []).length - 8);
+          const hasReqs =
+            (result.requirements && result.requirements.length > 0) ||
+            (result.files || []).some(f => f.filePath.toLowerCase() === 'requirements.txt');
+          const runNoteText = [
+            `Files Saved To:\n${filesFolder}`,
+            fileNamesList
+              ? `Generated Files (${result.files.length}):\n${fileNamesList}${moreCount > 0 ? `\n• ...and ${moreCount} more` : ''}`
+              : '',
+            `Build & Setup:\ncd "${filesFolder}"\npython -m venv .venv\n# Windows: .venv\\Scripts\\activate\n# macOS/Linux: source .venv/bin/activate${
+              hasReqs ? '\npip install -r requirements.txt' : ''
+            }`,
+            `Run Application:\n${result.entryCommand || 'python -m app.main'}`,
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+
+          const maxBottom = l1BaseNodes.reduce((maxY, n) => Math.max(maxY, n.y + n.height), 0);
+          const buildRunNoteNode: DiagramNode = {
+            id: `c4-l1-run-note-${Date.now()}`,
+            type: 'sticky-note',
+            label: `${result.projectName} — Build & Run Guide`,
+            x: 320,
+            y: Math.max(400, maxBottom + 40),
+            width: 470,
+            height: 270,
+            style: {
+              fill: '#fef08a',
+              stroke: '#eab308',
+              strokeWidth: 1,
+              textColor: '#713f12',
+              rounded: 0,
+            },
+            data: {
+              color: 'yellow',
+              author: 'C4 Python Generator',
+            },
+            documentation: {
+              description: runNoteText,
+              tags: ['c4', 'python', 'build-run'],
+              status: 'approved',
+            },
+          };
+
+          const l1Nodes = [...l1BaseNodes, buildRunNoteNode];
 
           const updatedPages = document.pages.map(page => {
             if (page.id !== activePageId) return page;
