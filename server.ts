@@ -3725,75 +3725,70 @@ app.post('/api/ai/generate-c4-python', async (req: Request, res: Response) => {
             required: ['fromId', 'toId', 'label'],
           },
         },
-        components: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              name: { type: Type.STRING },
-              technology: { type: Type.STRING },
-              filePath: { type: Type.STRING, description: 'Relative Python file path like app/routes/orders.py' },
-              description: { type: Type.STRING },
-              symbols: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: 'Key Python classes/functions defined in this component, e.g. ["class OrderService", "def create_order()"]',
+          components: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                name: { type: Type.STRING },
+                technology: { type: Type.STRING },
+                filePath: { type: Type.STRING, description: 'Relative Python file path like app/routes/orders.py' },
+                description: { type: Type.STRING },
+                symbols: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: 'Key Python classes/functions defined in this component, e.g. ["class OrderService", "def create_order()"]',
+                },
               },
-              pythonCode: {
-                type: Type.STRING,
-                description: 'Complete, clean, runnable Python 3.12 source code for this file without markdown backticks.',
+              required: ['id', 'name', 'technology', 'filePath', 'description', 'symbols'],
+            },
+          },
+          componentRelationships: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                fromId: { type: Type.STRING },
+                toId: { type: Type.STRING },
+                label: { type: Type.STRING },
               },
+              required: ['fromId', 'toId', 'label'],
             },
-            required: ['id', 'name', 'technology', 'filePath', 'description', 'symbols', 'pythonCode'],
+          },
+          supportFiles: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                filePath: { type: Type.STRING, description: 'Relative path such as app/main.py, app/__init__.py, tests/test_app.py' },
+                purpose: { type: Type.STRING },
+              },
+              required: ['filePath', 'purpose'],
+            },
           },
         },
-        componentRelationships: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              fromId: { type: Type.STRING },
-              toId: { type: Type.STRING },
-              label: { type: Type.STRING },
-            },
-            required: ['fromId', 'toId', 'label'],
-          },
-        },
-        supportFiles: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              filePath: { type: Type.STRING, description: 'Relative path such as app/main.py, app/__init__.py, tests/test_app.py' },
-              purpose: { type: Type.STRING },
-              content: { type: Type.STRING, description: 'Complete raw file content without markdown backticks.' },
-            },
-            required: ['filePath', 'purpose', 'content'],
-          },
-        },
-      },
-      required: [
-        'projectName',
-        'projectSlug',
-        'summary',
-        'entryCommand',
-        'requirements',
-        'mainSystem',
-        'actors',
-        'externalSystems',
-        'contextRelationships',
-        'containers',
-        'containerRelationships',
-        'components',
-        'componentRelationships',
-        'supportFiles',
-      ],
-    };
+        required: [
+          'projectName',
+          'projectSlug',
+          'summary',
+          'entryCommand',
+          'requirements',
+          'mainSystem',
+          'actors',
+          'externalSystems',
+          'contextRelationships',
+          'containers',
+          'containerRelationships',
+          'components',
+          'componentRelationships',
+          'supportFiles',
+        ],
+      };
 
     const fullPrompt = `You are a Principal Python Architect specializing in Simon Brown's C4 Model (Context, Container, Component, Code).
 
-Design and generate a clean, modular, working Python 3.12 application matching the user's request below, AND document its architecture across C4 Layers:
+Design the C4 architecture and Python module layout matching the user's request below:
 - User Request: "${prompt.trim()}"
 - Preferred Stack: ${stackLabel}
 
@@ -3801,12 +3796,12 @@ Strict Rules:
 1. L1 Context: 1-3 Actors (actors), 1 mainSystem, and 1-3 External Systems (externalSystems) if appropriate, connected via contextRelationships using "main" for mainSystem.
 2. L2 Containers: 2-5 Containers inside the system boundary. Include at least one primary Python runtime container (kind: "container"), plus database (kind: "database") or queue (kind: "queue") containers as appropriate. Connect actors -> containers -> databases/queues/externalSystems in containerRelationships.
 3. L3 Components: Break the primary Python container into 3-6 coherent Python modules (components). Every component MUST have:
-   - valid relative filePath (e.g. "app/models.py", "app/repository.py", "app/service.py", "app/main.py")
-   - technology (e.g. "FastAPI Router", "SQLite Repository", "Domain Service", "Pydantic Schemas")
-   - symbols array listing exact classes & functions implemented in that file
-   - complete, syntactically valid, well-typed Python 3.12 pythonCode (no TODO stubs, no markdown fences).
-4. Keep relative imports consistent across generated Python files so the project runs cleanly. Include app/__init__.py (if using app/ package), README.md or tests/test_app.py in supportFiles.
-5. Output ONLY structured JSON conforming to the schema.`;
+   - valid relative filePath (e.g. "app/schemas.py", "app/service.py", "app/routes.py", "app/main.py")
+   - technology (e.g. "FastAPI Router", "HTTP Client Service", "Pydantic Models")
+   - symbols array listing exact classes & functions to implement in that file.
+4. Include any extra entrypoints/tests in supportFiles (e.g. app/main.py if not already in components, app/__init__.py, tests/test_app.py).
+5. Every third-party pip package needed (fastapi, uvicorn[standard], httpx, pydantic, etc.) MUST be in "requirements". If entryCommand uses uvicorn, use "uvicorn app.main:app --reload --reload-dir app".
+6. Output ONLY structured JSON conforming to the schema.`;
 
     const clientAbortController = new AbortController();
     const onClientClose = () => {
@@ -3816,28 +3811,104 @@ Strict Rules:
     };
     res.on('close', onClientClose);
 
-    let response: any;
+    let parsed: any;
+    const generatedCodeByPath = new Map<string, string>();
+    const supportPurposeByPath = new Map<string, string>();
+
     try {
-      response = await generateWithGeminiFallback({
+      // Phase 1: Architecture & C4 Layers JSON
+      const phase1Response = await generateWithGeminiFallback({
         apiKey,
         models: [
-          { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 65000 },
-          { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 65000 },
+          { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 55000 },
+          { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 55000 },
         ],
         contents: fullPrompt,
         config: {
           responseMimeType: 'application/json',
           responseSchema: c4Schema,
         },
-        contextLabel: 'C4+Python Generator',
+        contextLabel: 'C4 Architecture (Phase 1)',
         abortSignal: clientAbortController.signal,
       });
+
+      const rawJson = (phase1Response.text || '{}').trim();
+      parsed = JSON.parse(rawJson);
+
+      const plannedComponents: any[] = Array.isArray(parsed.components) ? parsed.components : [];
+      const plannedSupport: any[] = Array.isArray(parsed.supportFiles) ? parsed.supportFiles : [];
+      plannedSupport.forEach(sf => {
+        const fp = String(sf.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/').trim();
+        if (fp) supportPurposeByPath.set(fp, String(sf.purpose || 'Project file'));
+      });
+
+      const plannedFilesSpec = [
+        ...plannedComponents.map(c => ({
+          filePath: String(c.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/').trim(),
+          role: `${c.name} (${c.technology}): ${c.description}. Symbols: ${(Array.isArray(c.symbols) ? c.symbols : []).join(', ')}`,
+        })),
+        ...plannedSupport
+          .filter(sf => {
+            const fp = String(sf.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/').trim();
+            return fp && fp !== 'requirements.txt' && fp !== 'README.md';
+          })
+          .map(sf => ({
+            filePath: String(sf.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/').trim(),
+            role: String(sf.purpose || 'Support file'),
+          })),
+      ].filter(item => item.filePath);
+
+      // Phase 2: Generate clean, properly indented multi-line Python code OUTSIDE JSON escaping
+      const codePrompt = `You are a Principal Python 3.12 Engineer.
+Write the complete, runnable, PEP-8 formatted multi-line Python source files for this application:
+- Project: ${String(parsed.projectName || 'Python App')}
+- User Request: "${prompt.trim()}"
+- Summary: ${String(parsed.summary || '')}
+- Entry Command: ${String(parsed.entryCommand || 'uvicorn app.main:app --reload --reload-dir app')}
+- Dependencies: ${(Array.isArray(parsed.requirements) ? parsed.requirements : []).join(', ')}
+
+Required Files to Write:
+${plannedFilesSpec.map(f => `- ${f.filePath}: ${f.role}`).join('\n')}
+
+CRITICAL FORMATTING & CODE QUALITY RULES:
+1. Write proper multi-line Python 3.12 with standard 4-space indentation and real newlines. NEVER join statements onto one line with semicolons (;).
+2. Use consistent package imports matching the file paths above (e.g. "from app.schemas import ..." or relative imports inside app/).
+3. Implement real working logic—no TODO stubs or placeholders. If building a web GUI with FastAPI, serve clean self-contained interactive HTML/CSS/JS via HTMLResponse from GET "/" (do NOT rely on missing templates/ or static/ folders on disk unless you also emit those files).
+4. Ensure every file compiles cleanly under Python 3.12 and matches the entry command (${String(parsed.entryCommand || 'uvicorn app.main:app')}).
+5. Wrap EVERY file strictly using these exact delimiters (no markdown triple backticks around file bodies):
+
+===FILE: path/to/file.py===
+# multi-line code here
+===ENDFILE===`;
+
+      const phase2Response = await generateWithGeminiFallback({
+        apiKey,
+        models: [
+          { name: 'gemini-4-hydrogen', useLowThinking: false, timeoutMs: 75000 },
+          { name: 'gemini-3.1-flash-lite', useLowThinking: false, timeoutMs: 75000 },
+        ],
+        contents: codePrompt,
+        config: {},
+        contextLabel: 'Python Source Code (Phase 2)',
+        abortSignal: clientAbortController.signal,
+      });
+
+      const codeText = String(phase2Response.text || '');
+      const fileBlockRegex = /===FILE:\s*([^\r\n=]+?)\s*===\r?\n([\s\S]*?)===ENDFILE===/g;
+      let match: RegExpExecArray | null;
+      while ((match = fileBlockRegex.exec(codeText)) !== null) {
+        const fp = match[1].trim().replace(/^\/+/, '').replace(/\\/g, '/');
+        const cleanedBody = match[2]
+          .trimEnd()
+          .replace(/^```(?:python|py|html|txt|md)?\r?\n/i, '')
+          .replace(/\r?\n```$/, '');
+        if (fp) {
+          generatedCodeByPath.set(fp, cleanedBody);
+        }
+      }
     } finally {
       res.off('close', onClientClose);
     }
-
-    const rawJson = (response.text || '{}').trim();
-    const parsed = JSON.parse(rawJson);
 
     const stamp = Date.now();
     const projectName = String(parsed.projectName || 'Python C4 System').trim();
@@ -3864,7 +3935,14 @@ Strict Rules:
     const containers: any[] = Array.isArray(parsed.containers) && parsed.containers.length > 0
       ? parsed.containers
       : [{ id: 'cont_api', name: `${projectName} App`, kind: 'container', technology: 'Python 3.12', description: summary }];
-    const components: any[] = Array.isArray(parsed.components) ? parsed.components : [];
+    const components: any[] = (Array.isArray(parsed.components) ? parsed.components : []).map((comp: any, idx: number) => {
+      const fp = String(comp.filePath || `app/module_${idx + 1}.py`).replace(/^\/+/, '').replace(/\\/g, '/');
+      return {
+        ...comp,
+        filePath: fp,
+        pythonCode: generatedCodeByPath.get(fp) || String(comp.pythonCode || ''),
+      };
+    });
 
     // -------------------------------------------------------------------------
     // Page 1: C4 Level 1 — System Context
@@ -4464,7 +4542,8 @@ Strict Rules:
 
     (Array.isArray(parsed.supportFiles) ? parsed.supportFiles : []).forEach((sf: any) => {
       const fp = String(sf.filePath || '').replace(/^\/+/, '').replace(/\\/g, '/');
-      const cleanContent = String(sf.content || '')
+      const rawContent = generatedCodeByPath.get(fp) ?? String(sf.content || '');
+      const cleanContent = rawContent
         .replace(/^```[a-zA-Z0-9_-]*\s*/i, '')
         .replace(/\s*```$/, '')
         .trim();
@@ -4477,12 +4556,100 @@ Strict Rules:
       }
     });
 
-    if (!fileMap.has('requirements.txt') && requirements.length > 0) {
-      fileMap.set('requirements.txt', {
-        filePath: 'requirements.txt',
-        purpose: 'Python package dependencies',
-        content: requirements.join('\n') + '\n',
-      });
+    // Include any additional files produced by Phase 2 that weren't listed in Phase 1
+    for (const [fp, content] of generatedCodeByPath.entries()) {
+      if (fp && !fileMap.has(fp) && fp !== 'requirements.txt' && fp !== 'README.md') {
+        fileMap.set(fp, {
+          filePath: fp,
+          purpose: supportPurposeByPath.get(fp) || 'Generated Python module',
+          content: content.trimEnd() ? content.trimEnd() + '\n' : '',
+        });
+      }
+    }
+
+    // Ensure every Python package folder (e.g. app/, app/routes/) has __init__.py
+    const pyDirs = new Set<string>();
+    for (const fp of fileMap.keys()) {
+      if (fp.endsWith('.py') && fp.includes('/')) {
+        const parts = fp.split('/');
+        parts.pop();
+        let accum = '';
+        for (const seg of parts) {
+          accum = accum ? `${accum}/${seg}` : seg;
+          if (accum !== 'tests' && accum !== 'test') {
+            pyDirs.add(accum);
+          }
+        }
+      }
+    }
+    for (const dir of pyDirs) {
+      const initPath = `${dir}/__init__.py`;
+      if (!fileMap.has(initPath)) {
+        fileMap.set(initPath, {
+          filePath: initPath,
+          purpose: 'Python package marker',
+          content: '',
+        });
+      }
+    }
+
+    // Scan generated .py imports to ensure requirements.txt never omits critical runtime packages
+    const importToPip: Record<string, string> = {
+      fastapi: 'fastapi',
+      uvicorn: 'uvicorn[standard]',
+      httpx: 'httpx',
+      requests: 'requests',
+      pydantic: 'pydantic',
+      jinja2: 'jinja2',
+      sqlalchemy: 'sqlalchemy',
+      aiosqlite: 'aiosqlite',
+      typer: 'typer',
+      streamlit: 'streamlit',
+      bs4: 'beautifulsoup4',
+      pandas: 'pandas',
+      multipart: 'python-multipart',
+    };
+    const existingReqNames = new Set(
+      requirements.map(r => r.split(/[=<>~!\[]/)[0].trim().toLowerCase()).filter(Boolean)
+    );
+    const allPyText = Array.from(fileMap.values())
+      .filter(f => f.filePath.endsWith('.py'))
+      .map(f => f.content)
+      .join('\n');
+
+    for (const [mod, pkg] of Object.entries(importToPip)) {
+      const re = new RegExp(`^\\s*(?:import|from)\\s+${mod}\\b`, 'm');
+      const pkgBase = pkg.split('[')[0].toLowerCase();
+      if (re.test(allPyText) && !existingReqNames.has(pkgBase)) {
+        requirements.push(pkg);
+        existingReqNames.add(pkgBase);
+      }
+    }
+    if (/\buvicorn\b/i.test(entryCommand) && !existingReqNames.has('uvicorn')) {
+      requirements.push('uvicorn[standard]');
+      existingReqNames.add('uvicorn');
+    }
+
+    if (requirements.length > 0) {
+      const existingReqFile = fileMap.get('requirements.txt');
+      if (!existingReqFile) {
+        fileMap.set('requirements.txt', {
+          filePath: 'requirements.txt',
+          purpose: 'Python package dependencies',
+          content: requirements.join('\n') + '\n',
+        });
+      } else {
+        const lines = existingReqFile.content.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const lineBases = new Set(lines.map(l => l.split(/[=<>~!\[]/)[0].trim().toLowerCase()));
+        for (const req of requirements) {
+          const base = req.split(/[=<>~!\[]/)[0].trim().toLowerCase();
+          if (!lineBases.has(base)) {
+            lines.push(req);
+            lineBases.add(base);
+          }
+        }
+        existingReqFile.content = lines.join('\n') + '\n';
+      }
     }
 
     if (!fileMap.has('README.md')) {
