@@ -768,10 +768,9 @@ export default function App() {
     [currentPage, handleUpdateNodes]
   );
 
-  // Add image file from bottom-left "+ Add Image" button
+  // Add or paste an image file into a targeted Image node, selected node, or as a new Image node
   const handleAddImageFile = useCallback(
-    async (file: File) => {
-      // First, read locally as Data URL so node can appear IMMEDIATELY regardless of server state
+    async (file: File, options?: { targetNodeId?: string; forceNewNode?: boolean }) => {
       const readAsDataUrl = (f: File): Promise<string> =>
         new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -787,7 +786,7 @@ export default function App() {
         localDataUrl = URL.createObjectURL(file);
       }
 
-      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const cleanName = file.name.replace(/\.[^/.]+$/, '') || 'Pasted Image';
       const tempId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const currentAttachment: NodeImageAttachment = {
         id: tempId,
@@ -799,24 +798,36 @@ export default function App() {
         uploadedAt: new Date().toISOString(),
       };
 
-      // Create or attach node on canvas FIRST so the user sees their image node immediately
-      if (selectedNode) {
-        const updatedImages = [...(selectedNode.images || []), currentAttachment];
-        handleUpdateSingleNode({
-          ...selectedNode,
-          images: updatedImages,
+      const latestDoc = documentRef.current;
+      const latestPage = latestDoc.pages.find(p => p.id === activePageId) || latestDoc.pages[0];
+      const targetNodeId = options?.targetNodeId ?? (!options?.forceNewNode ? selectedNode?.id : undefined);
+      const targetNode = targetNodeId ? latestPage?.nodes.find(n => n.id === targetNodeId) : undefined;
+      const resolvedNodeId = targetNode ? targetNode.id : `node-img-${Date.now()}`;
+
+      if (targetNode) {
+        const isGenericImgTitle = targetNode.label === 'Image Model' || targetNode.label === 'Image Attachment';
+        const hadNoImages = !targetNode.images || targetNode.images.length === 0;
+        const nextNodes = latestPage.nodes.map(n => {
+          if (n.id !== targetNode.id) return n;
+          return {
+            ...n,
+            ...(hadNoImages && isGenericImgTitle ? { label: cleanName } : {}),
+            images: [...(n.images || []), currentAttachment],
+          };
         });
+        const nextPages = latestDoc.pages.map(p => (p.id === latestPage.id ? { ...p, nodes: nextNodes } : p));
+        persistDocument({ ...latestDoc, pages: nextPages });
+        setSelectedNodeIds([targetNode.id]);
         setIsInspectorOpen(true);
       } else {
-        const newNodeId = `node-img-${Date.now()}`;
         const newNode: DiagramNode = {
-          id: newNodeId,
+          id: resolvedNodeId,
           type: 'image',
           label: cleanName,
           x: 240,
           y: 200,
-          width: 160,
-          height: 125,
+          width: 180,
+          height: 135,
           style: {
             fill: '#0f172a',
             stroke: '#38bdf8',
@@ -836,42 +847,56 @@ export default function App() {
           },
         };
 
-        handleUpdateNodes([...currentPage.nodes, newNode]);
-        setSelectedNodeIds([newNodeId]);
+        const nextPages = latestDoc.pages.map(p =>
+          p.id === latestPage.id ? { ...p, nodes: [...latestPage.nodes, newNode] } : p
+        );
+        persistDocument({ ...latestDoc, pages: nextPages });
+        setSelectedNodeIds([resolvedNodeId]);
         setIsInspectorOpen(true);
       }
 
       setSaveStatus('saving');
 
-      // Now sync with server storage in background
+      // Persist image file to <workspace>/images/ and replace temporary dataUrl with workspace image URL
       try {
-        const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
-        // If node was updated, refresh with the server-persisted URL
-        if (selectedNode) {
-          const updatedImages = (selectedNode.images || []).map(img => (img.id === tempId ? uploaded : img));
-          if (!updatedImages.some(img => img.id === uploaded.id)) {
-            updatedImages.push(uploaded);
-          }
-          handleUpdateSingleNode({
-            ...selectedNode,
-            images: updatedImages,
+        const wsId = activeWorkspaceIdRef.current || activeWs.id;
+        const uploaded = await workspaceService.uploadWorkspaceImage(wsId, file);
+        const docAfterUpload = documentRef.current;
+        const pageAfterUpload = docAfterUpload.pages.find(p => p.id === latestPage.id);
+        if (pageAfterUpload) {
+          const syncedNodes = pageAfterUpload.nodes.map(n => {
+            if (n.id !== resolvedNodeId) return n;
+            const currentImgs = n.images || [];
+            const hasTemp = currentImgs.some(img => img.id === tempId);
+            const nextImgs = hasTemp
+              ? currentImgs.map(img => (img.id === tempId ? uploaded : img))
+              : [...currentImgs, uploaded];
+            return {
+              ...n,
+              images: nextImgs,
+            };
           });
+          const syncedPages = docAfterUpload.pages.map(p =>
+            p.id === pageAfterUpload.id ? { ...p, nodes: syncedNodes } : p
+          );
+          persistDocument({ ...docAfterUpload, pages: syncedPages });
         }
-        setSaveStatus('saved');
+
+        setSaveStatus('unsaved');
         setImageNotice({
           type: 'success',
           message: `Image "${uploaded.filename}" saved to workspace images/ folder!`,
         });
       } catch (err: any) {
         console.warn('Server image upload had an issue, kept local image on canvas:', err);
-        setSaveStatus('idle');
+        setSaveStatus('unsaved');
         setImageNotice({
           type: 'info',
           message: `Image added to canvas using local data (Server: ${err?.message || 'saved locally'}).`,
         });
       }
     },
-    [activeWs.id, selectedNode, handleUpdateSingleNode, handleUpdateNodes, currentPage.nodes]
+    [activeWs.id, activePageId, selectedNode, persistDocument]
   );
 
   const handleAddExistingImage = useCallback(
@@ -2080,7 +2105,7 @@ export default function App() {
           onOpenGallery={() => setIsGalleryOpen(true)}
           onOpenImportSqlModal={() => setIsImportSqlModalOpen(true)}
           onLoadDiagram={handleLoadWorkspaceDiagram}
-          onAddImageFile={handleAddImageFile}
+          onAddImageFile={file => handleAddImageFile(file)}
           onAddExistingImage={handleAddExistingImage}
         />
 
@@ -2180,6 +2205,42 @@ export default function App() {
               });
             }
           }}
+          onUpdateNodeContent={(nodeId, updates) => {
+            const latestDoc = documentRef.current;
+            const latestPage = latestDoc.pages.find(p => p.id === activePageId) || latestDoc.pages[0];
+            const targetNode = latestPage?.nodes.find(n => n.id === nodeId);
+            if (targetNode) {
+              const nextData = { ...(targetNode.data || {}) };
+              if (updates.description !== undefined) {
+                if (nextData.description !== undefined) nextData.description = updates.description;
+                if (nextData.notes !== undefined) nextData.notes = updates.description;
+              }
+              const currentDocs = targetNode.documentation || {
+                description: '',
+                tags: [],
+                status: 'draft' as const,
+              };
+              const updatedNode: DiagramNode = {
+                ...targetNode,
+                ...(updates.label !== undefined ? { label: updates.label } : {}),
+                data: nextData,
+                documentation: {
+                  ...currentDocs,
+                  ...(updates.description !== undefined ? { description: updates.description } : {}),
+                  lastEditedAt: new Date().toISOString(),
+                },
+              };
+              const nextPages = latestDoc.pages.map(p =>
+                p.id === latestPage.id
+                  ? { ...p, nodes: p.nodes.map(n => (n.id === nodeId ? updatedNode : n)) }
+                  : p
+              );
+              persistDocument({ ...latestDoc, pages: nextPages });
+            }
+          }}
+          onAttachImageFile={(file, targetNodeId) =>
+            handleAddImageFile(file, { targetNodeId, forceNewNode: !targetNodeId })
+          }
         />
 
         {/* Right Sidebar: Inspector, Documentation, Comments & Groups (Only displayed when a node or connector is selected) */}

@@ -59,8 +59,13 @@ import {
   Copy,
   Download,
   FileCode2,
+  ClipboardPaste,
 } from 'lucide-react';
 import { workspaceService } from '../../services/workspaceService';
+import {
+  extractImageFileFromDataTransfer,
+  readImageFileFromNavigatorClipboard,
+} from '../../utils/clipboardImage';
 import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram, CONNECTOR_STYLE_OPTIONS } from '../../utils/diagramConnectorConfig';
@@ -136,6 +141,8 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [workspaceImages, setWorkspaceImages] = useState<Array<{ filename: string; url: string; size: number }>>([]);
   const [showWorkspaceImagePicker, setShowWorkspaceImagePicker] = useState(false);
+  const [isAwaitingInspectorPaste, setIsAwaitingInspectorPaste] = useState(false);
+  const inspectorPasteInputRef = React.useRef<HTMLInputElement>(null);
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -3464,28 +3471,120 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               )}
             </div>
 
-            {/* Upload & Browse Buttons */}
+            {/* Upload, Paste & Browse Buttons */}
             {!isReadOnly && (
-              <div className="pt-1.5 flex items-center gap-2">
-                <label className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs cursor-pointer shadow-sm transition-colors">
-                  {isUploadingImage ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Importing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Import / Upload Image</span>
-                    </>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
+              <div className="pt-1.5 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <label className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs cursor-pointer shadow-sm transition-colors">
+                    {isUploadingImage ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={isUploadingImage}
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file || !selectedNode) return;
+                        setIsUploadingImage(true);
+                        setImageUploadError(null);
+                        try {
+                          const activeWs = workspaceService.getActiveWorkspace();
+                          const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, file);
+                          const existing = selectedNode.images || [];
+                          onUpdateNode({
+                            ...selectedNode,
+                            images: [...existing, uploaded],
+                          });
+                        } catch (err: any) {
+                          setImageUploadError(err?.message || 'Failed to upload image');
+                        } finally {
+                          setIsUploadingImage(false);
+                          e.target.value = '';
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
                     disabled={isUploadingImage}
-                    onChange={async e => {
-                      const file = e.target.files?.[0];
-                      if (!file || !selectedNode) return;
+                    onClick={async () => {
+                      if (!selectedNode) return;
+                      setImageUploadError(null);
+                      const res = await readImageFileFromNavigatorClipboard();
+                      if (res.status === 'ok' && res.file) {
+                        setIsAwaitingInspectorPaste(false);
+                        setIsUploadingImage(true);
+                        try {
+                          const activeWs = workspaceService.getActiveWorkspace();
+                          const uploaded = await workspaceService.uploadWorkspaceImage(activeWs.id, res.file);
+                          const existing = selectedNode.images || [];
+                          onUpdateNode({
+                            ...selectedNode,
+                            images: [...existing, uploaded],
+                          });
+                        } catch (err: any) {
+                          setImageUploadError(err?.message || 'Failed to save pasted image');
+                        } finally {
+                          setIsUploadingImage(false);
+                        }
+                        return;
+                      }
+                      if (res.status === 'no-image') {
+                        setImageUploadError('No image found in clipboard.');
+                        return;
+                      }
+                      setIsAwaitingInspectorPaste(true);
+                      window.requestAnimationFrame(() => inspectorPasteInputRef.current?.focus());
+                    }}
+                    className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg border border-emerald-500/40 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                    title="Paste image from clipboard and save to workspace images/ folder"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    <span>Paste</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const activeWs = workspaceService.getActiveWorkspace();
+                      const list = await workspaceService.listWorkspaceImages(activeWs.id);
+                      setWorkspaceImages(list);
+                      setShowWorkspaceImagePicker(v => !v);
+                    }}
+                    className="px-2 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-mono transition-colors cursor-pointer"
+                    title="Browse images stored in workspace images/ folder"
+                  >
+                    Browse
+                  </button>
+                </div>
+
+                {isAwaitingInspectorPaste && (
+                  <input
+                    ref={inspectorPasteInputRef}
+                    type="text"
+                    readOnly
+                    data-image-paste-trap="true"
+                    value="Press Ctrl+V here to paste clipboard image..."
+                    onPaste={async e => {
+                      const file = extractImageFileFromDataTransfer(e.clipboardData);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsAwaitingInspectorPaste(false);
+                      if (!file || !selectedNode) {
+                        setImageUploadError('Clipboard did not contain an image.');
+                        return;
+                      }
                       setIsUploadingImage(true);
                       setImageUploadError(null);
                       try {
@@ -3497,29 +3596,18 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
                           images: [...existing, uploaded],
                         });
                       } catch (err: any) {
-                        setImageUploadError(err?.message || 'Failed to upload image');
+                        setImageUploadError(err?.message || 'Failed to save pasted image');
                       } finally {
                         setIsUploadingImage(false);
-                        e.target.value = '';
                       }
                     }}
-                    className="hidden"
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') setIsAwaitingInspectorPaste(false);
+                    }}
+                    onBlur={() => setIsAwaitingInspectorPaste(false)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-sky-500/60 bg-slate-950 text-sky-300 text-[11px] font-mono focus:outline-none"
                   />
-                </label>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const activeWs = workspaceService.getActiveWorkspace();
-                    const list = await workspaceService.listWorkspaceImages(activeWs.id);
-                    setWorkspaceImages(list);
-                    setShowWorkspaceImagePicker(v => !v);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors cursor-pointer"
-                  title="Browse images stored in workspace images/ folder"
-                >
-                  Browse images/
-                </button>
+                )}
               </div>
             )}
 

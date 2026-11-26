@@ -55,12 +55,18 @@ import {
   Pencil,
   Check,
   X,
+  ClipboardPaste,
+  Upload,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
 import { workspaceService } from '../../services/workspaceService';
 import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
 import { NodeAnchor, NODE_ANCHOR_DEFINITIONS, getNodeAnchorRelativeCoords } from '../../utils/diagramAnchors';
+import {
+  extractImageFileFromDataTransfer,
+  readImageFileFromNavigatorClipboard,
+} from '../../utils/clipboardImage';
 
 interface NodeRendererProps {
   node: DiagramNode;
@@ -84,6 +90,8 @@ interface NodeRendererProps {
   onOpenDoc?: (node: DiagramNode) => void;
   onUpdateLabel?: (nodeId: string, newLabel: string) => void;
   onUpdateDescription?: (nodeId: string, newDescription: string) => void;
+  onUpdateNodeContent?: (nodeId: string, updates: { label?: string; description?: string }) => void;
+  onAttachImageFile?: (file: File, targetNodeId: string) => void;
   onNodeContextMenu?: (nodeId: string, e: React.MouseEvent) => void;
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onNavigateChildDiagram?: (filename: string) => void;
@@ -112,6 +120,8 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   onOpenDoc,
   onUpdateLabel,
   onUpdateDescription,
+  onUpdateNodeContent,
+  onAttachImageFile,
   onNodeContextMenu,
   onOpenChildDiagramModal,
   onNavigateChildDiagram,
@@ -126,10 +136,21 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   const [isHovered, setIsHovered] = React.useState(false);
   const [isEditingDescription, setIsEditingDescription] = React.useState(false);
   const [editedDescription, setEditedDescription] = React.useState(node.documentation?.description || '');
+  const [isEditingStickyNote, setIsEditingStickyNote] = React.useState(false);
+  const [editedStickyTitle, setEditedStickyTitle] = React.useState(node.label || '');
+  const [editedStickyBody, setEditedStickyBody] = React.useState(
+    node.documentation?.description || node.data?.notes || node.data?.description || ''
+  );
+  const [isAwaitingImagePaste, setIsAwaitingImagePaste] = React.useState(false);
+  const [imagePasteNotice, setImagePasteNotice] = React.useState<string | null>(null);
   const [mouseEntryPos, setMouseEntryPos] = React.useState<{ x: number; y: number } | null>(null);
   const hoverLeaveTimerRef = React.useRef<number | null>(null);
   const popupRef = React.useRef<HTMLDivElement | null>(null);
   const descriptionTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const stickyNoteContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const stickyBodyTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const imageNodeFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const imagePasteTrapRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const clearHoverLeaveTimer = React.useCallback(() => {
     if (hoverLeaveTimerRef.current !== null) {
@@ -179,6 +200,119 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
     setEditedDescription(node.documentation?.description || '');
     setIsEditingDescription(false);
   }, [node.documentation?.description]);
+
+  React.useEffect(() => {
+    if (!isEditingStickyNote) {
+      setEditedStickyTitle(node.label || '');
+      setEditedStickyBody(
+        node.documentation?.description ?? node.data?.notes ?? node.data?.description ?? ''
+      );
+    }
+  }, [node.label, node.documentation?.description, node.data?.notes, node.data?.description, isEditingStickyNote]);
+
+  const handleStartEditStickyNote = React.useCallback(
+    (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      if (isReadOnly || node.type !== 'sticky-note') return;
+      clearHoverLeaveTimer();
+      setIsHovered(false);
+      setEditedStickyTitle(node.label || '');
+      setEditedStickyBody(
+        node.documentation?.description ?? node.data?.notes ?? node.data?.description ?? ''
+      );
+      setIsEditingStickyNote(true);
+      window.requestAnimationFrame(() => {
+        const el = stickyBodyTextareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [isReadOnly, node.type, node.label, node.documentation?.description, node.data?.notes, node.data?.description, clearHoverLeaveTimer]
+  );
+
+  const handleSaveStickyNote = React.useCallback(() => {
+    const nextTitle = editedStickyTitle.trim() || node.label || 'Note';
+    const currentBody =
+      node.documentation?.description ?? node.data?.notes ?? node.data?.description ?? '';
+    const titleChanged = nextTitle !== node.label;
+    const bodyChanged = editedStickyBody !== currentBody;
+
+    if (titleChanged || bodyChanged) {
+      if (onUpdateNodeContent) {
+        onUpdateNodeContent(node.id, {
+          ...(titleChanged ? { label: nextTitle } : {}),
+          ...(bodyChanged ? { description: editedStickyBody } : {}),
+        });
+      } else {
+        if (bodyChanged) onUpdateDescription?.(node.id, editedStickyBody);
+        else if (titleChanged) onUpdateLabel?.(node.id, nextTitle);
+      }
+    }
+    setIsEditingStickyNote(false);
+  }, [
+    editedStickyTitle,
+    editedStickyBody,
+    node.id,
+    node.label,
+    node.documentation?.description,
+    node.data?.notes,
+    node.data?.description,
+    onUpdateNodeContent,
+    onUpdateDescription,
+    onUpdateLabel,
+  ]);
+
+  const handleCancelStickyNote = React.useCallback(() => {
+    setEditedStickyTitle(node.label || '');
+    setEditedStickyBody(
+      node.documentation?.description ?? node.data?.notes ?? node.data?.description ?? ''
+    );
+    setIsEditingStickyNote(false);
+  }, [node.label, node.documentation?.description, node.data?.notes, node.data?.description]);
+
+  React.useEffect(() => {
+    if (!isEditingStickyNote) return;
+    const handleOutsideStickyMouseDown = (ev: MouseEvent) => {
+      if (stickyNoteContainerRef.current && !stickyNoteContainerRef.current.contains(ev.target as Node)) {
+        handleSaveStickyNote();
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideStickyMouseDown);
+    return () => window.removeEventListener('mousedown', handleOutsideStickyMouseDown);
+  }, [isEditingStickyNote, handleSaveStickyNote]);
+
+  const handleTriggerImageNodePaste = React.useCallback(
+    async (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      if (isReadOnly || !onAttachImageFile) return;
+      setImagePasteNotice(null);
+      const res = await readImageFileFromNavigatorClipboard();
+      if (res.status === 'ok' && res.file) {
+        setIsAwaitingImagePaste(false);
+        onAttachImageFile(res.file, node.id);
+        return;
+      }
+      if (res.status === 'no-image') {
+        setImagePasteNotice('No image found in clipboard');
+        window.setTimeout(() => setImagePasteNotice(null), 2500);
+        return;
+      }
+      // Browser blocked async clipboard.read(): focus inline paste trap for instant Ctrl+V
+      setIsAwaitingImagePaste(true);
+      window.requestAnimationFrame(() => {
+        imagePasteTrapRef.current?.focus();
+      });
+    },
+    [isReadOnly, onAttachImageFile, node.id]
+  );
+
+  React.useEffect(() => {
+    if (!isAwaitingImagePaste) return;
+    const timer = window.setTimeout(() => setIsAwaitingImagePaste(false), 12000);
+    return () => window.clearTimeout(timer);
+  }, [isAwaitingImagePaste]);
 
   React.useEffect(() => {
     if (!isEditingDescription) return;
@@ -305,7 +439,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
 
       return (
         <div
-          className="flex flex-col h-full w-full shadow-2xl transition-all overflow-hidden group/imgcard relative"
+          className="flex flex-col h-full w-full shadow-2xl transition-all overflow-hidden group/imgcard relative focus:outline-none"
           style={{
             backgroundColor: fill,
             borderColor: stroke,
@@ -314,7 +448,69 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
             borderRadius: rounded,
             color: textColor,
           }}
+          onDragOver={e => {
+            if (!isReadOnly && onAttachImageFile && Array.from(e.dataTransfer.types).includes('Files')) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          onDrop={e => {
+            if (isReadOnly || !onAttachImageFile) return;
+            const file = extractImageFileFromDataTransfer(e.dataTransfer);
+            if (file) {
+              e.preventDefault();
+              e.stopPropagation();
+              onAttachImageFile(file, node.id);
+            }
+          }}
         >
+          {/* Hidden file input for direct upload into this Image node */}
+          <input
+            ref={imageNodeFileInputRef}
+            type="file"
+            accept="image/*,.png,.jpg,.jpeg,.webp,.svg,.gif"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file && onAttachImageFile) {
+                onAttachImageFile(file, node.id);
+                e.target.value = '';
+              }
+            }}
+          />
+
+          {/* Hidden paste trap activated when browser blocks navigator.clipboard.read() */}
+          {isAwaitingImagePaste && (
+            <textarea
+              ref={imagePasteTrapRef}
+              aria-label="Paste image from clipboard"
+              data-image-paste-trap="true"
+              value=""
+              onChange={() => {}}
+              onMouseDown={e => e.stopPropagation()}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  e.stopPropagation();
+                  setIsAwaitingImagePaste(false);
+                }
+              }}
+              onPaste={e => {
+                const file = extractImageFileFromDataTransfer(e.clipboardData);
+                e.preventDefault();
+                e.stopPropagation();
+                setIsAwaitingImagePaste(false);
+                if (file && onAttachImageFile) {
+                  onAttachImageFile(file, node.id);
+                } else {
+                  setImagePasteNotice('Clipboard does not contain an image');
+                  window.setTimeout(() => setImagePasteNotice(null), 2500);
+                }
+              }}
+              onBlur={() => setIsAwaitingImagePaste(false)}
+              className="sr-only"
+            />
+          )}
+
           {/* Main Miniature Image Area */}
           <div className="flex-1 w-full min-h-0 relative bg-slate-950/80 overflow-hidden flex items-center justify-center">
             {primaryImage?.url ? (
@@ -328,18 +524,30 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                 {/* Subtle dark gradient overlay at top/bottom for readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
 
-                {/* Expand / Lightbox Hover Button */}
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    onOpenImageLightbox?.(primaryImage, node.images);
-                  }}
-                  className="absolute top-1.5 right-1.5 p-1 rounded-md bg-slate-900/85 hover:bg-sky-600 text-white shadow-lg backdrop-blur-sm opacity-0 group-hover/imgcard:opacity-100 transition-all cursor-pointer pointer-events-auto"
-                  title="Click to view full size image"
-                >
-                  <Maximize2 className="w-3.5 h-3.5 text-white" />
-                </button>
+                {/* Top-right action buttons: Paste / Expand */}
+                <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover/imgcard:opacity-100 transition-all pointer-events-auto">
+                  {!isReadOnly && onAttachImageFile && (
+                    <button
+                      type="button"
+                      onClick={handleTriggerImageNodePaste}
+                      className="p-1 rounded-md bg-slate-900/85 hover:bg-emerald-600 text-white shadow-lg backdrop-blur-sm cursor-pointer transition-colors"
+                      title="Paste image from clipboard into this node"
+                    >
+                      <ClipboardPaste className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      onOpenImageLightbox?.(primaryImage, node.images);
+                    }}
+                    className="p-1 rounded-md bg-slate-900/85 hover:bg-sky-600 text-white shadow-lg backdrop-blur-sm cursor-pointer transition-colors"
+                    title="Click to view full size image"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-white" />
+                  </button>
+                </div>
 
                 {/* Multi-image count pill if more than 1 image */}
                 {node.images && node.images.length > 1 && (
@@ -349,9 +557,48 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                 )}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center p-2 text-center text-slate-500">
-                <ImageIcon className="w-8 h-8 text-sky-400/60 mb-1" />
-                <span className="text-[10px] font-mono text-slate-400">No image attached</span>
+              <div className="flex flex-col items-center justify-center p-2 text-center gap-1.5 w-full">
+                <ImageIcon className="w-6 h-6 text-sky-400/70" />
+                {!isReadOnly && onAttachImageFile ? (
+                  <>
+                    <div className="flex items-center justify-center gap-1 pointer-events-auto">
+                      <button
+                        type="button"
+                        onClick={handleTriggerImageNodePaste}
+                        className="px-2 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-[9.5px] font-semibold flex items-center gap-1 shadow-sm cursor-pointer transition-colors"
+                        title="Paste screenshot or copied image from clipboard"
+                      >
+                        <ClipboardPaste className="w-3 h-3" />
+                        <span>Paste</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          imageNodeFileInputRef.current?.click();
+                        }}
+                        className="px-1.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9.5px] font-medium flex items-center gap-1 border border-slate-700 cursor-pointer transition-colors"
+                        title="Choose an image file from disk"
+                      >
+                        <Upload className="w-2.5 h-2.5" />
+                        <span>File</span>
+                      </button>
+                    </div>
+                    <span className="text-[8.5px] font-mono text-slate-400 leading-tight px-1">
+                      {isAwaitingImagePaste
+                        ? 'Press Ctrl+V now to paste'
+                        : imagePasteNotice || 'or select & press Ctrl+V'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[10px] font-mono text-slate-400">No image attached</span>
+                )}
+              </div>
+            )}
+
+            {primaryImage?.url && (isAwaitingImagePaste || imagePasteNotice) && (
+              <div className="absolute inset-x-1.5 bottom-1.5 px-2 py-1 rounded bg-slate-950/95 border border-sky-500/60 text-[9px] font-mono text-sky-200 text-center shadow-lg pointer-events-none">
+                {isAwaitingImagePaste ? 'Press Ctrl+V now to paste' : imagePasteNotice}
               </div>
             )}
           </div>
@@ -1001,6 +1248,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
 
         return (
           <div
+            ref={stickyNoteContainerRef}
             className="relative flex flex-col justify-between h-full p-2.5 font-sans text-xs shadow-md select-none group/sticky overflow-hidden"
             style={{
               backgroundColor: fill,
@@ -1023,40 +1271,131 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
             />
 
             <div
-              className="flex items-center justify-between pb-1 border-b text-[10px] pr-4 opacity-80 font-medium"
+              className="flex items-center justify-between pb-1 border-b text-[10px] pr-4 opacity-85 font-medium gap-1"
               style={{ borderColor: `${stroke}50` }}
             >
-              <div className="flex items-center gap-1 truncate max-w-[140px]">
+              <div className="flex items-center gap-1 truncate min-w-0">
                 <StickyIcon className="w-3 h-3 shrink-0" />
                 <span className="truncate">{node.data?.author || 'Note'}</span>
               </div>
-              {node.documentation?.status && (
-                <span className="text-[9px] uppercase font-mono opacity-70">
-                  {node.documentation.status}
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {!isReadOnly && !isEditingStickyNote && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditStickyNote}
+                    className={`p-0.5 rounded transition-opacity cursor-pointer ${
+                      isSelected ? 'opacity-90' : 'opacity-0 group-hover/sticky:opacity-90'
+                    } hover:bg-black/10`}
+                    title="Edit note directly inside sticky note"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                  </button>
+                )}
+                {node.documentation?.status && (
+                  <span className="text-[9px] uppercase font-mono opacity-70">
+                    {node.documentation.status}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Note Content: Title + Docs & Notes (Change 4) */}
-            <div className="flex-1 py-1 font-normal leading-relaxed overflow-y-auto space-y-1">
-              {node.label && (
-                <div
-                  className="font-bold text-[11px] leading-snug pb-0.5 border-b"
-                  style={{ borderColor: `${stroke}35` }}
-                >
-                  {node.label}
+            {isEditingStickyNote ? (
+              <div
+                className="flex-1 flex flex-col pt-1 gap-1 min-h-0 cursor-default select-text"
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
+                onWheel={e => e.stopPropagation()}
+              >
+                <input
+                  type="text"
+                  value={editedStickyTitle}
+                  onChange={e => setEditedStickyTitle(e.target.value)}
+                  onKeyDown={e => {
+                    e.stopPropagation();
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveStickyNote();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleCancelStickyNote();
+                    }
+                  }}
+                  placeholder="Note title..."
+                  className="w-full bg-black/5 rounded px-1.5 py-0.5 font-bold text-[11px] leading-snug focus:outline-none focus:ring-1 focus:ring-black/25 border-b"
+                  style={{ color: textColor, borderColor: `${stroke}60` }}
+                />
+                <textarea
+                  ref={stickyBodyTextareaRef}
+                  value={editedStickyBody}
+                  onChange={e => setEditedStickyBody(e.target.value)}
+                  onKeyDown={e => {
+                    e.stopPropagation();
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveStickyNote();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleCancelStickyNote();
+                    }
+                  }}
+                  placeholder="Write sticky note text..."
+                  className="flex-1 w-full min-h-[48px] bg-black/5 rounded p-1.5 text-[10.5px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-black/25"
+                  style={{ color: textColor }}
+                />
+                <div className="flex items-center justify-between gap-1 pt-0.5 shrink-0">
+                  {node.width >= 180 ? (
+                    <span className="text-[8.5px] font-mono opacity-65 truncate">Ctrl+Enter</span>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleCancelStickyNote();
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-black/10 hover:bg-black/20 text-[9.5px] font-medium cursor-pointer transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleSaveStickyNote();
+                      }}
+                      className="px-2 py-0.5 rounded bg-black/25 hover:bg-black/35 text-[9.5px] font-bold flex items-center gap-0.5 cursor-pointer transition-colors"
+                    >
+                      <Check className="w-2.5 h-2.5" />
+                      <span>Save</span>
+                    </button>
+                  </div>
                 </div>
-              )}
-              {combinedDocsNotes ? (
-                <div className="text-[10px] sm:text-[10.5px] leading-relaxed whitespace-pre-wrap opacity-90 font-normal">
-                  {combinedDocsNotes}
-                </div>
-              ) : !node.label ? (
-                <div className="text-[10px] italic opacity-60">
-                  Empty note. Use Inspector or double-click to add text.
-                </div>
-              ) : null}
-            </div>
+              </div>
+            ) : (
+              /* Note Content: Title + Docs & Notes */
+              <div className="flex-1 py-1 font-normal leading-relaxed overflow-y-auto space-y-1">
+                {node.label && (
+                  <div
+                    className="font-bold text-[11px] leading-snug pb-0.5 border-b"
+                    style={{ borderColor: `${stroke}35` }}
+                  >
+                    {node.label}
+                  </div>
+                )}
+                {combinedDocsNotes ? (
+                  <div className="text-[10px] sm:text-[10.5px] leading-relaxed whitespace-pre-wrap opacity-90 font-normal">
+                    {combinedDocsNotes}
+                  </div>
+                ) : !node.label ? (
+                  <div className="text-[10px] italic opacity-60">
+                    Empty note. Double-click or click Edit to add text.
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         );
       }
@@ -2657,8 +2996,12 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       onDoubleClick={e => {
         e.stopPropagation();
         if (!isReadOnly) {
-          setIsEditingLabel(true);
-          setEditedLabel(node.label);
+          if (node.type === 'sticky-note') {
+            handleStartEditStickyNote();
+          } else {
+            setIsEditingLabel(true);
+            setEditedLabel(node.label);
+          }
         }
       }}
       onContextMenu={e => {
@@ -2925,6 +3268,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
 
       {/* Human-Friendly Hover Description Tooltip with Direct Inline Editing */}
       {showHoverTooltips &&
+        !isEditingStickyNote &&
         ((isHovered && !isDragging) || isEditingDescription) &&
         (isEditingDescription ||
           node.documentation?.description ||

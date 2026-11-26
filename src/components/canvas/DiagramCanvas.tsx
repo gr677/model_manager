@@ -16,6 +16,7 @@ import {
 } from '../../types/diagram';
 import { NodeRenderer } from './NodeRenderer';
 import { EdgeRenderer } from './EdgeRenderer';
+import { extractImageFileFromDataTransfer } from '../../utils/clipboardImage';
 import {
   Trash2,
   Plus,
@@ -77,6 +78,8 @@ interface DiagramCanvasProps {
   onDropNewShape: (shapeTemplateId: string, canvasX: number, canvasY: number) => void;
   onUpdateNodeLabel?: (nodeId: string, label: string) => void;
   onUpdateNodeDescription?: (nodeId: string, description: string) => void;
+  onUpdateNodeContent?: (nodeId: string, updates: { label?: string; description?: string }) => void;
+  onAttachImageFile?: (file: File, targetNodeId?: string) => void;
   onOpenNewPageModal?: () => void;
   canDeleteCurrentPage?: boolean;
   currentPageTitle?: string;
@@ -118,6 +121,8 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onDropNewShape,
   onUpdateNodeLabel,
   onUpdateNodeDescription,
+  onUpdateNodeContent,
+  onAttachImageFile,
   onOpenNewPageModal,
   canDeleteCurrentPage,
   currentPageTitle,
@@ -1304,6 +1309,39 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [effectiveSelectedNodeIds, selectedEdgeId, isReadOnly, onDeleteSelected, connectingFrom, reconnectingEdge, settings?.gridSize]);
 
+  // Global Ctrl+V / Cmd+V image paste onto selected Image node or as a new Image node on canvas
+  useEffect(() => {
+    if (isReadOnly || !onAttachImageFile) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl?.dataset?.imagePasteTrap === 'true') return;
+      const isEditingText =
+        activeEl?.tagName === 'INPUT' ||
+        activeEl?.tagName === 'TEXTAREA' ||
+        activeEl?.tagName === 'SELECT' ||
+        Boolean(activeEl?.isContentEditable);
+      if (isEditingText) return;
+      if (document.querySelector('.fixed.inset-0.z-50')) return;
+
+      const file = extractImageFileFromDataTransfer(e.clipboardData);
+      if (!file) return;
+
+      e.preventDefault();
+      const selectedIds = effectiveSelectedNodeIdsRef.current;
+      const singleSelected =
+        selectedIds.length === 1 ? nodesRef.current.find(n => n.id === selectedIds[0]) : undefined;
+      const isTargetImageNode =
+        singleSelected &&
+        (singleSelected.type === 'image' ||
+          singleSelected.type === 'image-attachment' ||
+          Boolean(singleSelected.data?.isImageNode));
+
+      onAttachImageFile(file, isTargetImageNode ? singleSelected!.id : undefined);
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isReadOnly, onAttachImageFile]);
+
   // Determine active edge being reconnected for helper banners
   const reconnectingEdgeObj = reconnectingEdge
     ? edges.find(e => e.id === reconnectingEdge.edgeId)
@@ -1957,6 +1995,8 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
               onOpenDoc={onOpenDoc}
               onUpdateLabel={onUpdateNodeLabel}
               onUpdateDescription={onUpdateNodeDescription}
+              onUpdateNodeContent={onUpdateNodeContent}
+              onAttachImageFile={onAttachImageFile}
               onNodeContextMenu={handleNodeContextMenu}
               onOpenChildDiagramModal={onOpenChildDiagramModal}
               onNavigateChildDiagram={onNavigateChildDiagram}

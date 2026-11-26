@@ -57,11 +57,16 @@ import {
   HelpCircle,
   Columns3,
   UserCheck,
+  ClipboardPaste,
 } from 'lucide-react';
 import { THEMES } from '../../utils/themeConfig';
 import { WorkspaceDropdown } from './WorkspaceDropdown';
 import { DiagramDocument } from '../../types/diagram';
 import { workspaceService } from '../../services/workspaceService';
+import {
+  extractImageFileFromDataTransfer,
+  readImageFileFromNavigatorClipboard,
+} from '../../utils/clipboardImage';
 
 interface ShapePaletteSidebarProps {
   currentDiagramType: DiagramType;
@@ -163,7 +168,10 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
   const [collapsedDiagramNodes, setCollapsedDiagramNodes] = useState<Set<string>>(new Set());
   const [showImagesDrawer, setShowImagesDrawer] = useState(false);
   const [workspaceImagesList, setWorkspaceImagesList] = useState<Array<{ filename: string; url: string; size: number }>>([]);
+  const [isAwaitingSidebarPaste, setIsAwaitingSidebarPaste] = useState(false);
+  const [sidebarPasteStatus, setSidebarPasteStatus] = useState<string | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const sidebarPasteInputRef = useRef<HTMLInputElement>(null);
 
   const toggleDiagramNodeCollapse = (filename: string) => {
     setCollapsedDiagramNodes(prev => {
@@ -801,28 +809,99 @@ export const ShapePaletteSidebar: React.FC<ShapePaletteSidebarProps> = ({
           />
         </div>
 
-        {/* Small Browse images/ shortcut */}
-        <button
-          type="button"
-          disabled={isReadOnly}
-          onClick={async () => {
-            if (!showImagesDrawer) {
-              const activeWs = workspaceService.getActiveWorkspace();
-              const images = await workspaceService.listWorkspaceImages(activeWs.id);
-              setWorkspaceImagesList(images);
-            }
-            setShowImagesDrawer(v => !v);
-          }}
-          className={`w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded text-[10px] font-mono transition-colors border cursor-pointer ${
-            themeDef.isDark
-              ? 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-sky-300 border-slate-800'
-              : 'bg-white hover:bg-slate-100 text-slate-500 hover:text-sky-600 border-slate-200'
-          }`}
-          title="Browse or pick images stored in workspace images/ folder"
-        >
-          <FolderOpen className="w-3 h-3 text-sky-400 shrink-0" />
-          <span className="truncate">Browse images/ folder</span>
-        </button>
+        {/* Paste Image & Browse images/ shortcuts */}
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            disabled={isReadOnly}
+            onClick={async () => {
+              setSidebarPasteStatus(null);
+              const res = await readImageFileFromNavigatorClipboard();
+              if (res.status === 'ok' && res.file) {
+                setIsAwaitingSidebarPaste(false);
+                onAddImageFile?.(res.file);
+                return;
+              }
+              if (res.status === 'no-image') {
+                setSidebarPasteStatus('No image in clipboard');
+                window.setTimeout(() => setSidebarPasteStatus(null), 2500);
+                return;
+              }
+              setIsAwaitingSidebarPaste(true);
+              window.requestAnimationFrame(() => sidebarPasteInputRef.current?.focus());
+            }}
+            className={`flex items-center justify-center gap-1.5 py-1 px-2 rounded text-[10px] font-mono transition-colors border cursor-pointer disabled:opacity-50 ${
+              themeDef.isDark
+                ? 'bg-slate-900/80 hover:bg-slate-800 text-emerald-300 hover:text-emerald-200 border-slate-800'
+                : 'bg-white hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 border-slate-200'
+            }`}
+            title="Paste an image from clipboard into selected node or as a new Image node"
+          >
+            <ClipboardPaste className="w-3 h-3 shrink-0" />
+            <span className="truncate">Paste Image</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isReadOnly}
+            onClick={async () => {
+              if (!showImagesDrawer) {
+                const activeWs = workspaceService.getActiveWorkspace();
+                const images = await workspaceService.listWorkspaceImages(activeWs.id);
+                setWorkspaceImagesList(images);
+              }
+              setShowImagesDrawer(v => !v);
+            }}
+            className={`flex items-center justify-center gap-1.5 py-1 px-2 rounded text-[10px] font-mono transition-colors border cursor-pointer disabled:opacity-50 ${
+              themeDef.isDark
+                ? 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-sky-300 border-slate-800'
+                : 'bg-white hover:bg-slate-100 text-slate-500 hover:text-sky-600 border-slate-200'
+            }`}
+            title="Browse or pick images stored in workspace images/ folder"
+          >
+            <FolderOpen className="w-3 h-3 text-sky-400 shrink-0" />
+            <span className="truncate">Browse images/</span>
+          </button>
+        </div>
+
+        {(isAwaitingSidebarPaste || sidebarPasteStatus) && (
+          <div
+            className={`px-2 py-1 rounded border text-[10px] font-mono flex items-center justify-between gap-1.5 ${
+              themeDef.isDark
+                ? 'bg-slate-900 border-sky-500/50 text-sky-300'
+                : 'bg-sky-50 border-sky-300 text-sky-800'
+            }`}
+          >
+            {isAwaitingSidebarPaste ? (
+              <input
+                ref={sidebarPasteInputRef}
+                type="text"
+                readOnly
+                data-image-paste-trap="true"
+                value="Press Ctrl+V here to paste image..."
+                onPaste={e => {
+                  const file = extractImageFileFromDataTransfer(e.clipboardData);
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsAwaitingSidebarPaste(false);
+                  if (file) {
+                    onAddImageFile?.(file);
+                  } else {
+                    setSidebarPasteStatus('Clipboard had no image');
+                    window.setTimeout(() => setSidebarPasteStatus(null), 2500);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setIsAwaitingSidebarPaste(false);
+                }}
+                onBlur={() => setIsAwaitingSidebarPaste(false)}
+                className="w-full bg-transparent focus:outline-none text-[10px] font-mono cursor-default"
+              />
+            ) : (
+              <span className="truncate">{sidebarPasteStatus}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {isResizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
