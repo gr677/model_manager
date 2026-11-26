@@ -76,6 +76,7 @@ interface DiagramCanvasProps {
   onOpenDoc: (node: DiagramNode) => void;
   onDropNewShape: (shapeTemplateId: string, canvasX: number, canvasY: number) => void;
   onUpdateNodeLabel?: (nodeId: string, label: string) => void;
+  onUpdateNodeDescription?: (nodeId: string, description: string) => void;
   onOpenNewPageModal?: () => void;
   canDeleteCurrentPage?: boolean;
   currentPageTitle?: string;
@@ -116,6 +117,7 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
   onOpenDoc,
   onDropNewShape,
   onUpdateNodeLabel,
+  onUpdateNodeDescription,
   onOpenNewPageModal,
   canDeleteCurrentPage,
   currentPageTitle,
@@ -1954,12 +1956,14 @@ export const DiagramCanvas: React.FC<DiagramCanvasProps> = ({
               onCompleteConnection={handleCompleteConnection}
               onOpenDoc={onOpenDoc}
               onUpdateLabel={onUpdateNodeLabel}
+              onUpdateDescription={onUpdateNodeDescription}
               onNodeContextMenu={handleNodeContextMenu}
               onOpenChildDiagramModal={onOpenChildDiagramModal}
               onNavigateChildDiagram={onNavigateChildDiagram}
               onOpenImageLightbox={onOpenImageLightbox}
               isReadOnly={isReadOnly}
               showAggregationBadges={showAggregationBadges}
+              showHoverTooltips={settings?.showHoverTooltips ?? true}
             />
           );
         })}

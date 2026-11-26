@@ -33,6 +33,9 @@ export interface GeneratedPythonFile {
 export interface GeneratedC4ProjectResult {
   projectName: string;
   projectSlug: string;
+  prompt?: string;
+  pythonStack?: string;
+  includeLayer4Code?: boolean;
   summary: string;
   entryCommand: string;
   requirements: string[];
@@ -53,6 +56,9 @@ interface GenerateC4PythonModalProps {
   workspaceId: string;
   currentPageName?: string;
   hasExistingNodes?: boolean;
+  savedPrompt?: string;
+  savedPythonStack?: string;
+  savedIncludeLayer4Code?: boolean;
   onC4ProjectGenerated: (result: GeneratedC4ProjectResult) => void;
 }
 
@@ -93,17 +99,63 @@ const STACK_OPTIONS = [
   'Async Worker',
 ];
 
+const STORAGE_GLOBAL_KEY = 'omnimind_c4_last_config';
+const STORAGE_WS_PREFIX = 'omnimind_c4_ws_config_';
+
+interface SavedC4PromptConfig {
+  prompt: string;
+  pythonStack: string;
+  includeLayer4Code: boolean;
+}
+
+function readSavedConfig(workspaceId: string): Partial<SavedC4PromptConfig> {
+  try {
+    const wsRaw = localStorage.getItem(`${STORAGE_WS_PREFIX}${workspaceId}`);
+    if (wsRaw) {
+      const parsed = JSON.parse(wsRaw);
+      if (parsed && typeof parsed.prompt === 'string' && parsed.prompt.trim()) {
+        return parsed;
+      }
+    }
+    const globalRaw = localStorage.getItem(STORAGE_GLOBAL_KEY);
+    if (globalRaw) {
+      return JSON.parse(globalRaw) || {};
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return {};
+}
+
+function writeSavedConfig(workspaceId: string, config: SavedC4PromptConfig) {
+  try {
+    const serialized = JSON.stringify(config);
+    localStorage.setItem(`${STORAGE_WS_PREFIX}${workspaceId}`, serialized);
+    if (config.prompt.trim()) {
+      localStorage.setItem(STORAGE_GLOBAL_KEY, serialized);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
   isOpen,
   onClose,
   theme = 'dark',
   workspaceId,
   hasExistingNodes = false,
+  savedPrompt,
+  savedPythonStack,
+  savedIncludeLayer4Code,
   onC4ProjectGenerated,
 }) => {
-  const [prompt, setPrompt] = useState('');
-  const [pythonStack, setPythonStack] = useState<string>('auto');
-  const [includeLayer4Code, setIncludeLayer4Code] = useState(false);
+  const initialConfig = readSavedConfig(workspaceId);
+  const [prompt, setPrompt] = useState(savedPrompt || initialConfig.prompt || '');
+  const [pythonStack, setPythonStack] = useState<string>(savedPythonStack || initialConfig.pythonStack || 'auto');
+  const [includeLayer4Code, setIncludeLayer4Code] = useState<boolean>(
+    savedIncludeLayer4Code ?? initialConfig.includeLayer4Code ?? false
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -117,11 +169,35 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
     if (isOpen) {
       setErrorMessage(null);
       setCopiedFile(false);
+      const stored = readSavedConfig(workspaceId);
+      const nextPrompt =
+        savedPrompt && savedPrompt.trim()
+          ? savedPrompt
+          : stored.prompt || '';
+      const nextStack =
+        savedPrompt && savedPrompt.trim() && savedPythonStack
+          ? savedPythonStack
+          : stored.pythonStack || 'auto';
+      const nextL4 =
+        savedPrompt && savedPrompt.trim() && typeof savedIncludeLayer4Code === 'boolean'
+          ? savedIncludeLayer4Code
+          : typeof stored.includeLayer4Code === 'boolean'
+            ? stored.includeLayer4Code
+            : false;
+
+      if (nextPrompt) setPrompt(nextPrompt);
+      setPythonStack(nextStack);
+      setIncludeLayer4Code(nextL4);
     } else {
       setGeneratedResult(null);
       setExportStatus(null);
     }
-  }, [isOpen]);
+  }, [isOpen, workspaceId, savedPrompt, savedPythonStack, savedIncludeLayer4Code]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    writeSavedConfig(workspaceId, { prompt, pythonStack, includeLayer4Code });
+  }, [isOpen, workspaceId, prompt, pythonStack, includeLayer4Code]);
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -170,6 +246,9 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
       const result: GeneratedC4ProjectResult = {
         projectName: data.projectName,
         projectSlug: data.projectSlug,
+        prompt: data.prompt || cleanPrompt,
+        pythonStack: data.pythonStack || pythonStack,
+        includeLayer4Code: typeof data.includeLayer4Code === 'boolean' ? data.includeLayer4Code : includeLayer4Code,
         summary: data.summary,
         entryCommand: data.entryCommand,
         requirements: data.requirements || [],
@@ -350,9 +429,24 @@ export const GenerateC4PythonModal: React.FC<GenerateC4PythonModalProps> = ({
             )}
 
             <div>
-              <label className="text-xs font-semibold block mb-1.5">
-                Describe the Python software system to build
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold">
+                  Describe the Python software system to build
+                </label>
+                {prompt.trim() && !isLoading && (
+                  <button
+                    type="button"
+                    onClick={() => setPrompt('')}
+                    className={`text-[11px] px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                      isDark
+                        ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                    }`}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
               <textarea
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}

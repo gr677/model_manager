@@ -2157,6 +2157,29 @@ export default function App() {
               handleUpdateSingleNode({ ...targetNode, label });
             }
           }}
+          onUpdateNodeDescription={(nodeId, description) => {
+            const targetNode = currentPage.nodes.find(n => n.id === nodeId);
+            if (targetNode) {
+              const currentDocs = targetNode.documentation || {
+                description: '',
+                tags: [],
+                status: 'draft' as const,
+              };
+              const nextData =
+                targetNode.data?.description !== undefined
+                  ? { ...targetNode.data, description }
+                  : targetNode.data;
+              handleUpdateSingleNode({
+                ...targetNode,
+                ...(nextData !== targetNode.data ? { data: nextData } : {}),
+                documentation: {
+                  ...currentDocs,
+                  description,
+                  lastEditedAt: new Date().toISOString(),
+                },
+              });
+            }
+          }}
         />
 
         {/* Right Sidebar: Inspector, Documentation, Comments & Groups (Only displayed when a node or connector is selected) */}
@@ -2521,6 +2544,15 @@ export default function App() {
         workspaceId={activeWs.id || 'workspace1'}
         currentPageName={currentPage.title}
         hasExistingNodes={currentPage.nodes.length > 0}
+        savedPrompt={
+          currentPage.nodes.find(n => typeof n.data?.c4Prompt === 'string' && n.data.c4Prompt.trim())?.data?.c4Prompt
+        }
+        savedPythonStack={
+          currentPage.nodes.find(n => typeof n.data?.c4PythonStack === 'string')?.data?.c4PythonStack
+        }
+        savedIncludeLayer4Code={
+          currentPage.nodes.find(n => typeof n.data?.c4IncludeL4 === 'boolean')?.data?.c4IncludeL4
+        }
         onC4ProjectGenerated={async (result: GeneratedC4ProjectResult) => {
           if (!result.pages || result.pages.length === 0) return;
           const wsId = activeWorkspaceIdRef.current || activeWs.id || 'workspace1';
@@ -2679,6 +2711,7 @@ export default function App() {
             (result.requirements && result.requirements.length > 0) ||
             (result.files || []).some(f => f.filePath.toLowerCase() === 'requirements.txt');
           const runNoteText = [
+            result.prompt ? `Prompt:\n${result.prompt}` : '',
             `Files Saved To:\n${filesFolder}`,
             fileNamesList
               ? `Generated Files (${result.files.length}):\n${fileNamesList}${moreCount > 0 ? `\n• ...and ${moreCount} more` : ''}`
@@ -2698,8 +2731,8 @@ export default function App() {
             label: `${result.projectName} — Build & Run Guide`,
             x: 320,
             y: Math.max(400, maxBottom + 40),
-            width: 470,
-            height: 270,
+            width: 490,
+            height: result.prompt ? 330 : 270,
             style: {
               fill: '#fef08a',
               stroke: '#eab308',
@@ -2710,6 +2743,7 @@ export default function App() {
             data: {
               color: 'yellow',
               author: 'C4 Python Generator',
+              c4Prompt: result.prompt || undefined,
             },
             documentation: {
               description: runNoteText,

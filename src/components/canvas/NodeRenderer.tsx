@@ -52,6 +52,9 @@ import {
   Gift,
   Mail,
   Target,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
 import { workspaceService } from '../../services/workspaceService';
@@ -80,12 +83,14 @@ interface NodeRendererProps {
   onCompleteConnection?: (targetNodeId: string, targetAnchor: NodeAnchor, e: React.MouseEvent) => void;
   onOpenDoc?: (node: DiagramNode) => void;
   onUpdateLabel?: (nodeId: string, newLabel: string) => void;
+  onUpdateDescription?: (nodeId: string, newDescription: string) => void;
   onNodeContextMenu?: (nodeId: string, e: React.MouseEvent) => void;
   onOpenChildDiagramModal?: (node: DiagramNode) => void;
   onNavigateChildDiagram?: (filename: string) => void;
   onOpenImageLightbox?: (image: NodeImageAttachment, allImages?: NodeImageAttachment[]) => void;
   isReadOnly?: boolean;
   showAggregationBadges?: boolean;
+  showHoverTooltips?: boolean;
   nodeIndex?: number;
 }
 
@@ -106,18 +111,87 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   onCompleteConnection,
   onOpenDoc,
   onUpdateLabel,
+  onUpdateDescription,
   onNodeContextMenu,
   onOpenChildDiagramModal,
   onNavigateChildDiagram,
   onOpenImageLightbox,
   isReadOnly,
   showAggregationBadges = true,
+  showHoverTooltips = true,
   nodeIndex = 0,
 }) => {
   const [isEditingLabel, setIsEditingLabel] = React.useState(false);
   const [editedLabel, setEditedLabel] = React.useState(node.label);
   const [isHovered, setIsHovered] = React.useState(false);
+  const [isEditingDescription, setIsEditingDescription] = React.useState(false);
+  const [editedDescription, setEditedDescription] = React.useState(node.documentation?.description || '');
   const [mouseEntryPos, setMouseEntryPos] = React.useState<{ x: number; y: number } | null>(null);
+  const hoverLeaveTimerRef = React.useRef<number | null>(null);
+  const popupRef = React.useRef<HTMLDivElement | null>(null);
+  const descriptionTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const clearHoverLeaveTimer = React.useCallback(() => {
+    if (hoverLeaveTimerRef.current !== null) {
+      window.clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    return () => clearHoverLeaveTimer();
+  }, [clearHoverLeaveTimer]);
+
+  React.useEffect(() => {
+    if (!isEditingDescription) {
+      setEditedDescription(node.documentation?.description || '');
+    }
+  }, [node.documentation?.description, isEditingDescription]);
+
+  const handleStartEditDescription = React.useCallback(
+    (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      if (isReadOnly || !onUpdateDescription) return;
+      clearHoverLeaveTimer();
+      setEditedDescription(node.documentation?.description || '');
+      setIsEditingDescription(true);
+      setIsHovered(true);
+      window.requestAnimationFrame(() => {
+        const el = descriptionTextareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [isReadOnly, onUpdateDescription, node.documentation?.description, clearHoverLeaveTimer]
+  );
+
+  const handleSaveDescription = React.useCallback(() => {
+    const current = node.documentation?.description || '';
+    if (editedDescription !== current) {
+      onUpdateDescription?.(node.id, editedDescription);
+    }
+    setIsEditingDescription(false);
+  }, [editedDescription, node.documentation?.description, node.id, onUpdateDescription]);
+
+  const handleCancelDescription = React.useCallback(() => {
+    setEditedDescription(node.documentation?.description || '');
+    setIsEditingDescription(false);
+  }, [node.documentation?.description]);
+
+  React.useEffect(() => {
+    if (!isEditingDescription) return;
+    const handleOutsideMouseDown = (ev: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(ev.target as Node)) {
+        handleSaveDescription();
+        setIsHovered(false);
+        onMouseLeaveNode?.(node.id);
+      }
+    };
+    window.addEventListener('mousedown', handleOutsideMouseDown);
+    return () => window.removeEventListener('mousedown', handleOutsideMouseDown);
+  }, [isEditingDescription, handleSaveDescription, node.id, onMouseLeaveNode]);
 
   const [scriptBadgeTick, setScriptBadgeTick] = React.useState(0);
 
@@ -2527,7 +2601,17 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         width: `${node.width}px`,
         height: `${node.height}px`,
         touchAction: 'none',
-        zIndex: isSelected ? 500 + nodeIndex : isDeemphasized ? 0 : (node.isGroup ? 2 + nodeIndex : 20 + nodeIndex),
+        zIndex: isEditingDescription
+          ? 1000
+          : isHovered
+          ? 900
+          : isSelected
+          ? 500 + nodeIndex
+          : isDeemphasized
+          ? 0
+          : node.isGroup
+          ? 2 + nodeIndex
+          : 20 + nodeIndex,
         opacity: isDeemphasized ? 0.22 : 1,
         filter: isDeemphasized ? 'grayscale(45%)' : 'none',
         transition: 'opacity 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease',
@@ -2540,6 +2624,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
           : ''
       } ${isDragging ? 'cursor-grabbing opacity-90' : 'cursor-grab'}`}
       onMouseEnter={e => {
+        clearHoverLeaveTimer();
         const rect = e.currentTarget.getBoundingClientRect();
         setMouseEntryPos({
           x: e.clientX - rect.left,
@@ -2549,9 +2634,13 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         onMouseEnterNode?.(node.id);
       }}
       onMouseLeave={() => {
-        setIsHovered(false);
-        setMouseEntryPos(null);
-        onMouseLeaveNode?.(node.id);
+        if (isEditingDescription) return;
+        clearHoverLeaveTimer();
+        hoverLeaveTimerRef.current = window.setTimeout(() => {
+          setIsHovered(false);
+          setMouseEntryPos(null);
+          onMouseLeaveNode?.(node.id);
+        }, 160);
       }}
       onMouseDown={e => {
         if (
@@ -2834,28 +2923,123 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         </div>
       )}
 
-      {/* Human-Friendly Hover Description Tooltip (Change 5 & Change 8: Positioned further from center & accommodates all text) */}
-      {isHovered && (node.documentation?.description || (node.stickyNotes && node.stickyNotes.length > 0) || (node.links && node.links.length > 0) || (node.images && node.images.length > 0)) && (
-        <div
-          className="absolute z-50 flex flex-col max-w-md w-max min-w-[260px] p-3 bg-slate-900/98 border border-slate-700/90 rounded-xl shadow-2xl text-[11px] text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150"
-          style={{
-            left: `${node.width / 2}px`,
-            top: `-16px`,
-            transform: 'translate(-50%, -100%)',
-          }}
-          onMouseDown={e => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between font-mono text-[9px] text-sky-400 border-b border-slate-800 pb-1.5 mb-1.5">
-            <span className="font-bold truncate max-w-[180px]">{node.label}</span>
-            <span className="uppercase px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-semibold">{node.type}</span>
-          </div>
+      {/* Human-Friendly Hover Description Tooltip with Direct Inline Editing */}
+      {showHoverTooltips &&
+        ((isHovered && !isDragging) || isEditingDescription) &&
+        (isEditingDescription ||
+          node.documentation?.description ||
+          (node.stickyNotes && node.stickyNotes.length > 0) ||
+          (node.links && node.links.length > 0) ||
+          (node.images && node.images.length > 0)) && (
+          <div
+            ref={popupRef}
+            className="absolute z-50 flex flex-col max-w-md w-max min-w-[280px] p-3 bg-slate-900/98 border border-slate-700/90 rounded-xl shadow-2xl text-[11px] text-slate-200 pointer-events-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 cursor-default select-text"
+            style={{
+              left: `${node.width / 2}px`,
+              top: `-16px`,
+              transform: 'translate(-50%, -100%)',
+            }}
+            onMouseEnter={clearHoverLeaveTimer}
+            onMouseDown={e => e.stopPropagation()}
+            onDoubleClick={e => e.stopPropagation()}
+            onWheel={e => e.stopPropagation()}
+          >
+            {/* Invisible hover bridge above the top resize/anchor handles */}
+            <div className="absolute -bottom-2.5 left-0 right-0 h-2.5 pointer-events-auto" />
 
-          {/* Full description without line-clamp truncation so all text is visible */}
-          {node.documentation?.description && (
-            <div className="text-slate-300 leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto pr-1">
-              {node.documentation.description}
+            <div className="flex items-center justify-between gap-2 font-mono text-[9px] text-sky-400 border-b border-slate-800 pb-1.5 mb-1.5">
+              <span className="font-bold truncate max-w-[165px]">{node.label}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {!isReadOnly && onUpdateDescription && !isEditingDescription && (
+                  <button
+                    type="button"
+                    onClick={handleStartEditDescription}
+                    className="px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/30 border border-sky-500/30 text-sky-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Edit description directly on popup"
+                  >
+                    <Pencil className="w-2.5 h-2.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
+                <span className="uppercase px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-semibold">{node.type}</span>
+              </div>
             </div>
-          )}
+
+            {isEditingDescription ? (
+              <div className="space-y-2 min-w-[290px] w-[340px] max-w-[400px]">
+                <textarea
+                  ref={descriptionTextareaRef}
+                  rows={5}
+                  value={editedDescription}
+                  onChange={e => setEditedDescription(e.target.value)}
+                  onKeyDown={e => {
+                    e.stopPropagation();
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveDescription();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleCancelDescription();
+                    }
+                  }}
+                  placeholder="Enter description, notes, or @type name: value..."
+                  className="w-full rounded-lg border border-sky-500/60 bg-slate-950 p-2 text-[11px] text-slate-100 leading-relaxed focus:outline-none focus:ring-2 focus:ring-sky-500/40 resize-y min-h-[90px] max-h-72"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9px] font-mono text-slate-400">
+                    Ctrl+Enter to save · Esc to cancel
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleCancelDescription();
+                      }}
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Cancel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleSaveDescription();
+                      }}
+                      className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : node.documentation?.description ? (
+              <div
+                onClick={e => {
+                  if (!isReadOnly && onUpdateDescription) {
+                    handleStartEditDescription(e);
+                  }
+                }}
+                title={!isReadOnly && onUpdateDescription ? 'Click to edit description' : undefined}
+                className={`text-slate-300 leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto pr-1 ${
+                  !isReadOnly && onUpdateDescription
+                    ? 'rounded-md px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-800/70 transition-colors cursor-text'
+                    : ''
+                }`}
+              >
+                {node.documentation.description}
+              </div>
+            ) : !isReadOnly && onUpdateDescription ? (
+              <button
+                type="button"
+                onClick={handleStartEditDescription}
+                className="text-left text-[11px] italic text-slate-400 hover:text-sky-300 py-1 px-1.5 -mx-1.5 rounded hover:bg-slate-800/60 transition-colors cursor-pointer"
+              >
+                + Add description...
+              </button>
+            ) : null}
 
           {/* Tags */}
           {node.documentation?.tags && node.documentation.tags.length > 0 && (
