@@ -2995,6 +2995,20 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       }}
       onDoubleClick={e => {
         e.stopPropagation();
+        const isImageCard =
+          node.type === 'image' ||
+          node.type === 'image-attachment' ||
+          Boolean(node.data?.displayAsImagePreview) ||
+          Boolean(node.data?.isImageNode) ||
+          node.id.startsWith('node-img-');
+
+        if (isImageCard && node.images && node.images.length > 0 && node.images[0]?.url && onOpenImageLightbox) {
+          clearHoverLeaveTimer();
+          setIsHovered(false);
+          onOpenImageLightbox(node.images[0], node.images);
+          return;
+        }
+
         if (!isReadOnly) {
           if (node.type === 'sticky-note') {
             handleStartEditStickyNote();
