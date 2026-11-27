@@ -60,12 +60,14 @@ import {
   Download,
   FileCode2,
   ClipboardPaste,
+  Eraser,
 } from 'lucide-react';
 import { workspaceService } from '../../services/workspaceService';
 import {
   extractImageFileFromDataTransfer,
   readImageFileFromNavigatorClipboard,
 } from '../../utils/clipboardImage';
+import { WORD_COLOR_PALETTE, applyWordColorToText } from '../../utils/coloredText';
 import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { THEMES } from '../../utils/themeConfig';
 import { getDefaultConnectorStyleForDiagram, CONNECTOR_STYLE_OPTIONS } from '../../utils/diagramConnectorConfig';
@@ -143,6 +145,45 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   const [showWorkspaceImagePicker, setShowWorkspaceImagePicker] = useState(false);
   const [isAwaitingInspectorPaste, setIsAwaitingInspectorPaste] = useState(false);
   const inspectorPasteInputRef = React.useRef<HTMLInputElement>(null);
+  const stickyDocsTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const handleApplyInspectorStickyWordColor = React.useCallback(
+    (colorKey: string | null) => {
+      if (!selectedNode || userRole === 'viewer') return;
+      const currentText = selectedNode.documentation?.description || '';
+      const el = stickyDocsTextareaRef.current;
+      const selStart = el?.selectionStart ?? currentText.length;
+      const selEnd = el?.selectionEnd ?? currentText.length;
+      const { nextText, nextSelStart, nextSelEnd } = applyWordColorToText(
+        currentText,
+        selStart,
+        selEnd,
+        colorKey
+      );
+      const currentDocs = selectedNode.documentation || {
+        description: '',
+        tags: ['Notes'],
+        status: 'draft',
+      };
+      const nextData =
+        selectedNode.data?.description !== undefined
+          ? { ...selectedNode.data, description: nextText }
+          : selectedNode.data;
+      onUpdateNode({
+        ...selectedNode,
+        ...(nextData !== selectedNode.data ? { data: nextData } : {}),
+        documentation: { ...currentDocs, description: nextText },
+      });
+      window.requestAnimationFrame(() => {
+        const target = stickyDocsTextareaRef.current;
+        if (target) {
+          target.focus();
+          target.setSelectionRange(nextSelStart, nextSelEnd);
+        }
+      });
+    },
+    [selectedNode, userRole, onUpdateNode]
+  );
 
   const themeDef = THEMES[theme] || THEMES.dark;
   const isDark = themeDef.isDark;
@@ -1400,10 +1441,60 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
               {/* Direct Docs & Notes Content for Sticky Note (Change 4) */}
               <div className={`pt-2 border-t ${isDark ? 'border-amber-500/20' : 'border-amber-200'}`}>
-                <label className={`text-[10px] uppercase font-mono font-bold block mb-1 ${isDark ? 'text-amber-300' : 'text-amber-900'}`}>
-                  Docs &amp; Notes Text
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-[10px] uppercase font-mono font-bold ${isDark ? 'text-amber-300' : 'text-amber-900'}`}>
+                    Docs &amp; Notes Text
+                  </label>
+                  {!isReadOnly && (
+                    <span className={`text-[9px] font-mono ${isDark ? 'text-amber-400/75' : 'text-amber-800/80'}`}>
+                      Select word + color
+                    </span>
+                  )}
+                </div>
+                {!isReadOnly && (
+                  <div className={`flex items-center flex-wrap gap-1.5 mb-1.5 px-2 py-1.5 rounded-lg border ${
+                    isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-white/90 border-amber-200'
+                  }`}>
+                    <span className={`text-[9px] uppercase font-mono font-semibold mr-0.5 ${
+                      isDark ? 'text-slate-400' : 'text-slate-600'
+                    }`}>
+                      Word:
+                    </span>
+                    {WORD_COLOR_PALETTE.map(swatch => (
+                      <button
+                        key={swatch.key}
+                        type="button"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={() => handleApplyInspectorStickyWordColor(swatch.key)}
+                        className="w-4 h-4 rounded-full border border-black/30 hover:scale-115 transition-transform cursor-pointer shadow-2xs"
+                        style={{ backgroundColor: swatch.swatchHex }}
+                        title={`Color selected word ${swatch.label} (or place cursor on a word)`}
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onClick={() => handleApplyInspectorStickyWordColor(null)}
+                      className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 cursor-pointer transition-colors ${
+                        isDark
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                          : 'bg-amber-100 hover:bg-amber-200 text-amber-900'
+                      }`}
+                      title="Remove color from selected word"
+                    >
+                      <Eraser className="w-2.5 h-2.5" />
+                      <span>Clear</span>
+                    </button>
+                  </div>
+                )}
                 <textarea
+                  ref={stickyDocsTextareaRef}
                   rows={4}
                   disabled={isReadOnly}
                   value={selectedNode.documentation?.description || ''}

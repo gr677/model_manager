@@ -57,8 +57,10 @@ import {
   X,
   ClipboardPaste,
   Upload,
+  Eraser,
 } from 'lucide-react';
 import { parseAggregationLines } from '../../utils/descriptionAggregation';
+import { WORD_COLOR_PALETTE, renderColoredText, applyWordColorToText } from '../../utils/coloredText';
 import { workspaceService } from '../../services/workspaceService';
 import { scriptEvaluationService } from '../../services/scriptEvaluationService';
 import { getNodeBackgroundStyle, getDarkerShade } from '../../utils/colorUtils';
@@ -271,6 +273,29 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
     );
     setIsEditingStickyNote(false);
   }, [node.label, node.documentation?.description, node.data?.notes, node.data?.description]);
+
+  const handleApplyStickyWordColor = React.useCallback(
+    (colorKey: string | null) => {
+      const el = stickyBodyTextareaRef.current;
+      const selStart = el?.selectionStart ?? editedStickyBody.length;
+      const selEnd = el?.selectionEnd ?? editedStickyBody.length;
+      const { nextText, nextSelStart, nextSelEnd } = applyWordColorToText(
+        editedStickyBody,
+        selStart,
+        selEnd,
+        colorKey
+      );
+      setEditedStickyBody(nextText);
+      window.requestAnimationFrame(() => {
+        const target = stickyBodyTextareaRef.current;
+        if (target) {
+          target.focus();
+          target.setSelectionRange(nextSelStart, nextSelEnd);
+        }
+      });
+    },
+    [editedStickyBody]
+  );
 
   React.useEffect(() => {
     if (!isEditingStickyNote) return;
@@ -1325,6 +1350,45 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                   className="w-full bg-black/5 rounded px-1.5 py-0.5 font-bold text-[11px] leading-snug focus:outline-none focus:ring-1 focus:ring-black/25 border-b"
                   style={{ color: textColor, borderColor: `${stroke}60` }}
                 />
+                <div className="flex items-center flex-wrap gap-1 px-0.5 py-0.5 shrink-0">
+                  {node.width >= 185 && (
+                    <span className="text-[8.5px] font-semibold uppercase tracking-wide opacity-70 mr-0.5">
+                      Word:
+                    </span>
+                  )}
+                  {WORD_COLOR_PALETTE.map(swatch => (
+                    <button
+                      key={swatch.key}
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleApplyStickyWordColor(swatch.key);
+                      }}
+                      className="w-3.5 h-3.5 rounded-full border border-black/30 hover:scale-115 transition-transform cursor-pointer shadow-2xs shrink-0"
+                      style={{ backgroundColor: swatch.swatchHex }}
+                      title={`Color selected word ${swatch.label} (or place cursor on a word)`}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onMouseDown={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleApplyStickyWordColor(null);
+                    }}
+                    className="px-1 py-0.5 rounded bg-black/10 hover:bg-black/20 text-[8.5px] font-medium flex items-center gap-0.5 cursor-pointer transition-colors shrink-0"
+                    title="Clear color from selected word"
+                  >
+                    <Eraser className="w-2.5 h-2.5" />
+                  </button>
+                </div>
                 <textarea
                   ref={stickyBodyTextareaRef}
                   value={editedStickyBody}
@@ -1386,8 +1450,8 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                   </div>
                 )}
                 {combinedDocsNotes ? (
-                  <div className="text-[10px] sm:text-[10.5px] leading-relaxed whitespace-pre-wrap opacity-90 font-normal">
-                    {combinedDocsNotes}
+                  <div className="text-[10px] sm:text-[10.5px] leading-relaxed whitespace-pre-wrap opacity-95 font-normal">
+                    {renderColoredText(combinedDocsNotes, 'sticky')}
                   </div>
                 ) : !node.label ? (
                   <div className="text-[10px] italic opacity-60">
@@ -3387,7 +3451,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                     : ''
                 }`}
               >
-                {node.documentation.description}
+                {renderColoredText(node.documentation.description, 'dark')}
               </div>
             ) : !isReadOnly && onUpdateDescription ? (
               <button

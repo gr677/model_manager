@@ -6,6 +6,7 @@
 import { DiagramDocument, DiagramPage, DiagramNode, getNodeChildDiagrams } from '../types/diagram';
 import { Workspace } from '../services/workspaceService';
 import { scriptEvaluationService } from '../services/scriptEvaluationService';
+import { stripWordColorMarkup } from './coloredText';
 
 export type AggregationDataType = 'text' | 'number' | 'date';
 
@@ -74,7 +75,7 @@ export function parseAggregationLines(
   const triggerScriptEval = options?.triggerScriptEval === true;
 
   lines.forEach((line, lineIndex) => {
-    const trimmed = line.trim();
+    const trimmed = stripWordColorMarkup(line).trim();
     if (!trimmed.startsWith('@')) return;
 
     const match = trimmed.match(AGGREGATION_LINE_REGEX);
